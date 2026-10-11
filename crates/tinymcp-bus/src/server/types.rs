@@ -1,5 +1,6 @@
 //! Serialized vocabulary for module-owned server operations.
 
+use crate::server::ToolCallError;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
