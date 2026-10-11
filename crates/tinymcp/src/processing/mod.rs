@@ -26,19 +26,31 @@ pub(crate) fn bound_mcp_tool_result(mut result: McpToolResult) -> McpToolResult 
                 data: bound_json(data),
             },
             other => {
-                let serialized = serde_json::to_string(&other).unwrap_or_default();
-                if serialized.len() <= MAX_LLM_BLOCK_BYTES {
-                    other
-                } else {
-                    McpToolContent::Json {
-                        data: elide_oversized_block(&other),
-                    }
-                }
+                let serialized = serde_json::to_vec(&other);
+                bound_other_content(other, serialized)
             }
         })
         .collect();
     result.markdown_formatted = result.markdown_formatted.map(bound_text);
     result
+}
+
+fn bound_other_content(
+    block: McpToolContent,
+    serialized: std::result::Result<Vec<u8>, serde_json::Error>,
+) -> McpToolContent {
+    match serialized {
+        Ok(bytes) if bytes.len() <= MAX_LLM_BLOCK_BYTES => block,
+        Ok(_) => McpToolContent::Json {
+            data: elide_oversized_block(&block),
+        },
+        Err(_) => McpToolContent::Json {
+            data: json!({
+                "type": "unknown",
+                "data": "[content elided: serialization failed]"
+            }),
+        },
+    }
 }
 
 pub(crate) fn bound_text(text: String) -> String {

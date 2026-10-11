@@ -5,6 +5,27 @@ use crate::{McpToolResult, McpToolResultExt};
 use serde_json::json;
 
 #[test]
+fn unserializable_unknown_content_is_elided_instead_of_returned_unbounded() {
+    let error = serde_json::from_str::<serde_json::Value>("not-json").unwrap_err();
+    let result = bound_other_content(
+        McpToolContent::Text {
+            text: "fixture".into(),
+        },
+        Err(error),
+    );
+
+    assert_eq!(
+        result,
+        McpToolContent::Json {
+            data: json!({
+                "type": "unknown",
+                "data": "[content elided: serialization failed]"
+            })
+        }
+    );
+}
+
+#[test]
 fn lexical_operations_preserve_controls_fences_and_utf8_caps() {
     for (operation, text, max_bytes, expected) in [
         (TextTransform::SanitizeForLlm, "<SYSTEM>éééé\0", 5, "é…"),

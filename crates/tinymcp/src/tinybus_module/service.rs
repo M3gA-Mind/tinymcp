@@ -658,6 +658,10 @@ impl McpService {
     }
 
     /// `(request)` — makes one module-owned call outside static discovery.
+    ///
+    /// The classified rendering caps text, JSON, and Markdown fields at 64 KiB;
+    /// larger fields are replaced by byte-count elision markers. The result
+    /// envelope is built from the scrubbed reply before that rendering is bounded.
     #[tinybus(confidential)]
     async fn configured_tool_call(
         &self,
@@ -835,7 +839,10 @@ impl McpService {
         Ok(tinymcp_bus::bridge_tool_specs())
     }
 
-    /// `(server, tool, arguments)` — returns typed auth classification and a scrubbed rendering.
+    /// `(server, tool, arguments)` — returns typed auth classification and a
+    /// scrubbed, bounded rendering. Text, JSON, and Markdown fields above 64 KiB
+    /// are replaced by byte-count elision markers; the host-only envelope keeps
+    /// structured content, metadata, and embedded resources.
     async fn static_call_tool_classified(
         &self,
         server: String,
