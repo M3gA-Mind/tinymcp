@@ -968,6 +968,54 @@ async fn the_static_list_names_what_the_host_declared() {
 }
 
 #[tokio::test]
+async fn static_server_summaries_keep_legacy_fields_and_redact_endpoint_secrets() {
+    let service = McpService::new(&ModuleConfig {
+        data_dir: None,
+        client: McpClientConfig {
+            servers: vec![McpServerConfig {
+                name: "weather".into(),
+                endpoint: "https://user:pass@example.test/mcp?token=secret#fragment".into(),
+                description: Some("Weather lookup".into()),
+                timeout_secs: 17,
+                allowed_tools: vec!["forecast".into()],
+                disallowed_tools: vec!["delete".into()],
+                auth: tinymcp_bus::McpAuthConfig::BearerToken {
+                    token: "summary-secret".into(),
+                },
+                ..McpServerConfig::default()
+            }],
+            ..McpClientConfig::default()
+        },
+    })
+    .unwrap();
+
+    let summaries = ok(
+        &service,
+        names::methods::STATIC_SERVER_SUMMARIES,
+        json!([]),
+    )
+    .await;
+    assert_eq!(
+        summaries,
+        json!([{
+            "name": "weather",
+            "endpoint": "https://example.test/mcp",
+            "description": "Weather lookup",
+            "timeout_secs": 17,
+            "allowed_tools": ["forecast"],
+            "disallowed_tools": ["delete"],
+            "auth_configured": true,
+            "auth_kind": "bearer_token",
+            "source": "config"
+        }])
+    );
+    let serialized = summaries.to_string();
+    for secret in ["user", "pass", "token=secret", "fragment", "summary-secret"] {
+        assert!(!serialized.contains(secret), "leaked {secret}: {serialized}");
+    }
+}
+
+#[tokio::test]
 async fn a_static_server_the_host_never_declared_is_unknown() {
     let directory = tempfile::tempdir().unwrap();
     let service = service_at(directory.path(), "http://127.0.0.1:1");
