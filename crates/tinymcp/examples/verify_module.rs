@@ -326,60 +326,7 @@ async fn verify_metadata_operations(
         return Err(io::Error::other("an empty directory reported stored state").into());
     }
 
-    let summaries: Vec<StaticServerSummary> = proxy
-        .call(names::methods::STATIC_SERVER_SUMMARIES, ())
-        .await?;
-    if !summaries.is_empty() {
-        return Err(io::Error::other("a fresh registry reported static server summaries").into());
-    }
-
-    let validation: ServerArgumentsValidation = proxy
-        .call(
-            names::methods::VALIDATE_SERVER_ARGUMENTS,
-            (ValidateServerArgumentsRequest {
-                arguments: json!({"query":"fixture"}),
-                allowed: vec!["query".to_owned()],
-                rules: vec![ServerArgumentRule::RequiredNonEmptyString {
-                    key: "query".to_owned(),
-                }],
-            },),
-        )
-        .await?;
-    if validation
-        != ServerArgumentsValidation::Valid(json!({"query":"fixture"}).as_object().unwrap().clone())
-    {
-        return Err(
-            io::Error::other("module argument validation returned the wrong result").into(),
-        );
-    }
-
-    let configured = proxy
-        .call::<tinymcp_bus::ClassifiedStaticToolCall>(
-            names::methods::CONFIGURED_TOOL_CALL,
-            (tinymcp_bus::ConfiguredToolCallRequest {
-                server: tinymcp_bus::McpServerConfig {
-                    name: "artifact-one-shot".to_owned(),
-                    endpoint: "not a valid endpoint".to_owned(),
-                    ..tinymcp_bus::McpServerConfig::default()
-                },
-                tool: "fixture".to_owned(),
-                arguments: json!({}),
-            },),
-        )
-        .await;
-    let refused_ordinary_delivery = match configured {
-        Err(tinybus::Error::ConfidentialityRequired { .. }) => true,
-        Err(tinybus::Error::MethodFailed { name, .. }) => {
-            name == tinybus::Error::CONFIDENTIALITY_REQUIRED
-        }
-        _ => false,
-    };
-    if !refused_ordinary_delivery {
-        return Err(io::Error::other(
-            "compiled configured-call member did not refuse ordinary delivery",
-        )
-        .into());
-    }
+    verify_new_contract_operations(proxy).await?;
 
     let prepared: Vec<McpToolPresentation> = proxy
         .call(
@@ -461,6 +408,72 @@ async fn verify_metadata_operations(
     if !matches!(refusal, Err(tinybus::Error::MethodFailed {name,..}) if name == tinymcp_bus::errors::INVALID_ARGUMENT)
     {
         return Err(io::Error::other("metadata refusal taxonomy mismatch").into());
+    }
+    Ok(())
+}
+
+/// Exercises the newly added MCP module operations through a compiled module.
+async fn verify_new_contract_operations(
+    proxy: &tinybus::Proxy,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use serde_json::{Map, json};
+    use tinymcp_bus::{
+        ConfiguredToolCallRequest, McpServerConfig, ServerArgumentRule,
+        ServerArgumentsValidation, StaticServerSummary, ValidateServerArgumentsRequest,
+    };
+
+    let summaries: Vec<StaticServerSummary> = proxy
+        .call(names::methods::STATIC_SERVER_SUMMARIES, ())
+        .await?;
+    if !summaries.is_empty() {
+        return Err(io::Error::other("a fresh registry reported static server summaries").into());
+    }
+
+    let validation: ServerArgumentsValidation = proxy
+        .call(
+            names::methods::VALIDATE_SERVER_ARGUMENTS,
+            (ValidateServerArgumentsRequest {
+                arguments: json!({"query":"fixture"}),
+                allowed: vec!["query".to_owned()],
+                rules: vec![ServerArgumentRule::RequiredNonEmptyString {
+                    key: "query".to_owned(),
+                }],
+            },),
+        )
+        .await?;
+    let expected = Map::from_iter([("query".to_owned(), json!("fixture"))]);
+    if validation != ServerArgumentsValidation::Valid(expected) {
+        return Err(
+            io::Error::other("module argument validation returned the wrong result").into(),
+        );
+    }
+
+    let configured = proxy
+        .call::<tinymcp_bus::ClassifiedStaticToolCall>(
+            names::methods::CONFIGURED_TOOL_CALL,
+            (ConfiguredToolCallRequest {
+                server: McpServerConfig {
+                    name: "artifact-one-shot".to_owned(),
+                    endpoint: "not a valid endpoint".to_owned(),
+                    ..tinymcp_bus::McpServerConfig::default()
+                },
+                tool: "fixture".to_owned(),
+                arguments: json!({}),
+            },),
+        )
+        .await;
+    let refused_ordinary_delivery = match configured {
+        Err(tinybus::Error::ConfidentialityRequired { .. }) => true,
+        Err(tinybus::Error::MethodFailed { name, .. }) => {
+            name == tinybus::Error::CONFIDENTIALITY_REQUIRED
+        }
+        _ => false,
+    };
+    if !refused_ordinary_delivery {
+        return Err(io::Error::other(
+            "compiled configured-call member did not refuse ordinary delivery",
+        )
+        .into());
     }
     Ok(())
 }
