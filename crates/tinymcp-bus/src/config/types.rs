@@ -211,7 +211,7 @@ pub struct StaticServerSummary {
 ///
 /// Hosts use this for a fixed product integration that should share the
 /// module-owned transport without appearing in the user's configured server
-/// list. Send it through TinyBus confidential delivery because `server` may
+/// list. Send it through `TinyBus` confidential delivery because `server` may
 /// contain authentication values.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
