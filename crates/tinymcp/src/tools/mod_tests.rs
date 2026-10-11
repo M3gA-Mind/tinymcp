@@ -711,7 +711,10 @@ fn bounded_bus_rendering_preserves_error_and_host_only_fields() {
     let McpToolContent::Text { text } = &result.content[0] else {
         panic!("text content keeps its type");
     };
-    assert_eq!(text, &format!("[{} bytes elided]", super::MAX_LLM_BLOCK_BYTES + 1));
+    assert_eq!(
+        text,
+        &format!("[{} bytes elided]", super::MAX_LLM_BLOCK_BYTES + 1)
+    );
     let McpToolContent::Json { data } = &result.content[1] else {
         panic!("JSON content keeps its type");
     };
