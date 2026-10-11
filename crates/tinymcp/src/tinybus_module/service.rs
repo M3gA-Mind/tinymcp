@@ -651,9 +651,7 @@ impl McpService {
         &self,
     ) -> tinybus::Result<Vec<tinymcp_bus::StaticServerSummary>> {
         std::future::ready(()).await;
-        Ok(crate::tools::bridge::static_server_summaries(
-            &self.static_servers,
-        ))
+        Ok(self.static_servers.summaries())
     }
 
     /// `(server)`
