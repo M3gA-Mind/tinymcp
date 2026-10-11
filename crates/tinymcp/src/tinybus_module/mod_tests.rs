@@ -1476,6 +1476,8 @@ async fn static_tool_metadata_redacts_configured_credentials_before_bus_return()
 #[tokio::test]
 async fn classified_static_call_scrubs_rendered_success_and_envelope() {
     let credential = "classified-static-secret-92";
+    let oversized = "x".repeat(crate::processing::MAX_LLM_BLOCK_BYTES + 1);
+    let expected_elision = format!("[{} bytes elided]", oversized.len());
     let app = Router::new().route(
         "/",
         post(move |axum::Json(body): axum::Json<Value>| async move {
@@ -1487,8 +1489,9 @@ async fn classified_static_call_scrubs_rendered_success_and_envelope() {
                 }),
                 "tools/list" => json!({"tools": [{"name": "echo"}]}),
                 "tools/call" => json!({
-                    "content": [{"type": "text", "text": credential}],
-                    "structuredContent": {"echo": credential}
+                    "content": [{"type": "text", "text": oversized}],
+                    "structuredContent": {"echo": credential},
+                    "_meta": {"ui": "preserved"}
                 }),
                 _ => json!({}),
             };
@@ -1519,12 +1522,13 @@ async fn classified_static_call_scrubs_rendered_success_and_envelope() {
     )
     .await;
     assert_eq!(response["outcome"]["ok"], true, "{response}");
-    assert_eq!(response["rendered"]["content"][0]["text"], "[redacted]");
+    assert_eq!(response["rendered"]["content"][0]["text"], expected_elision);
     assert_eq!(response["envelope"]["outcome"]["ok"], true);
     assert_eq!(
         response["envelope"]["structured_content"]["echo"],
         "[redacted]"
     );
+    assert_eq!(response["envelope"]["meta"]["ui"], "preserved");
     assert!(response["error_message"].is_null());
     assert!(!response.to_string().contains(credential), "{response}");
 }
