@@ -43,6 +43,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ))
         .into());
     }
+    let Some(interface) = info
+        .manifest
+        .provides
+        .iter()
+        .find(|provided| provided.version.interface.as_str() == names::INTERFACE)
+    else {
+        return Err(io::Error::other("the compiled module does not provide TinyMCP").into());
+    };
+    let declared: Vec<_> = interface
+        .methods
+        .iter()
+        .map(tinybus::MemberName::as_str)
+        .collect();
+    if declared != names::METHODS {
+        return Err(io::Error::other(
+            "the compiled module manifest differs from the TinyMCP contract member list",
+        )
+        .into());
+    }
 
     let client = Connection::connect(bus.connect().await?).await?;
 

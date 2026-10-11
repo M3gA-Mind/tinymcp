@@ -29,5 +29,10 @@ mod types;
 
 pub use types::{
     HttpHeader, McpAuthConfig, McpClientConfig, McpClientIdentityConfig, McpProxyConfig,
-    McpRegistryAuthConfig, McpServerConfig,
+    McpRegistryAuthConfig, McpServerConfig, OpenConfiguredRequest, OpenConfiguredResponse,
+    TransitionStatus,
 };
+
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;

@@ -57,6 +57,45 @@ incrementally and stops at its budget before further pretty JSON or join
 allocation. Failures use the established InvalidArgument module error. Host
 approval, dispatch and presentation policy remain explicit host choices.
 
+## Additive contract 1.10 directory configuration
+
+`Open(data_dir)` keeps its existing one-string tuple and load-time client
+settings. `OpenConfigured(request)` adds a one-argument `OpenConfiguredRequest`
+that pairs an absolute data directory with that host's complete
+`McpClientConfig`. The module therefore keeps storage, static servers,
+credentials, client identity, registry settings and proxy isolated per opened
+workspace even when one module instance serves several workspaces.
+
+Opening the same directory with the same settings is idempotent. If its client
+settings change, the module replaces the service at the same object path after
+current bus calls finish, then stops the old service's supervisor, protocol
+operations and dynamic transports. This prevents stale endpoints or tokens
+without invalidating existing object paths. The root object keeps its directory
+opener across its own refresh. Legacy `Open` remains idempotent and keeps its
+original load-time settings. The client settings can contain secrets, so hosts
+call `OpenConfigured` through the confidential TinyBus path; formatting the
+request for diagnostics omits its path and client fields.
+
+## Additive contract 1.11 directory lifecycle
+
+`OpenConfigured` returns `OpenConfiguredResponse { object_path,
+transition_id }`, so the host can distinguish an accepted replacement from
+completed cleanup. `TransitionStatus(transition_id)` is a short nonblocking
+query with `pending`, `complete`, `failed`, and `unknown` states. It does not
+hold a wait under TinyBus dispatch; hosts poll it asynchronously. `Close` keeps
+its one-string argument and returns an optional transition id: `None` means the
+directory is already closed, while `Some(id)` requires status polling until
+cleanup completes. Closing a child removes its object path and joins its
+maintenance, protocol, and dynamic-connection work. Closing the root replaces
+it with an empty in-memory service, resets legacy client settings, and keeps
+the root lifecycle surface alive.
+
+One lifecycle transition may run at a time. Conflicting open, reconfigure, or
+close requests fail quickly while it is pending; callers poll and retry. The
+active-directory bound includes pending closes, and monotonic object ids prevent
+a stale path from naming a later workspace. An unknown or retired transition
+id does not claim cleanup succeeded.
+
 ## Remaining work
 
 This slice does not wire OpenHuman adapters, stdio/HTTP listener ownership,

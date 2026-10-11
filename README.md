@@ -381,3 +381,19 @@ lexical helpers are shared through TinyTools without its default features.
 Library DTO algorithms use extension traits; see
 [public API and migration details](docs/specs/pure-vocabulary.md). Host stdio/HTTP
 adapters and release integration remain separate work.
+
+Contract 1.10 adds `OpenConfigured`, which opens one data directory with that
+host's own `McpClientConfig`. `Open(data_dir)` remains unchanged for callers
+using load-time settings. A configured open carries the directory and client
+settings together, so separate workspaces can use distinct static servers,
+credentials, identities and proxies through one loaded module. Reopening the
+same directory with changed settings replaces its service at the same object
+path after active calls finish, then stops the old supervisor, protocol
+operations and dynamic transports. The response includes a transition id;
+hosts poll `TransitionStatus` until cleanup is complete before using a replaced
+service. Contract 1.11 adds `Close(data_dir)`, which releases child services or
+resets the root to an empty in-memory service, and `TransitionStatus`, a
+nonblocking status query. Competing lifecycle mutations fail quickly while a
+transition is pending, active reservations remain counted through cleanup, and
+object path ids are never reused. Hosts send `OpenConfigured` over TinyBus's
+confidential-call path; request Debug output omits the path and client fields.
