@@ -12,6 +12,7 @@ use crate::agent_tools::SecretScrubber;
 use crate::audit::AuditStore;
 use crate::config_servers::McpServerRegistry;
 use crate::error::Result;
+use crate::processing::bound_mcp_tool_result;
 use crate::registry::{McpRegistry, SecretRef, Store, SupervisorConfig};
 use tinybus::Connection;
 use tinymcp_bus::{
@@ -657,6 +658,10 @@ impl McpService {
     }
 
     /// `(request)` — makes one module-owned call outside static discovery.
+    ///
+    /// The classified rendering caps text, JSON, and Markdown fields at 64 KiB;
+    /// larger fields are replaced by byte-count elision markers. The result
+    /// envelope is built from the scrubbed reply before that rendering is bounded.
     #[tinybus(confidential)]
     async fn configured_tool_call(
         &self,
@@ -696,9 +701,10 @@ impl McpService {
                 let outcome = tinymcp_bus::McpCallOutcome::answered(&server, &tool);
                 let envelope = tinymcp_bus::McpResultEnvelope::new(&server, &tool, &call.rendered)
                     .with_outcome(outcome.clone());
+                let rendered = bound_mcp_tool_result(call.rendered);
                 Ok(ClassifiedStaticToolCall {
                     outcome,
-                    rendered: Some(call.rendered),
+                    rendered: Some(rendered),
                     envelope: Some(envelope),
                     error_message: None,
                 })
@@ -833,7 +839,10 @@ impl McpService {
         Ok(tinymcp_bus::bridge_tool_specs())
     }
 
-    /// `(server, tool, arguments)` — returns typed auth classification and a scrubbed rendering.
+    /// `(server, tool, arguments)` — returns typed auth classification and a
+    /// scrubbed, bounded rendering. Text, JSON, and Markdown fields above 64 KiB
+    /// are replaced by byte-count elision markers; the host-only envelope keeps
+    /// structured content, metadata, and embedded resources.
     async fn static_call_tool_classified(
         &self,
         server: String,
@@ -852,9 +861,10 @@ impl McpService {
                 let outcome = tinymcp_bus::McpCallOutcome::answered(&server, &tool);
                 let envelope = tinymcp_bus::McpResultEnvelope::new(&server, &tool, &call.rendered)
                     .with_outcome(outcome.clone());
+                let rendered = bound_mcp_tool_result(call.rendered);
                 Ok(ClassifiedStaticToolCall {
                     outcome,
-                    rendered: Some(call.rendered),
+                    rendered: Some(rendered),
                     envelope: Some(envelope),
                     error_message: None,
                 })

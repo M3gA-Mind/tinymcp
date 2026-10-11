@@ -1053,6 +1053,8 @@ async fn configured_tool_call_runs_confidentially_without_registering_server() {
     use tinymcp_bus::{ClassifiedStaticToolCall, ConfiguredToolCallRequest};
 
     let hits = Arc::new(AtomicUsize::new(0));
+    let oversized = "y".repeat(crate::processing::MAX_LLM_BLOCK_BYTES + 1);
+    let expected_elision = format!("[{} bytes elided]", oversized.len());
     let app = Router::new()
         .route(
             "/",
@@ -1067,8 +1069,9 @@ async fn configured_tool_call_runs_confidentially_without_registering_server() {
                             "serverInfo": { "name": "one-shot", "version": "1" },
                         }),
                         "tools/call" => json!({
-                            "content": [{"type":"text", "text":"one-shot-result"}],
-                            "isError": false,
+                            "content": [{"type":"text", "text":oversized}],
+                            "isError": true,
+                            "structuredContent": {"source": "one-shot"},
                         }),
                         _ => json!({"tools": []}),
                     };
@@ -1119,11 +1122,17 @@ async fn configured_tool_call_runs_confidentially_without_registering_server() {
         .unwrap();
 
     assert!(call.outcome.ok);
+    let rendered = call.rendered.unwrap();
     assert_eq!(
-        call.rendered.unwrap().content,
+        rendered.content,
         vec![tinymcp_bus::McpToolContent::Text {
-            text: "one-shot-result".into()
+            text: expected_elision
         }]
+    );
+    assert!(rendered.is_error);
+    assert_eq!(
+        call.envelope.unwrap().structured_content,
+        Some(json!({"source": "one-shot"}))
     );
     assert!(hits.load(Ordering::SeqCst) >= 2);
     let servers: Vec<String> = proxy.call(names::methods::STATIC_LIST, ()).await.unwrap();
@@ -1135,6 +1144,91 @@ async fn configured_tool_call_runs_confidentially_without_registering_server() {
     broker_task.abort();
     server_task.abort();
     drop(host);
+}
+
+#[tokio::test]
+async fn configured_tool_call_classifies_and_scrubs_provider_errors() {
+    use tinymcp_bus::{ClassifiedStaticToolCall, ConfiguredToolCallRequest, McpAuthConfig};
+
+    let credential = "configured-call-provider-secret-73";
+    let hits = Arc::new(AtomicUsize::new(0));
+    let app =
+        Router::new()
+            .route(
+                "/",
+                post(
+                    move |State(hits): State<Arc<AtomicUsize>>,
+                          axum::Json(body): axum::Json<Value>| async move {
+                        hits.fetch_add(1, Ordering::SeqCst);
+                        let response = match body["method"].as_str().unwrap_or_default() {
+                            "initialize" => json!({
+                                "jsonrpc": "2.0",
+                                "id": body["id"],
+                                "result": {
+                                    "protocolVersion": tinymcp_bus::LATEST_PROTOCOL_VERSION,
+                                    "capabilities": {"tools": {}},
+                                    "serverInfo": {"name": "fixture", "version": "1"}
+                                }
+                            }),
+                            "tools/list" => json!({
+                                "jsonrpc": "2.0",
+                                "id": body["id"],
+                                "result": {"tools": [{"name": "lookup"}]}
+                            }),
+                            "tools/call" => json!({
+                                "jsonrpc": "2.0",
+                                "id": body["id"],
+                                "error": {
+                                    "code": -32000,
+                                    "message": format!("provider echoed {credential}")
+                                }
+                            }),
+                            _ => json!({
+                                "jsonrpc": "2.0",
+                                "id": body["id"],
+                                "result": {}
+                            }),
+                        };
+                        axum::Json(response)
+                    },
+                ),
+            )
+            .with_state(Arc::clone(&hits));
+    let endpoint = serve(app).await;
+    let directory = tempfile::tempdir().unwrap();
+    let service = service_at(directory.path(), "http://127.0.0.1:1");
+
+    let call: ClassifiedStaticToolCall = serde_json::from_value(
+        ok(
+            &service,
+            names::methods::CONFIGURED_TOOL_CALL,
+            serde_json::to_value([ConfiguredToolCallRequest {
+                server: McpServerConfig {
+                    name: "one-shot-error".into(),
+                    endpoint,
+                    auth: McpAuthConfig::BearerToken {
+                        token: credential.into(),
+                    },
+                    ..McpServerConfig::default()
+                },
+                tool: "lookup".into(),
+                arguments: json!({"query":"fixture"}),
+            }])
+            .unwrap(),
+        )
+        .await,
+    )
+    .expect("provider failures retain the classified result contract");
+
+    assert!(!call.outcome.ok);
+    assert_eq!(call.outcome.server, "one-shot-error");
+    assert_eq!(call.outcome.tool, "lookup");
+    assert!(call.outcome.error.is_some());
+    let error_message = call.error_message.expect("provider failure is explained");
+    assert!(!error_message.contains(credential), "{error_message}");
+    assert!(call.rendered.is_none());
+    assert!(call.envelope.is_none());
+    assert!(hits.load(Ordering::SeqCst) >= 3);
 }
 
 #[tokio::test]
@@ -1190,6 +1284,41 @@ async fn server_argument_validation_normalizes_and_reports_module_errors() {
         tinymcp_bus::ServerArgumentsValidation::Invalid(tinymcp_bus::ToolCallError::InvalidParams(
             "unexpected argument `extra`".into()
         ))
+    );
+}
+
+#[tokio::test]
+async fn server_argument_validation_normalizes_optional_strings_and_required_string_arrays() {
+    let service = service();
+    let valid: tinymcp_bus::ServerArgumentsValidation = serde_json::from_value(
+        ok(
+            &service,
+            names::methods::VALIDATE_SERVER_ARGUMENTS,
+            json!([{
+                "arguments": {
+                    "description": "  project status  ",
+                    "labels": [" urgent ", "", " follow-up  "],
+                },
+                "allowed": ["description", "labels"],
+                "rules": [
+                    {"kind":"optional_non_empty_string", "key":"description"},
+                    {"kind":"required_non_empty_string_array", "key":"labels"}
+                ]
+            }]),
+        )
+        .await,
+    )
+    .expect("validation reply");
+
+    assert_eq!(
+        valid,
+        tinymcp_bus::ServerArgumentsValidation::Valid(
+            serde_json::from_value(json!({
+                "description": "project status",
+                "labels": ["urgent", "follow-up"],
+            }))
+            .unwrap()
+        )
     );
 }
 
@@ -1356,6 +1485,8 @@ async fn static_tool_metadata_redacts_configured_credentials_before_bus_return()
 #[tokio::test]
 async fn classified_static_call_scrubs_rendered_success_and_envelope() {
     let credential = "classified-static-secret-92";
+    let oversized = "x".repeat(crate::processing::MAX_LLM_BLOCK_BYTES + 1);
+    let expected_elision = format!("[{} bytes elided]", oversized.len());
     let app = Router::new().route(
         "/",
         post(move |axum::Json(body): axum::Json<Value>| async move {
@@ -1367,8 +1498,9 @@ async fn classified_static_call_scrubs_rendered_success_and_envelope() {
                 }),
                 "tools/list" => json!({"tools": [{"name": "echo"}]}),
                 "tools/call" => json!({
-                    "content": [{"type": "text", "text": credential}],
-                    "structuredContent": {"echo": credential}
+                    "content": [{"type": "text", "text": oversized}],
+                    "structuredContent": {"echo": credential},
+                    "_meta": {"ui": "preserved"}
                 }),
                 _ => json!({}),
             };
@@ -1399,12 +1531,13 @@ async fn classified_static_call_scrubs_rendered_success_and_envelope() {
     )
     .await;
     assert_eq!(response["outcome"]["ok"], true, "{response}");
-    assert_eq!(response["rendered"]["content"][0]["text"], "[redacted]");
+    assert_eq!(response["rendered"]["content"][0]["text"], expected_elision);
     assert_eq!(response["envelope"]["outcome"]["ok"], true);
     assert_eq!(
         response["envelope"]["structured_content"]["echo"],
         "[redacted]"
     );
+    assert_eq!(response["envelope"]["meta"]["ui"], "preserved");
     assert!(response["error_message"].is_null());
     assert!(!response.to_string().contains(credential), "{response}");
 }

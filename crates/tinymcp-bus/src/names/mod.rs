@@ -141,6 +141,10 @@ pub mod methods {
     /// Returns safe summaries of statically configured servers.
     pub const STATIC_SERVER_SUMMARIES: &str = "StaticServerSummaries";
     /// Calls one configured integration without adding it to static discovery.
+    ///
+    /// The returned classified rendering caps each text, JSON, and Markdown
+    /// field at 64 KiB; larger fields use a byte-count elision marker. The
+    /// host-only result envelope keeps the UI metadata.
     pub const CONFIGURED_TOOL_CALL: &str = "ConfiguredToolCall";
     /// Lists the tools one statically declared server advertises.
     pub const STATIC_LIST_TOOLS: &str = "StaticListTools";
@@ -153,7 +157,11 @@ pub mod methods {
     pub const STATIC_CALL_TOOL: &str = "StaticCallTool";
     /// Returns the fixed generic MCP bridge tool declarations.
     pub const PREPARE_BRIDGE_TOOLS: &str = "PrepareBridgeTools";
-    /// Calls a static server tool with classified outcome and rendered result.
+    /// Calls a static server tool with classified outcome and bounded rendering.
+    ///
+    /// Text, JSON, and Markdown fields above 64 KiB are replaced with a
+    /// byte-count elision marker. Host-only UI metadata remains in the result
+    /// envelope.
     pub const STATIC_CALL_TOOL_CLASSIFIED: &str = "StaticCallToolClassified";
 
     // -- Audit --------------------------------------------------------------

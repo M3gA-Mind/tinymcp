@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   module-ci:
-    uses: tinyhumansai/.github/.github/workflows/module-ci.yml@4adc1080fb495098e7af1aade82ed7e6e3c69bb7
+    uses: tinyhumansai/.github/.github/workflows/module-ci.yml@62c8ae0468f3882b75947d5cba9687e609ce1fed # pin the shared required-check contract
     with:
       coverage-script: scripts/check-coverage.sh
       module-e2e-script: scripts/test-e2e.sh

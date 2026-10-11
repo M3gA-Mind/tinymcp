@@ -148,11 +148,20 @@ pub struct McpToolPresentation {
 /// the implementation scrubs configured secrets before returning it. A remote
 /// tool's own error reply remains a successful call with `outcome.ok == true`
 /// and `rendered.is_error == true`.
+///
+/// In this classified response, text blocks, JSON blocks, and Markdown above
+/// 64 KiB are replaced with a byte-count elision marker such as
+/// `[65537 bytes elided]`. The host-only `envelope` retains structured content,
+/// metadata, and embedded resources for UI rendering.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ClassifiedStaticToolCall {
     /// Whether the server answered and, when it did not, why.
     pub outcome: McpCallOutcome,
-    /// The model-facing rendering when the server answered.
+    /// The bounded model-facing rendering when the server answered.
+    ///
+    /// Each text, JSON, or Markdown field is limited to 64 KiB; an oversized
+    /// field is replaced with a byte-count elision marker. Host-only fields are
+    /// carried separately in [`Self::envelope`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rendered: Option<crate::McpToolResult>,
     /// Host-only reply data that the rendering omits.
