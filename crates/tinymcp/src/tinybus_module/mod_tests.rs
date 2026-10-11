@@ -1139,50 +1139,52 @@ async fn configured_tool_call_runs_confidentially_without_registering_server() {
 
 #[tokio::test]
 async fn configured_tool_call_classifies_and_scrubs_provider_errors() {
-    use tinymcp_bus::{ClassifiedStaticToolCall, McpAuthConfig, ConfiguredToolCallRequest};
+    use tinymcp_bus::{ClassifiedStaticToolCall, ConfiguredToolCallRequest, McpAuthConfig};
 
     let credential = "configured-call-provider-secret-73";
     let hits = Arc::new(AtomicUsize::new(0));
-    let app = Router::new()
-        .route(
-            "/",
-            post(
-                move |State(hits): State<Arc<AtomicUsize>>, axum::Json(body): axum::Json<Value>| async move {
-                    hits.fetch_add(1, Ordering::SeqCst);
-                    let response = match body["method"].as_str().unwrap_or_default() {
-                        "initialize" => json!({
-                            "jsonrpc": "2.0",
-                            "id": body["id"],
-                            "result": {
-                                "protocolVersion": tinymcp_bus::LATEST_PROTOCOL_VERSION,
-                                "capabilities": {"tools": {}},
-                                "serverInfo": {"name": "fixture", "version": "1"}
-                            }
-                        }),
-                        "tools/list" => json!({
-                            "jsonrpc": "2.0",
-                            "id": body["id"],
-                            "result": {"tools": [{"name": "lookup"}]}
-                        }),
-                        "tools/call" => json!({
-                            "jsonrpc": "2.0",
-                            "id": body["id"],
-                            "error": {
-                                "code": -32000,
-                                "message": format!("provider echoed {credential}")
-                            }
-                        }),
-                        _ => json!({
-                            "jsonrpc": "2.0",
-                            "id": body["id"],
-                            "result": {}
-                        }),
-                    };
-                    axum::Json(response)
-                },
-            ),
-        )
-        .with_state(Arc::clone(&hits));
+    let app =
+        Router::new()
+            .route(
+                "/",
+                post(
+                    move |State(hits): State<Arc<AtomicUsize>>,
+                          axum::Json(body): axum::Json<Value>| async move {
+                        hits.fetch_add(1, Ordering::SeqCst);
+                        let response = match body["method"].as_str().unwrap_or_default() {
+                            "initialize" => json!({
+                                "jsonrpc": "2.0",
+                                "id": body["id"],
+                                "result": {
+                                    "protocolVersion": tinymcp_bus::LATEST_PROTOCOL_VERSION,
+                                    "capabilities": {"tools": {}},
+                                    "serverInfo": {"name": "fixture", "version": "1"}
+                                }
+                            }),
+                            "tools/list" => json!({
+                                "jsonrpc": "2.0",
+                                "id": body["id"],
+                                "result": {"tools": [{"name": "lookup"}]}
+                            }),
+                            "tools/call" => json!({
+                                "jsonrpc": "2.0",
+                                "id": body["id"],
+                                "error": {
+                                    "code": -32000,
+                                    "message": format!("provider echoed {credential}")
+                                }
+                            }),
+                            _ => json!({
+                                "jsonrpc": "2.0",
+                                "id": body["id"],
+                                "result": {}
+                            }),
+                        };
+                        axum::Json(response)
+                    },
+                ),
+            )
+            .with_state(Arc::clone(&hits));
     let endpoint = serve(app).await;
     let service = service();
 
