@@ -21,6 +21,7 @@ use tinybus::service::Interface;
 
 use super::config::ModuleConfig;
 use super::service::McpService;
+use super::test_linked_module;
 use tinymcp_bus::{McpClientConfig, McpServerConfig, names};
 
 /// A service over nothing, for inspecting its interface.
@@ -43,6 +44,24 @@ fn the_service_serves_exactly_the_members_the_contract_names() {
         .collect();
 
     assert_eq!(served, names::METHODS);
+}
+
+#[test]
+fn exported_manifest_declares_exactly_the_contract_members_in_order() {
+    let module = test_linked_module().expect("the linked module manifest parses");
+    let provided = module
+        .manifest
+        .provides
+        .iter()
+        .find(|provided| provided.version.interface.as_str() == names::INTERFACE)
+        .expect("the manifest provides TinyMCP");
+    let declared: Vec<_> = provided
+        .methods
+        .iter()
+        .map(tinybus::MemberName::as_str)
+        .collect();
+
+    assert_eq!(declared, names::METHODS);
 }
 
 #[test]
