@@ -17,6 +17,13 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  module-ci:
+    uses: tinyhumansai/.github/.github/workflows/module-ci.yml@0f4797e9d7c2bb5d8b916c3458cb30c308e168e0 # pin the shared required-check contract
+    with:
+      coverage-script: scripts/check-coverage.sh
+      module-e2e-script: scripts/module-e2e.sh
+      feature-test-script: scripts/feature-tests.sh
+
   rust:
     name: Rust
     runs-on: ubuntu-latest
