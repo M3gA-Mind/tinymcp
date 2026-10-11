@@ -26,8 +26,9 @@
 /// no-create state lookup and module-prepared tool declarations. The released
 /// 1.16 vocabulary is the baseline for this addition; 1.17 adds module-owned
 /// scrubbing of credentials from static remote-tool metadata; 1.18 adds safe
-/// summaries for statically configured servers.
-pub const CONTRACT_VERSION: (u32, u32) = (1, 18);
+/// static-server summaries, 1.19 adds one-shot configured server calls, and
+/// 1.20 adds module-owned generic server argument validation.
+pub const CONTRACT_VERSION: (u32, u32) = (1, 20);
 
 /// Returns whether a host holding [`CONTRACT_VERSION`] can bind to a module
 /// reporting `module`.
@@ -41,7 +42,7 @@ pub const CONTRACT_VERSION: (u32, u32) = (1, 18);
 /// ```
 /// # use tinymcp_bus::{is_compatible, CONTRACT_VERSION};
 /// assert!(is_compatible(CONTRACT_VERSION));
-/// assert!(is_compatible((1, 18)));
+/// assert!(is_compatible((1, 20)));
 /// assert!(!is_compatible((1, 17)));
 /// assert!(!is_compatible((1, 14)));
 /// assert!(!is_compatible((2, 0)));
