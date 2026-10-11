@@ -5,7 +5,9 @@
 //! call. They are described here as [`AgentToolSpec`]s: the name, description
 //! and schema a model reads, plus what calling the tool can do
 //! ([`AgentToolEffect`]). The per-action tools a connected server advertises
-//! are adapted by `tinymcp::tools` (the `tools` feature), not here.
+//! are prepared by `tinymcp::tools` (the `tools` feature) and returned as
+//! [`McpToolPresentation`]s from host-supplied, policy-filtered
+//! [`McpToolSourceSpec`]s.
 //!
 //! [`McpCallOutcome`] is what a forwarded call reports back to the host, beside
 //! the text the model reads: which server and tool, whether the server
@@ -35,7 +37,8 @@ mod types;
 pub use registry_tools::{RegistryTool, registry_tool_specs};
 pub use types::{
     AgentToolEffect, AgentToolSpec, ArgsError, MCP_CALL_RESULT_KIND, MCP_RESULT_KIND, McpCallError,
-    McpCallOutcome, McpResultEnvelope,
+    McpCallOutcome, McpResultEnvelope, McpToolExposure, McpToolPresentation, McpToolSourceSpec,
+    PrepareAgentToolsRequest,
 };
 
 #[cfg(test)]

@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use tinymcp_bus::{
     CommandKind, ConnectedServerOverview, InstalledServer, McpClientConfig,
     McpClientIdentityConfig, McpRegistryAuthConfig, McpServerConfig, McpTool, McpToolContent,
-    McpToolResult, Transport,
+    McpToolExposure as ContractExposure, McpToolResult, McpToolSourceSpec, Transport,
 };
 use tinytools::{PermissionLevel, Tool, ToolExposure};
 
@@ -327,6 +327,39 @@ fn a_tool_declares_a_remote_effectful_call_grouped_by_server() {
     assert!(!schema.to_string().contains("<|im_end|>"));
     assert_eq!(tool.legacy_name(), legacy_tool_name("id-1", "readGoals"));
     assert_eq!(tool.clone().renamed("old").name(), "old");
+}
+
+#[test]
+fn the_optional_adapter_uses_the_contract_tool_presentation_pipeline() {
+    let sources = [McpToolSourceSpec {
+        server_id: "id-1".into(),
+        label: "@acme/ticktick-mcp".into(),
+        family: "@acme/ticktick-mcp".into(),
+        display_name: "TickTick".into(),
+        tools: vec![McpTool {
+            name: "readGoals".into(),
+            description: Some("Reads goals".into()),
+            input_schema: json!({ "properties": { "list": { "type": "string" } } }),
+        }],
+        default_exposure: ContractExposure::Deferred,
+        direct_tools: vec!["readGoals".into()],
+    }];
+
+    let prepared = super::prepare_agent_tools(&sources);
+
+    assert_eq!(prepared.len(), 1);
+    assert_eq!(
+        prepared[0].name,
+        disambiguated_tool_name("id-1", "@acme/ticktick-mcp", "readGoals")
+    );
+    assert_eq!(
+        prepared[0].legacy_name,
+        legacy_tool_name("id-1", "readGoals")
+    );
+    assert_eq!(prepared[0].remote_name, "readGoals");
+    assert!(!prepared[0].deferred);
+    assert_eq!(prepared[0].parameters["type"], "object");
+    assert_eq!(prepared[0].tags[0], "mcp.server:@acme/ticktick-mcp");
 }
 
 #[test]

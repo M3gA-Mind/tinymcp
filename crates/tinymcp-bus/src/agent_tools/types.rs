@@ -81,6 +81,67 @@ pub struct AgentToolSpec {
     pub deferred: bool,
 }
 
+/// How an advertised MCP tool enters the model catalogue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum McpToolExposure {
+    /// Include the tool in the regular model tool list.
+    Direct,
+    /// Discover the tool through tool search.
+    Deferred,
+}
+
+/// One server's input to module-owned MCP tool presentation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct McpToolSourceSpec {
+    /// Stable identifier used when invoking the server.
+    pub server_id: String,
+    /// Label used to build the provider-safe tool name.
+    pub label: String,
+    /// Search family associated with the server.
+    pub family: String,
+    /// Human-readable name included in the model-facing description.
+    pub display_name: String,
+    /// Remote tools after host policy filters them.
+    pub tools: Vec<crate::McpTool>,
+    /// Default exposure for tools not named in `direct_tools`.
+    pub default_exposure: McpToolExposure,
+    /// Remote tool names that must always be directly exposed.
+    #[serde(default)]
+    pub direct_tools: Vec<String>,
+}
+
+/// One bounded request to prepare model-facing per-server tool declarations.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PrepareAgentToolsRequest {
+    /// Server sources that already passed host policy filtering.
+    pub sources: Vec<McpToolSourceSpec>,
+}
+
+/// One module-prepared per-server tool declaration for a host adapter.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct McpToolPresentation {
+    /// Stable provider-safe name used in prompts and transcripts.
+    pub name: String,
+    /// Earlier name retained for transcript replay compatibility.
+    pub legacy_name: String,
+    /// Stable identifier used when invoking the server.
+    pub server_id: String,
+    /// Name of the remote tool on the MCP server.
+    pub remote_name: String,
+    /// Sanitized family used by tool search.
+    pub family: String,
+    /// Sanitized description shown to the model.
+    pub description: String,
+    /// Normalized schema shown to the model.
+    pub parameters: Value,
+    /// Whether this tool is found through search rather than sent up front.
+    pub deferred: bool,
+    /// Policy tags, including the configured server label and remote tool.
+    pub tags: Vec<String>,
+}
+
 /// The `kind` discriminator an [`McpCallOutcome`] carries.
 ///
 /// A host that receives a tool result's metadata as an untyped JSON object

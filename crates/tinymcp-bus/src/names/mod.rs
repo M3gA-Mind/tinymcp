@@ -65,6 +65,9 @@ pub mod methods {
     pub const CONFIG_DOCUMENT_GET: &str = "ConfigDocumentGet";
     /// Validates and applies a replacement MCP configuration document.
     pub const CONFIG_DOCUMENT_APPLY: &str = "ConfigDocumentApply";
+    /// Checks whether persisted state exists for a directory without opening
+    /// or creating its store.
+    pub const HAS_STORED_STATE: &str = "HasStoredState";
 
     // -- Registry: installs -------------------------------------------------
 
@@ -182,6 +185,8 @@ pub mod methods {
     pub const DISPLAY_REMOTE_TOOL: &str = "DisplayRemoteTool";
     /// Module-owned `RenderToolOutput` metadata operation.
     pub const RENDER_TOOL_OUTPUT: &str = "RenderToolOutput";
+    /// Builds stable model-facing declarations for host-screened MCP tools.
+    pub const PREPARE_AGENT_TOOLS: &str = "PrepareAgentTools";
 
     // -- Directories --------------------------------------------------------
 
@@ -211,6 +216,7 @@ pub const METHODS: &[&str] = &[
     // User configuration document
     methods::CONFIG_DOCUMENT_GET,
     methods::CONFIG_DOCUMENT_APPLY,
+    methods::HAS_STORED_STATE,
     // Registry: installs
     methods::INSTALLED_LIST,
     methods::INSTALL,
@@ -260,6 +266,7 @@ pub const METHODS: &[&str] = &[
     methods::NORMALIZE_TOOL_ARGUMENTS,
     methods::DISPLAY_REMOTE_TOOL,
     methods::RENDER_TOOL_OUTPUT,
+    methods::PREPARE_AGENT_TOOLS,
     // Directories
     methods::OPEN,
     methods::OPEN_CONFIGURED,

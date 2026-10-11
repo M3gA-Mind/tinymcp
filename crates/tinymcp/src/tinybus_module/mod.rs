@@ -106,6 +106,8 @@ export_module! {
         "RegistrySettingsSet",
         "ConfigDocumentGet",
         "ConfigDocumentApply",
+        "HasStoredState",
+        "PrepareAgentTools",
         "InstalledList",
         "Install",
         "Uninstall",

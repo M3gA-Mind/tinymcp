@@ -32,21 +32,27 @@
 
 pub mod bridge;
 pub mod invoker;
-pub mod naming;
 mod result;
-mod schema;
-mod scrub;
 mod source;
 mod tool;
 
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use tinymcp_bus::{McpToolPresentation, McpToolSourceSpec};
+
+pub use crate::agent_tools::naming;
+pub use crate::agent_tools::schema::tool_parameters;
+pub use crate::agent_tools::scrub::{REDACTED, SecretScrubber};
+mod schema {
+    pub(super) use crate::agent_tools::schema::tool_parameters;
+}
+mod scrub {
+    pub(super) use crate::agent_tools::scrub::*;
+}
 pub use bridge::{ActGate, McpCallTool, McpListServersTool, McpListToolsTool};
 pub use invoker::McpToolInvoker;
 pub use result::{MAX_LLM_BLOCK_BYTES, tool_result, tool_result_for};
-pub use schema::tool_parameters;
-pub use scrub::{REDACTED, SecretScrubber};
 pub use source::{McpExposure, McpToolSource};
 pub use tool::McpServerTool;
 
@@ -98,6 +104,16 @@ pub fn tools_for(
     built
 }
 
+/// Prepares stable model-facing metadata for host-screened MCP server tools.
+///
+/// Delegates to the always-available owner pipeline, so module calls and the
+/// optional `tinytools::Tool` adapter share names, schemas and exposure rules.
+/// The result contains declarations only; host policy owns their execution.
+#[must_use]
+pub fn prepare_agent_tools(sources: &[McpToolSourceSpec]) -> Vec<McpToolPresentation> {
+    crate::agent_tools::prepare_agent_tools(sources)
+}
+
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod test;
@@ -111,6 +127,3 @@ mod bridge_test;
 #[cfg(test)]
 #[path = "envelope_tests.rs"]
 mod envelope_test;
-#[cfg(test)]
-#[path = "scrub_tests.rs"]
-mod scrub_test;
