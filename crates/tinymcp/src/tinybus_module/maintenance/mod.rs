@@ -26,8 +26,10 @@
 //! [`Pacing::Interval`]; a test uses [`Pacing::Driven`] and sends each cycle
 //! itself, so nothing waits on a wall clock.
 
+mod events;
 mod types;
 
+pub(in crate::tinybus_module) use events::MAX_DRAIN;
 pub(super) use types::Maintenance;
 
 #[cfg(test)]
