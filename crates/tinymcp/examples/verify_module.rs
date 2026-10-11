@@ -367,10 +367,14 @@ async fn verify_metadata_operations(
             },),
         )
         .await;
-    if !matches!(
-        configured,
-        Err(tinybus::Error::ConfidentialityRequired { .. })
-    ) {
+    let refused_ordinary_delivery = match configured {
+        Err(tinybus::Error::ConfidentialityRequired { .. }) => true,
+        Err(tinybus::Error::MethodFailed { name, .. }) => {
+            name == tinybus::Error::CONFIDENTIALITY_REQUIRED
+        }
+        _ => false,
+    };
+    if !refused_ordinary_delivery {
         return Err(io::Error::other(
             "compiled configured-call member did not refuse ordinary delivery",
         )
