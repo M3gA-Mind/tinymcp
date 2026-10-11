@@ -48,14 +48,16 @@ impl LifecycleCallbacks {
         if let Some(on_complete) = self.on_complete.take() {
             on_complete();
         }
-        set_status(self.transition.take(), TransitionStatus::Complete);
     }
 
     fn failed(&mut self) {
         if let Some(on_failure) = self.on_failure.take() {
             on_failure();
         }
-        set_status(self.transition.take(), TransitionStatus::Failed);
+    }
+
+    fn publish_status(&mut self, status: TransitionStatus) {
+        set_status(self.transition.take(), status);
     }
 }
 
@@ -759,12 +761,16 @@ async fn schedule_serve(
             match result {
                 Ok(()) => {
                     callbacks.completed();
+                    drop(gate);
+                    callbacks.publish_status(TransitionStatus::Complete);
                 }
                 Err(error) => {
-                    report_serve_failure(&mut callbacks, error);
+                    callbacks.failed();
+                    tracing::error!("could not serve a directory lifecycle transition: {error}");
+                    drop(gate);
+                    callbacks.publish_status(TransitionStatus::Failed);
                 }
             }
-            drop(gate);
             return;
         }
     }
@@ -779,21 +785,20 @@ async fn schedule_serve(
                     replaced.shutdown().await;
                 }
                 callbacks.completed();
+                drop(gate);
+                callbacks.publish_status(TransitionStatus::Complete);
             }
             Err(error) => {
                 if let Some(replaced) = &replaced {
                     replaced.resume_dispatch().await;
                 }
-                report_serve_failure(&mut callbacks, error);
+                callbacks.failed();
+                tracing::error!("could not serve a directory lifecycle transition: {error}");
+                drop(gate);
+                callbacks.publish_status(TransitionStatus::Failed);
             }
         }
-        drop(gate);
     });
-}
-
-fn report_serve_failure(callbacks: &mut LifecycleCallbacks, error: impl std::fmt::Display) {
-    callbacks.failed();
-    tracing::error!("could not serve a directory lifecycle transition: {error}");
 }
 
 fn schedule_unserve(
@@ -812,13 +817,16 @@ fn schedule_unserve(
                 old_service.shutdown().await;
             }
             callbacks.completed();
+            drop(gate);
+            callbacks.publish_status(TransitionStatus::Complete);
         } else {
             if let Some(old_service) = &old_service {
                 old_service.resume_dispatch().await;
             }
             callbacks.failed();
+            drop(gate);
+            callbacks.publish_status(TransitionStatus::Failed);
         }
-        drop(gate);
     });
 }
 

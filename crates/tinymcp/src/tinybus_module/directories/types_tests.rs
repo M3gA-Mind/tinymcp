@@ -40,7 +40,8 @@ fn failed_serve_marks_transition_failed_and_runs_the_failure_hook() {
         move || failure_hook.store(true, Ordering::Release),
     );
 
-    report_serve_failure(&mut callbacks, "fixture failure");
+    callbacks.failed();
+    callbacks.publish_status(TransitionStatus::Failed);
 
     assert!(!complete.load(Ordering::Acquire));
     assert!(failed.load(Ordering::Acquire));
