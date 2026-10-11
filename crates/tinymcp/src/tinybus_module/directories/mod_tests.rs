@@ -1188,10 +1188,10 @@ async fn opening_a_directory_propagates_store_creation_errors() {
 #[tokio::test]
 async fn an_absolute_open_matches_a_relative_load_time_directory() {
     let relative_root = tempfile::tempdir_in(".").unwrap();
-    let absolute = relative_root.path().canonicalize().unwrap();
-    let relative = absolute
-        .strip_prefix(std::env::current_dir().unwrap())
-        .unwrap();
+    let relative = std::path::Path::new(relative_root.path().file_name().unwrap());
+    // Keep the same lexical spelling as load-time normalization. Windows
+    // canonicalization adds a verbatim prefix, and Unix may resolve symlinks.
+    let absolute = std::env::current_dir().unwrap().join(relative);
     let connection = serve_root(&config_in(relative)).await;
     let path: String = call(
         &connection,
