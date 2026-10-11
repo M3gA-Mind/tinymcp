@@ -19,8 +19,9 @@
 /// 1.8 adds module-owned server sessions and host callback operations;
 /// 1.9 adds shared server DTOs and bounded metadata processing operations;
 /// 1.10 adds per-directory client configuration through `OpenConfigured`;
-/// 1.11 adds explicit directory close and observable lifecycle transitions.
-pub const CONTRACT_VERSION: (u32, u32) = (1, 11);
+/// 1.11 adds explicit directory close and observable lifecycle transitions;
+/// 1.12 adds no-dial dynamic and static tool-cache reads.
+pub const CONTRACT_VERSION: (u32, u32) = (1, 12);
 
 /// Returns whether a host holding [`CONTRACT_VERSION`] can bind to a module
 /// reporting `module`.
@@ -34,7 +35,7 @@ pub const CONTRACT_VERSION: (u32, u32) = (1, 11);
 /// ```
 /// # use tinymcp_bus::{is_compatible, CONTRACT_VERSION};
 /// assert!(is_compatible(CONTRACT_VERSION));
-/// assert!(is_compatible((1, 11)));
+/// assert!(is_compatible((1, 12)));
 /// assert!(!is_compatible((2, 0)));
 /// ```
 #[must_use]

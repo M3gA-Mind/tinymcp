@@ -10,7 +10,136 @@ use rusqlite::{Connection, OptionalExtension as _, Row, params};
 use serde_json::Value;
 
 use crate::error::{Error, Result};
+use std::io::{Read as _, Write as _};
 use tinymcp_bus::{CommandKind, InstalledServer, Transport};
+
+const CACHE_FINGERPRINT_KEY_BYTES: usize = 32;
+
+pub(super) fn load_cache_fingerprint_key(
+    database_path: &Path,
+) -> Result<[u8; CACHE_FINGERPRINT_KEY_BYTES]> {
+    if database_path == Path::new(":memory:") {
+        return Ok(new_cache_fingerprint_key());
+    }
+
+    let key_path = database_path.with_extension("fingerprint-key");
+    if key_path.exists() {
+        return read_cache_fingerprint_key(&key_path);
+    }
+
+    let key = new_cache_fingerprint_key();
+    let temp_path = key_path.with_file_name(format!(
+        "{}.{}.tmp",
+        key_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("mcp-cache-fingerprint-key"),
+        uuid::Uuid::new_v4().simple()
+    ));
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(0o600);
+    }
+    let mut temp_file = options.open(&temp_path).map_err(|source| Error::StoreIo {
+        path: temp_path.clone(),
+        source: Box::new(source),
+    })?;
+    if let Err(source) = temp_file
+        .write_all(&key)
+        .and_then(|()| temp_file.sync_all())
+    {
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(Error::StoreIo {
+            path: temp_path,
+            source: Box::new(source),
+        });
+    }
+    drop(temp_file);
+
+    match std::fs::hard_link(&temp_path, &key_path) {
+        Ok(()) => {
+            let _ = std::fs::remove_file(&temp_path);
+            Ok(key)
+        }
+        Err(source) if source.kind() == std::io::ErrorKind::AlreadyExists => {
+            let _ = std::fs::remove_file(&temp_path);
+            read_cache_fingerprint_key(&key_path)
+        }
+        Err(source) => {
+            let _ = std::fs::remove_file(&temp_path);
+            Err(Error::StoreIo {
+                path: key_path,
+                source: Box::new(source),
+            })
+        }
+    }
+}
+
+fn read_cache_fingerprint_key(path: &Path) -> Result<[u8; CACHE_FINGERPRINT_KEY_BYTES]> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let file = options.open(path).map_err(|source| Error::StoreIo {
+        path: path.to_path_buf(),
+        source: Box::new(source),
+    })?;
+    let metadata = file.metadata().map_err(|source| Error::StoreIo {
+        path: path.to_path_buf(),
+        source: Box::new(source),
+    })?;
+    if !metadata.file_type().is_file() {
+        return Err(Error::StoreIo {
+            path: path.to_path_buf(),
+            source: Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "cache fingerprint key is not a regular file",
+            )),
+        });
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err(Error::StoreIo {
+                path: path.to_path_buf(),
+                source: Box::new(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "cache fingerprint key is accessible to other users",
+                )),
+            });
+        }
+    }
+
+    let mut bytes = Vec::with_capacity(CACHE_FINGERPRINT_KEY_BYTES + 1);
+    file.take((CACHE_FINGERPRINT_KEY_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|source| Error::StoreIo {
+            path: path.to_path_buf(),
+            source: Box::new(source),
+        })?;
+    let key: [u8; CACHE_FINGERPRINT_KEY_BYTES] = bytes.try_into().map_err(|_| Error::StoreIo {
+        path: path.to_path_buf(),
+        source: Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "cache fingerprint key has the wrong length",
+        )),
+    })?;
+    Ok(key)
+}
+
+fn new_cache_fingerprint_key() -> [u8; CACHE_FINGERPRINT_KEY_BYTES] {
+    let mut key = [0; CACHE_FINGERPRINT_KEY_BYTES];
+    key[..16].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
+    key[16..].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
+    key
+}
 
 /// The directory the database file lives in, under the host's data directory.
 const DB_DIR: &str = "mcp_clients";
@@ -29,18 +158,26 @@ const SERVER_COLUMNS: &str = "server_id, qualified_name, display_name, descripti
 /// Persistence for installed servers, their credentials, and the browse cache.
 ///
 /// Holds one connection for its lifetime. See the module documentation for why.
-#[derive(Debug)]
 pub struct Store {
     pub(super) connection: Mutex<Connection>,
+    cache_fingerprint_key: [u8; CACHE_FINGERPRINT_KEY_BYTES],
+}
+
+impl std::fmt::Debug for Store {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.debug_struct("Store").finish_non_exhaustive()
+    }
 }
 
 impl Store {
-    /// Opens, creating the directory and file if they do not exist.
+    /// Opens the store, creating its directory, database, and private cache-key
+    /// sidecar when they do not exist.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Store`] when the directory cannot be created, the file
-    /// cannot be opened, or the schema cannot be brought up to date.
+    /// Returns [`Error::StoreIo`] when the directory or cache-key sidecar cannot
+    /// be created or read, or the database cannot be opened. Returns
+    /// [`Error::Store`] when the schema cannot be brought up to date.
     pub fn open(data_dir: &Path) -> Result<Self> {
         let directory = data_dir.join(DB_DIR);
         std::fs::create_dir_all(&directory).map_err(|source| Error::StoreIo {
@@ -57,6 +194,7 @@ impl Store {
     ///
     /// As [`Self::open`], minus the directory creation.
     pub fn open_file(path: &Path) -> Result<Self> {
+        let cache_fingerprint_key = load_cache_fingerprint_key(path)?;
         let connection = Connection::open(path).map_err(|source| {
             Error::store(format!("opening the store at {}", path.display()), source)
         })?;
@@ -65,7 +203,12 @@ impl Store {
 
         Ok(Self {
             connection: Mutex::new(connection),
+            cache_fingerprint_key,
         })
+    }
+
+    pub(super) fn keyed_cache_fingerprint(&self, fingerprint: &str) -> String {
+        super::tool_cache::keyed_fingerprint(&self.cache_fingerprint_key, fingerprint)
     }
 
     /// Opens an in-memory store, for tests and for a host that wants no file.

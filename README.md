@@ -397,3 +397,8 @@ nonblocking status query. Competing lifecycle mutations fail quickly while a
 transition is pending, active reservations remain counted through cleanup, and
 object path ids are never reused. Hosts send `OpenConfigured` over TinyBus's
 confidential-call path; request Debug output omits the path and client fields.
+Contract 1.12 adds no-dial `CachedOverview` for enabled dynamic installs and
+`StaticCachedListTools` for a host-declared server. Cache rows are scoped to the
+current server definition and filtered through its current allow and deny
+rules. `StaticListTools` keeps its wire response and updates the cache after a
+successful listing.

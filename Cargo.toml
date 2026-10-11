@@ -115,6 +115,8 @@ dirs = "7"
 # SHA-256: PKCE code challenges in the authorization-code flow, and the digest
 # in an action tool's name (`tinymcp-bus`'s `agent_tools::searchable_name`).
 sha2 = "0.11"
+# Unix O_NOFOLLOW when reading the persisted cache fingerprint key.
+libc = "0.2"
 # Install identifiers.
 uuid = { version = "1", features = ["v4"] }
 

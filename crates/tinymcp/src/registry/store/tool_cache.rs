@@ -16,8 +16,9 @@
 //!
 //! # Keyed by a fingerprint of the definition
 //!
-//! Each row carries a digest of what the server *is* — transport, endpoint,
-//! command, arguments, and the names (never the values) of its credentials.
+//! Each row carries a keyed digest of the server definition. The input includes
+//! credential values so rotation invalidates cached tools, while the per-store
+//! key prevents the database digest from becoming an offline credential oracle.
 //! A read whose fingerprint differs misses, so editing a server's definition
 //! can never surface the old server's tools under the new one.
 
@@ -49,10 +50,9 @@ pub fn static_cache_key(name: &str) -> String {
 
 /// The fingerprint of an installed server's definition.
 ///
-/// Covers everything that decides *which* server a connection reaches.
-/// Credential values are deliberately absent: they rotate without changing
-/// the server, and they must never be hashed into anything that is stored
-/// beside a readable key.
+/// Covers connection identity and configuration, including credential values.
+/// The raw digest is used only as input to the per-store keyed cache identity;
+/// it is never persisted directly.
 #[must_use]
 pub fn installed_fingerprint(server: &InstalledServer) -> String {
     let mut env_keys = server.env_keys.clone();
@@ -76,6 +76,31 @@ pub(crate) fn fingerprint(parts: &[&str]) -> String {
         hasher.update(part.as_bytes());
     }
     hex(&hasher.finalize())
+}
+
+/// A keyed cache identity, so the database does not become an offline oracle
+/// for low-entropy credentials that participate in the caller's definition
+/// fingerprint.
+pub(super) fn keyed_fingerprint(key: &[u8; 32], value: &str) -> String {
+    use sha2::{Digest as _, Sha256};
+
+    const BLOCK_BYTES: usize = 64;
+    let mut inner_pad = [0x36; BLOCK_BYTES];
+    let mut outer_pad = [0x5c; BLOCK_BYTES];
+    for (index, byte) in key.iter().enumerate() {
+        inner_pad[index] ^= byte;
+        outer_pad[index] ^= byte;
+    }
+
+    let mut inner = Sha256::new();
+    inner.update(inner_pad);
+    inner.update(value.as_bytes());
+    let inner_digest = inner.finalize();
+
+    let mut outer = Sha256::new();
+    outer.update(outer_pad);
+    outer.update(inner_digest);
+    hex(&outer.finalize())
 }
 
 /// Lower-case hex of `bytes`.
@@ -102,6 +127,7 @@ impl Store {
         tools: &[McpTool],
     ) -> Result<()> {
         let encoded = serde_json::to_string(tools)?;
+        let fingerprint = self.keyed_cache_fingerprint(fingerprint);
         self.connection
             .lock()
             .execute(
@@ -125,6 +151,7 @@ impl Store {
     /// Returns [`Error::Store`] when the query fails or the row cannot be
     /// decoded.
     pub fn cached_tools(&self, server_key: &str, fingerprint: &str) -> Result<Option<CachedTools>> {
+        let fingerprint = self.keyed_cache_fingerprint(fingerprint);
         let row: Option<(String, String, i64)> = self
             .connection
             .lock()

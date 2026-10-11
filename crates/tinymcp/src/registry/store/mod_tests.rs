@@ -91,11 +91,138 @@ fn tool_cache_round_trips_and_requires_the_same_fingerprint() {
 }
 
 #[test]
+fn persisted_tool_cache_fingerprints_are_keyed_and_stable_after_reopen() {
+    let directory = tempfile::tempdir().unwrap();
+    let fingerprint = crate::registry::store::fingerprint(&["basic", "user", "password123"]);
+    let tools = [McpTool::new("search")];
+    let store = Store::open(directory.path()).unwrap();
+    store
+        .put_cached_tools("static:weather", &fingerprint, &tools)
+        .unwrap();
+
+    let persisted: String = store
+        .connection
+        .lock()
+        .query_row(
+            "SELECT fingerprint FROM mcp_tool_cache WHERE server_key = ?1",
+            ["static:weather"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_ne!(persisted, fingerprint);
+    assert_ne!(
+        persisted,
+        crate::registry::store::fingerprint(&[&fingerprint]),
+        "the persisted value must not be an unkeyed digest of guessable input"
+    );
+    drop(store);
+
+    let reopened = Store::open(directory.path()).unwrap();
+    assert_eq!(format!("{reopened:?}"), "Store { .. }");
+    let cached = reopened
+        .cached_tools("static:weather", &fingerprint)
+        .unwrap()
+        .unwrap();
+    assert_eq!(cached.tools, tools);
+    let rotated = crate::registry::store::fingerprint(&["basic", "user", "password456"]);
+    assert!(
+        reopened
+            .cached_tools("static:weather", &rotated)
+            .unwrap()
+            .is_none(),
+        "credential changes must still invalidate the persisted catalog"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn cache_fingerprint_key_is_private_and_refuses_symlinks() {
+    use std::os::unix::fs::{PermissionsExt as _, symlink};
+
+    let directory = tempfile::tempdir().unwrap();
+    let database = Store::path_for(directory.path());
+    std::fs::create_dir_all(database.parent().unwrap()).unwrap();
+    let key_path = database.with_extension("fingerprint-key");
+    let key = super::types::load_cache_fingerprint_key(&database).unwrap();
+    assert_ne!(key, [0; 32]);
+    assert_eq!(
+        std::fs::metadata(&key_path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+
+    let linked_directory = tempfile::tempdir().unwrap();
+    let linked_database = Store::path_for(linked_directory.path());
+    std::fs::create_dir_all(linked_database.parent().unwrap()).unwrap();
+    let linked_key_path = linked_database.with_extension("fingerprint-key");
+    let target = linked_directory.path().join("target-key");
+    std::fs::write(&target, key).unwrap();
+    symlink(&target, &linked_key_path).unwrap();
+    assert!(super::types::load_cache_fingerprint_key(&linked_database).is_err());
+
+    let shared_directory = tempfile::tempdir().unwrap();
+    let shared_database = Store::path_for(shared_directory.path());
+    std::fs::create_dir_all(shared_database.parent().unwrap()).unwrap();
+    let shared_key_path = shared_database.with_extension("fingerprint-key");
+    std::fs::write(&shared_key_path, key).unwrap();
+    std::fs::set_permissions(&shared_key_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(super::types::load_cache_fingerprint_key(&shared_database).is_err());
+}
+
+#[test]
+fn concurrent_store_opens_share_one_cache_fingerprint_key() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = Store::path_for(directory.path());
+    std::fs::create_dir_all(database.parent().unwrap()).unwrap();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(4));
+    let threads: Vec<_> = (0..4)
+        .map(|_| {
+            let database = database.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                super::types::load_cache_fingerprint_key(&database).unwrap()
+            })
+        })
+        .collect();
+    let keys: Vec<_> = threads
+        .into_iter()
+        .map(|thread| thread.join().unwrap())
+        .collect();
+    assert!(keys.iter().all(|key| key == &keys[0]));
+}
+
+#[test]
+fn keyed_cache_fingerprint_matches_the_hmac_sha256_vector() {
+    assert_eq!(
+        super::tool_cache::keyed_fingerprint(&[11; 32], "Hi There"),
+        "198a607eb44bfbc69903a0f1cf2bbdc5ba0aa3f3d9ae3c1c7a3b1696a0b68cf7"
+    );
+}
+
+#[test]
+fn cache_fingerprint_key_creation_requires_an_existing_store_directory() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = Store::path_for(directory.path());
+    assert!(super::types::load_cache_fingerprint_key(&database).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn cache_fingerprint_key_with_invalid_length_is_rejected() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = Store::path_for(directory.path());
+    std::fs::create_dir_all(database.parent().unwrap()).unwrap();
+    std::fs::write(database.with_extension("fingerprint-key"), [0; 33]).unwrap();
+    assert!(super::types::load_cache_fingerprint_key(&database).is_err());
+}
+
+#[test]
 fn tool_cache_rejects_corrupt_json() {
     let (_directory, store) = store();
+    let fingerprint = store.keyed_cache_fingerprint("f");
     store.connection.lock().execute(
-        "INSERT INTO mcp_tool_cache (server_key, fingerprint, tools_json, cached_at) VALUES ('srv-1', 'f', 'bad-json', 1)",
-        [],
+        "INSERT INTO mcp_tool_cache (server_key, fingerprint, tools_json, cached_at) VALUES ('srv-1', ?1, 'bad-json', 1)",
+        [fingerprint],
     ).unwrap();
     assert!(store.cached_tools("srv-1", "f").is_err());
 }

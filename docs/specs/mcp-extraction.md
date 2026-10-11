@@ -214,6 +214,13 @@ call the new members.
   state and liveness probe are module-internal.
 - **`ConnectedOverview()`** returns the connected servers' identities and tools
   in one call, replacing an N+1 over `Status`, `InstalledList` and `ListTools`.
+- **`CachedOverview()`** preserves the host's boot/resume tool surface without
+  dialing: it returns live listings for connected installs and fingerprinted
+  cache rows for enabled disconnected installs. `ConnectedOverview()` remains
+  live-only.
+- **`StaticCachedListTools(server)`** reads a static server's persisted,
+  definition-keyed listing without dialing. `StaticListTools(server)` keeps
+  its existing wire response and refreshes that cache after a successful list.
 - **`ServerDetail`, `AuthDetection`, `AuthKind`** moved into `tinymcp-bus` so a
   host names the types the module returns. Serde forms are unchanged.
 - **`RegistrySearchCurated(query, page, page_size, {tag_official, official_first})`**

@@ -86,6 +86,9 @@ pub mod methods {
     /// server, which is an N+1 on a path a host runs whenever it builds a tool
     /// list.
     pub const CONNECTED_OVERVIEW: &str = "ConnectedOverview";
+    /// Reports every enabled installed server's live or persisted cached tools
+    /// without dialling an unconnected server.
+    pub const CACHED_OVERVIEW: &str = "CachedOverview";
     /// Discovers how to authenticate to a server that answered 401.
     pub const DETECT_AUTH: &str = "DetectAuth";
     /// Starts an OAuth authorization for a server that requires one.
@@ -127,6 +130,9 @@ pub mod methods {
     pub const STATIC_LIST: &str = "StaticList";
     /// Lists the tools one statically declared server advertises.
     pub const STATIC_LIST_TOOLS: &str = "StaticListTools";
+    /// Lists one statically declared server's persisted cached tools without
+    /// dialling it.
+    pub const STATIC_CACHED_LIST_TOOLS: &str = "StaticCachedListTools";
     /// Calls a tool on a statically declared server.
     pub const STATIC_CALL_TOOL: &str = "StaticCallTool";
 
@@ -200,6 +206,7 @@ pub const METHODS: &[&str] = &[
     methods::DISCONNECT,
     methods::STATUS,
     methods::CONNECTED_OVERVIEW,
+    methods::CACHED_OVERVIEW,
     methods::DETECT_AUTH,
     methods::OAUTH_BEGIN,
     methods::OAUTH_COMPLETE,
@@ -217,6 +224,7 @@ pub const METHODS: &[&str] = &[
     // Static servers
     methods::STATIC_LIST,
     methods::STATIC_LIST_TOOLS,
+    methods::STATIC_CACHED_LIST_TOOLS,
     methods::STATIC_CALL_TOOL,
     // Audit
     methods::AUDIT_RECORD_WRITE,

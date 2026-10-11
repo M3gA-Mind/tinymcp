@@ -48,7 +48,7 @@ fn configured_open_keeps_directory_and_client_config_together_on_the_wire() {
                 "client_identity": {
                     "name": "tinymcp",
                     "title": "TinyMCP Client",
-                    "version": "0.6.0"
+                    "version": env!("CARGO_PKG_VERSION")
                 },
                 "registry_auth": {
                     "smithery_api_key": null,

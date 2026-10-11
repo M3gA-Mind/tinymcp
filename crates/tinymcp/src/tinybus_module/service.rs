@@ -380,6 +380,14 @@ impl McpService {
         Ok(self.dynamic.connected_overview().await)
     }
 
+    /// `()`
+    async fn cached_overview(&self) -> tinybus::Result<Vec<ConnectedServerOverview>> {
+        self.dynamic
+            .cached_overview()
+            .await
+            .map_err(|error| Self::failed(&error))
+    }
+
     // -- authorization ------------------------------------------------------
 
     /// `(server_id)`
@@ -556,9 +564,20 @@ impl McpService {
         server: String,
     ) -> tinybus::Result<Vec<tinymcp_bus::McpRemoteTool>> {
         self.static_servers
-            .list_tools(&server)
+            .list_tools_caching(&server, self.dynamic.store())
             .await
             .map_err(|error| Self::failed(&error))
+    }
+
+    /// `(server)` — cached tools for the host's static server declaration.
+    async fn static_cached_list_tools(
+        &self,
+        server: String,
+    ) -> tinybus::Result<Option<Vec<McpTool>>> {
+        std::future::ready(()).await;
+        Ok(self
+            .static_servers
+            .cached_tools(&server, self.dynamic.store()))
     }
 
     /// `(server, tool, arguments)`

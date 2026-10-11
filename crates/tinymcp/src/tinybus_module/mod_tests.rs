@@ -1087,6 +1087,82 @@ async fn the_connected_overview_is_empty_before_anything_connects() {
 }
 
 #[tokio::test]
+async fn the_cached_overview_answers_without_dialling() {
+    let directory = tempfile::tempdir().unwrap();
+    let service = service_at(directory.path(), "http://127.0.0.1:1");
+
+    let overview = ok(&service, "CachedOverview", json!([])).await;
+
+    assert_eq!(overview, json!([]));
+}
+
+#[tokio::test]
+async fn the_cached_overview_replays_persisted_tools_without_dialling() {
+    let directory = tempfile::tempdir().unwrap();
+    let service = service_at(directory.path(), "http://127.0.0.1:1");
+    let server = remote_install("srv-1", "http://127.0.0.1:1");
+    let fingerprint = crate::registry::store::installed_fingerprint(&server);
+    service.dynamic().store().insert_server(&server).unwrap();
+    service
+        .dynamic()
+        .store()
+        .put_cached_tools(
+            &server.server_id,
+            &fingerprint,
+            &[tinymcp_bus::McpTool {
+                name: "forecast".into(),
+                description: Some("cached".into()),
+                input_schema: json!({"type": "object"}),
+            }],
+        )
+        .unwrap();
+
+    let overview = ok(&service, "CachedOverview", json!([])).await;
+
+    assert_eq!(overview[0]["server_id"], json!("srv-1"));
+    assert_eq!(overview[0]["tools"][0]["name"], json!("forecast"));
+}
+
+#[tokio::test]
+async fn static_cached_tools_survive_service_reopen_without_dialling() {
+    let directory = tempfile::tempdir().unwrap();
+    let (url, hits) = mock_mcp_server_counted().await;
+    let config = ModuleConfig {
+        data_dir: Some(directory.path().to_path_buf()),
+        client: McpClientConfig {
+            servers: vec![McpServerConfig {
+                name: "weather".into(),
+                endpoint: url,
+                ..McpServerConfig::default()
+            }],
+            ..McpClientConfig::default()
+        },
+    };
+    let service = McpService::new(&config).unwrap();
+
+    let listed = ok(
+        &service,
+        names::methods::STATIC_LIST_TOOLS,
+        json!(["weather"]),
+    )
+    .await;
+    assert_eq!(listed[0]["name"], json!("forecast"));
+    let calls_after_listing = hits.load(Ordering::SeqCst);
+    assert!(calls_after_listing > 0);
+
+    let service = McpService::new(&config).unwrap();
+    let cached = ok(&service, "StaticCachedListTools", json!(["weather"])).await;
+
+    assert_eq!(cached[0]["name"], json!("forecast"));
+    assert_eq!(cached[0]["description"], json!(null));
+    assert_eq!(
+        hits.load(Ordering::SeqCst),
+        calls_after_listing,
+        "cache read must not dial"
+    );
+}
+
+#[tokio::test]
 async fn the_connected_overview_lists_a_connected_server_with_its_tools() {
     let directory = tempfile::tempdir().unwrap();
     let url = mock_mcp_server().await;
@@ -1246,23 +1322,33 @@ async fn a_static_server_failure_carries_its_name_too() {
 
 /// Binds a loopback port and serves a working MCP server.
 async fn mock_mcp_server() -> String {
+    mock_mcp_server_counted().await.0
+}
+
+/// Binds a loopback MCP server and counts protocol requests.
+async fn mock_mcp_server_counted() -> (String, Arc<AtomicUsize>) {
+    let hits = Arc::new(AtomicUsize::new(0));
     let app = Router::new().route(
         "/",
-        axum::routing::post(|axum::Json(body): axum::Json<Value>| async move {
-            let method = body["method"].as_str().unwrap_or_default();
-            let result = if method == "initialize" {
-                json!({
-                    "protocolVersion": tinymcp_bus::LATEST_PROTOCOL_VERSION,
-                    "capabilities": {},
-                    "serverInfo": { "name": "working", "version": "1" },
-                })
-            } else {
-                json!({ "tools": [{ "name": "forecast" }] })
-            };
-            axum::Json(json!({ "jsonrpc": "2.0", "id": body["id"].clone(), "result": result }))
-        }),
-    );
-    format!("{}/", serve(app).await)
+        axum::routing::post(
+            |State(hits): State<Arc<AtomicUsize>>, axum::Json(body): axum::Json<Value>| async move {
+                hits.fetch_add(1, Ordering::SeqCst);
+                let method = body["method"].as_str().unwrap_or_default();
+                let result = if method == "initialize" {
+                    json!({
+                        "protocolVersion": tinymcp_bus::LATEST_PROTOCOL_VERSION,
+                        "capabilities": {},
+                        "serverInfo": { "name": "working", "version": "1" },
+                    })
+                } else {
+                    json!({ "tools": [{ "name": "forecast" }] })
+                };
+                axum::Json(json!({ "jsonrpc": "2.0", "id": body["id"].clone(), "result": result }))
+            },
+        ),
+    )
+    .with_state(Arc::clone(&hits));
+    (format!("{}/", serve(app).await), hits)
 }
 
 /// An enabled remote install pointing at `url`.

@@ -78,6 +78,7 @@ fn the_method_table_holds_every_declared_member() {
             methods::DISCONNECT,
             methods::STATUS,
             methods::CONNECTED_OVERVIEW,
+            methods::CACHED_OVERVIEW,
             methods::DETECT_AUTH,
             methods::OAUTH_BEGIN,
             methods::OAUTH_COMPLETE,
@@ -92,6 +93,7 @@ fn the_method_table_holds_every_declared_member() {
             methods::SETUP_INSTALL_AND_CONNECT,
             methods::STATIC_LIST,
             methods::STATIC_LIST_TOOLS,
+            methods::STATIC_CACHED_LIST_TOOLS,
             methods::STATIC_CALL_TOOL,
             methods::AUDIT_RECORD_WRITE,
             methods::AUDIT_LIST_WRITES,
@@ -140,6 +142,7 @@ fn the_static_members_are_named_as_a_family() {
     for method in [
         methods::STATIC_LIST,
         methods::STATIC_LIST_TOOLS,
+        methods::STATIC_CACHED_LIST_TOOLS,
         methods::STATIC_CALL_TOOL,
     ] {
         assert!(
@@ -164,6 +167,8 @@ fn the_members_added_for_hosts_dropping_the_path_dependency_are_pinned() {
     // Each is a string a host binds to, so a rename is a breaking change.
     assert_eq!(methods::OAUTH_COMPLETE, "OAuthComplete");
     assert_eq!(methods::CONNECTED_OVERVIEW, "ConnectedOverview");
+    assert_eq!(methods::CACHED_OVERVIEW, "CachedOverview");
+    assert_eq!(methods::STATIC_CACHED_LIST_TOOLS, "StaticCachedListTools");
     assert_eq!(methods::REGISTRY_SEARCH_CURATED, "RegistrySearchCurated");
     assert_eq!(methods::OPEN, "Open");
     assert_eq!(methods::OPEN_CONFIGURED, "OpenConfigured");
