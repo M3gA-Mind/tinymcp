@@ -349,7 +349,6 @@ impl McpServerRegistry {
                 source: match server.source {
                     McpRegistrySource::Config => "config",
                     McpRegistrySource::Host => "host",
-                    _ => "unknown",
                 }
                 .to_owned(),
             })
