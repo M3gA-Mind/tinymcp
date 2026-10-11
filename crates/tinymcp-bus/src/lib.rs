@@ -84,9 +84,9 @@ pub use audit::{
 };
 pub use auth::{AuthDetection, AuthKind};
 pub use config::{
-    HttpHeader, McpAuthConfig, McpClientConfig, McpClientIdentityConfig, McpProxyConfig,
-    McpRegistryAuthConfig, McpServerConfig, OpenConfiguredRequest, OpenConfiguredResponse,
-    TransitionStatus,
+    ConfiguredToolCallRequest, HttpHeader, McpAuthConfig, McpClientConfig, McpClientIdentityConfig,
+    McpProxyConfig, McpRegistryAuthConfig, McpServerConfig, OpenConfiguredRequest,
+    OpenConfiguredResponse, StaticServerSummary, TransitionStatus,
 };
 pub use config_document::{AppliedServer, ConfigApplyReport, ConfigApplyResponse};
 pub use method::{
@@ -116,10 +116,11 @@ pub use version::{CONTRACT_VERSION, is_compatible};
 pub use supervisor::{ProbeOutcome, ServerRef, SupervisorBatch, SupervisorEvent, TickReport};
 
 pub use server::{
-    ServerCallback, ServerHostCall, ServerHostReply, ServerHttpResponseMetadata,
-    ServerHttpSessionConfig, ServerHttpSessionMethod, ServerHttpSessionRequest, ServerInput,
-    ServerOperationRef, ServerOperationSnapshot, ServerOperationState, ServerSessionConfig,
-    ServerSessionMetadata,
+    ServerArgumentRule, ServerArgumentsValidation, ServerCallback, ServerHostCall, ServerHostReply,
+    ServerHttpResponseMetadata, ServerHttpSessionConfig, ServerHttpSessionMethod,
+    ServerHttpSessionRequest, ServerInput, ServerOperationRef, ServerOperationSnapshot,
+    ServerOperationState, ServerSessionConfig, ServerSessionMetadata,
+    ValidateServerArgumentsRequest,
 };
 
 pub use server::{

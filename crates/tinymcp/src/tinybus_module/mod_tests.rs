@@ -88,6 +88,9 @@ fn every_served_member_is_reachable_by_its_contract_constant() {
         names::methods::OPEN,
         names::methods::SETUP_INSTALL_AND_CONNECT,
         names::methods::STATIC_CALL_TOOL,
+        names::methods::STATIC_SERVER_SUMMARIES,
+        names::methods::CONFIGURED_TOOL_CALL,
+        names::methods::VALIDATE_SERVER_ARGUMENTS,
         names::methods::AUDIT_LIST_WRITES,
         names::methods::CONFIG_DOCUMENT_GET,
         names::methods::CONFIG_DOCUMENT_APPLY,
@@ -963,6 +966,230 @@ async fn the_static_list_names_what_the_host_declared() {
     assert_eq!(
         ok(&service, names::methods::STATIC_LIST, json!([])).await,
         json!(["weather"])
+    );
+}
+
+#[tokio::test]
+async fn static_server_summaries_keep_legacy_fields_and_redact_endpoint_secrets() {
+    let service = McpService::new(&ModuleConfig {
+        data_dir: None,
+        client: McpClientConfig {
+            servers: vec![McpServerConfig {
+                name: "weather".into(),
+                endpoint: "https://user:pass@example.test/mcp?token=secret#fragment".into(),
+                description: Some("Weather lookup".into()),
+                timeout_secs: 17,
+                allowed_tools: vec!["forecast".into()],
+                disallowed_tools: vec!["delete".into()],
+                auth: tinymcp_bus::McpAuthConfig::BearerToken {
+                    token: "summary-secret".into(),
+                },
+                ..McpServerConfig::default()
+            }],
+            ..McpClientConfig::default()
+        },
+    })
+    .unwrap();
+
+    let summaries = ok(&service, names::methods::STATIC_SERVER_SUMMARIES, json!([])).await;
+    assert_eq!(
+        summaries,
+        json!([{
+            "name": "weather",
+            "endpoint": "https://example.test/mcp",
+            "description": "Weather lookup",
+            "timeout_secs": 17,
+            "allowed_tools": ["forecast"],
+            "disallowed_tools": ["delete"],
+            "auth_configured": true,
+            "auth_kind": "bearer_token",
+            "source": "config"
+        }])
+    );
+    let serialized = summaries.to_string();
+    for secret in ["user", "pass", "token=secret", "fragment", "summary-secret"] {
+        assert!(
+            !serialized.contains(secret),
+            "leaked {secret}: {serialized}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn configured_tool_call_does_not_register_the_one_shot_server() {
+    let service = service();
+    let call: tinymcp_bus::ClassifiedStaticToolCall = serde_json::from_value(
+        ok(
+            &service,
+            names::methods::CONFIGURED_TOOL_CALL,
+            json!([{
+                "server": {
+                    "name": "docs",
+                    "endpoint": "not a URL?token=one-shot-secret",
+                    "enabled": true,
+                    "timeout_secs": 4
+                },
+                "tool": "search",
+                "arguments": {"query": "mcp"}
+            }]),
+        )
+        .await,
+    )
+    .expect("classified call reply");
+
+    assert!(!call.outcome.ok);
+    assert!(call.error_message.is_some());
+    let error = call.error_message.unwrap();
+    assert!(!error.contains("one-shot-secret"), "{error}");
+    assert_eq!(
+        ok(&service, names::methods::STATIC_LIST, json!([])).await,
+        json!([])
+    );
+}
+
+#[tokio::test]
+async fn configured_tool_call_runs_confidentially_without_registering_server() {
+    use tinybus::{Connection, broker::Broker, module::ModuleHost, transport::memory::MemoryBus};
+    use tinymcp_bus::{ClassifiedStaticToolCall, ConfiguredToolCallRequest};
+
+    let hits = Arc::new(AtomicUsize::new(0));
+    let app = Router::new()
+        .route(
+            "/",
+            post(
+                |State(hits): State<Arc<AtomicUsize>>, axum::Json(body): axum::Json<Value>| async move {
+                    hits.fetch_add(1, Ordering::SeqCst);
+                    let method = body["method"].as_str().unwrap_or_default();
+                    let result = match method {
+                        "initialize" => json!({
+                            "protocolVersion": tinymcp_bus::LATEST_PROTOCOL_VERSION,
+                            "capabilities": {},
+                            "serverInfo": { "name": "one-shot", "version": "1" },
+                        }),
+                        "tools/call" => json!({
+                            "content": [{"type":"text", "text":"one-shot-result"}],
+                            "isError": false,
+                        }),
+                        _ => json!({"tools": []}),
+                    };
+                    axum::Json(json!({
+                        "jsonrpc": "2.0",
+                        "id": body.get("id").cloned().unwrap_or(Value::Null),
+                        "result": result,
+                    }))
+                },
+            ),
+        )
+        .with_state(Arc::clone(&hits));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let endpoint = format!("http://{addr}/");
+    let server_task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let bus = MemoryBus::new();
+    let broker = Broker::new();
+    let broker_task = broker.spawn(bus.clone());
+    let host = ModuleHost::new(broker);
+    host.attach_linked_with_config(
+        test_linked_module().unwrap(),
+        serde_json::to_value(ModuleConfig::default()).unwrap(),
+    )
+    .unwrap();
+    let connection = Connection::connect(bus.connect().await.unwrap())
+        .await
+        .unwrap();
+    let proxy = connection
+        .proxy(names::INTERFACE, names::OBJECT_PATH, names::INTERFACE)
+        .unwrap();
+
+    let call: ClassifiedStaticToolCall = proxy
+        .call_confidential(
+            names::methods::CONFIGURED_TOOL_CALL,
+            (ConfiguredToolCallRequest {
+                server: McpServerConfig {
+                    name: "gitbooks-one-shot".into(),
+                    endpoint,
+                    ..McpServerConfig::default()
+                },
+                tool: "lookup".into(),
+                arguments: json!({"query":"fixture"}),
+            },),
+        )
+        .await
+        .unwrap();
+
+    assert!(call.outcome.ok);
+    assert_eq!(
+        call.rendered.unwrap().content,
+        vec![tinymcp_bus::McpToolContent::Text {
+            text: "one-shot-result".into()
+        }]
+    );
+    assert!(hits.load(Ordering::SeqCst) >= 2);
+    let servers: Vec<String> = proxy.call(names::methods::STATIC_LIST, ()).await.unwrap();
+    assert!(
+        servers.is_empty(),
+        "the one-shot server entered static discovery"
+    );
+
+    broker_task.abort();
+    server_task.abort();
+    drop(host);
+}
+
+#[tokio::test]
+async fn server_argument_validation_normalizes_and_reports_module_errors() {
+    let service = service();
+    let request = tinymcp_bus::ValidateServerArgumentsRequest {
+        arguments: json!({"query":"  weather ", "limit":3}),
+        allowed: vec!["query".into(), "limit".into()],
+        rules: vec![
+            tinymcp_bus::ServerArgumentRule::RequiredNonEmptyString {
+                key: "query".into(),
+            },
+            tinymcp_bus::ServerArgumentRule::OptionalPositiveU64 {
+                key: "limit".into(),
+                max: 5,
+            },
+        ],
+    };
+    let valid: tinymcp_bus::ServerArgumentsValidation = serde_json::from_value(
+        ok(
+            &service,
+            names::methods::VALIDATE_SERVER_ARGUMENTS,
+            json!([request]),
+        )
+        .await,
+    )
+    .expect("validation reply");
+    assert_eq!(
+        valid,
+        tinymcp_bus::ServerArgumentsValidation::Valid(
+            serde_json::from_value(json!({
+                "query":"weather", "limit":3
+            }))
+            .unwrap()
+        )
+    );
+
+    let invalid: tinymcp_bus::ServerArgumentsValidation = serde_json::from_value(
+        ok(
+            &service,
+            names::methods::VALIDATE_SERVER_ARGUMENTS,
+            json!([{
+                "arguments": {"query":"  ", "extra":true},
+                "allowed": ["query"],
+                "rules": [{"kind":"required_non_empty_string", "key":"query"}]
+            }]),
+        )
+        .await,
+    )
+    .expect("validation reply");
+    assert_eq!(
+        invalid,
+        tinymcp_bus::ServerArgumentsValidation::Invalid(tinymcp_bus::ToolCallError::InvalidParams(
+            "unexpected argument `extra`".into()
+        ))
     );
 }
 
@@ -1954,6 +2181,30 @@ async fn server_members_preserve_positional_arguments_callbacks_and_lifecycle() 
         match state.state {
             ServerOperationState::Pending => tokio::task::yield_now().await,
             ServerOperationState::Callback { callback } => {
+                // Host callbacks can need the generic argument validator while
+                // a server operation is awaiting their reply. Exercise a nested
+                // module call here so validation cannot depend on a lock held by
+                // the in-flight server operation.
+                let validation: tinymcp_bus::ServerArgumentsValidation = serde_json::from_value(
+                    call(
+                        &service,
+                        names::methods::VALIDATE_SERVER_ARGUMENTS,
+                        json!([{
+                            "arguments": {"query": "nested"},
+                            "allowed": ["query"],
+                            "rules": [{"kind":"required_non_empty_string", "key":"query"}]
+                        }]),
+                    )
+                    .await
+                    .unwrap(),
+                )
+                .unwrap();
+                assert_eq!(
+                    validation,
+                    tinymcp_bus::ServerArgumentsValidation::Valid(
+                        serde_json::from_value(json!({"query":"nested"})).unwrap()
+                    )
+                );
                 call(
                     &service,
                     names::methods::SERVER_COMPLETE,

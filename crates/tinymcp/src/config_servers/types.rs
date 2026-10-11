@@ -13,7 +13,7 @@ use crate::transport::stdio::McpStdioClient;
 use tinymcp_bus::{
     McpAuthConfig, McpAuthorizationContext, McpClientConfig, McpClientIdentityConfig,
     McpInitializeResult, McpProxyConfig, McpRemoteTool, McpResource, McpResourceContents,
-    McpServerConfig, McpServerToolResult,
+    McpServerConfig, McpServerToolResult, StaticServerSummary,
 };
 
 /// Where a server in the static set came from.
@@ -332,6 +332,29 @@ impl McpServerRegistry {
             .collect()
     }
 
+    /// Returns the safe summary fields exposed by the generic host bridge.
+    #[must_use]
+    pub fn summaries(&self) -> Vec<StaticServerSummary> {
+        self.list()
+            .into_iter()
+            .map(|server| StaticServerSummary {
+                name: server.name.clone(),
+                endpoint: endpoint_without_query(&server.endpoint),
+                description: server.description.clone(),
+                timeout_secs: server.timeout_secs,
+                allowed_tools: server.allowed_tools.clone(),
+                disallowed_tools: server.disallowed_tools.clone(),
+                auth_configured: !matches!(server.auth, McpAuthConfig::None),
+                auth_kind: auth_kind(&server.auth).to_owned(),
+                source: match server.source {
+                    McpRegistrySource::Config => "config",
+                    McpRegistrySource::Host => "host",
+                }
+                .to_owned(),
+            })
+            .collect()
+    }
+
     /// One server by name.
     #[must_use]
     pub fn get(&self, name: &str) -> Option<&McpServerDefinition> {
@@ -611,6 +634,32 @@ impl McpServerRegistry {
             self.order.push(name);
         }
     }
+}
+
+fn auth_kind(auth: &McpAuthConfig) -> &'static str {
+    match auth {
+        McpAuthConfig::None => "none",
+        McpAuthConfig::BearerToken { .. } => "bearer_token",
+        McpAuthConfig::Basic { .. } => "basic",
+        McpAuthConfig::Header { .. } => "header",
+        McpAuthConfig::Headers { .. } => "headers",
+        McpAuthConfig::QueryParam { .. } => "query_param",
+        _ => "unknown",
+    }
+}
+
+fn endpoint_without_query(endpoint: &str) -> String {
+    if let Ok(mut url) = url::Url::parse(endpoint) {
+        let _ = url.set_username("");
+        let _ = url.set_password(None);
+        url.set_query(None);
+        url.set_fragment(None);
+        return url.to_string();
+    }
+    endpoint
+        .find(['?', '#'])
+        .map_or(endpoint, |cut| &endpoint[..cut])
+        .to_owned()
 }
 
 /// Chooses and builds the transport for one configured server.

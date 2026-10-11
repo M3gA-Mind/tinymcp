@@ -179,6 +179,60 @@ pub struct McpServerConfig {
     pub auth: McpAuthConfig,
 }
 
+/// A safe summary of one statically configured server for host tool output.
+///
+/// The endpoint has user information, query parameters, and fragments removed;
+/// authentication values are represented only by their kind and whether one
+/// is configured.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct StaticServerSummary {
+    /// Stable server name.
+    pub name: String,
+    /// Endpoint without user information, query, or fragment.
+    pub endpoint: String,
+    /// Optional human-readable description.
+    pub description: Option<String>,
+    /// Per-request timeout in seconds.
+    pub timeout_secs: u64,
+    /// Tools this server permits, or empty when unrestricted.
+    pub allowed_tools: Vec<String>,
+    /// Tools this server always denies.
+    pub disallowed_tools: Vec<String>,
+    /// Whether authentication is configured.
+    pub auth_configured: bool,
+    /// Authentication kind, never the credential value.
+    pub auth_kind: String,
+    /// Whether the entry came from host or user configuration.
+    pub source: String,
+}
+
+/// One configured MCP tool call that does not enter static server discovery.
+///
+/// Hosts use this for a fixed product integration that should share the
+/// module-owned transport without appearing in the user's configured server
+/// list. Send it through `TinyBus` confidential delivery because `server` may
+/// contain authentication values.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct ConfiguredToolCallRequest {
+    /// The server's transport and authentication configuration.
+    pub server: McpServerConfig,
+    /// The remote tool to call.
+    pub tool: String,
+    /// The tool's JSON arguments.
+    pub arguments: Value,
+}
+
+impl std::fmt::Debug for ConfiguredToolCallRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ConfiguredToolCallRequest")
+            .field("tool", &self.tool)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Default for McpServerConfig {
     fn default() -> Self {
         Self {
