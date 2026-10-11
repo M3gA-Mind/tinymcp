@@ -20,7 +20,7 @@ while (($#)); do
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
-[[ "$crate" == tinymcp && "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ && -n "$rust_target" && "$host" =~ ^[A-Za-z0-9_-]+$ ]] || {
+[[ "$crate" == tinymcp && "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ && -n "$rust_target" && "$host" =~ ^[A-Za-z0-9_.-]+$ ]] || {
   echo "usage: build-module.sh --crate tinymcp --version VERSION --target TARGET --host HOST [--extra-files-json JSON] [--output-dir DIR]" >&2
   exit 2
 }
