@@ -18,7 +18,7 @@ env:
 
 jobs:
   module-ci:
-    uses: tinyhumansai/.github/.github/workflows/module-ci.yml@0f4797e9d7c2bb5d8b916c3458cb30c308e168e0 # pin the shared required-check contract
+    uses: tinyhumansai/.github/.github/workflows/module-ci.yml@62c8ae0468f3882b75947d5cba9687e609ce1fed # pin the shared required-check contract
     with:
       coverage-script: scripts/check-coverage.sh
       module-e2e-script: scripts/module-e2e.sh
