@@ -353,28 +353,26 @@ async fn verify_metadata_operations(
         );
     }
 
-    let configured: tinymcp_bus::ClassifiedStaticToolCall = proxy
-        .call_confidential::<tinymcp_bus::ClassifiedStaticToolCall>(
+    let configured = proxy
+        .call::<tinymcp_bus::ClassifiedStaticToolCall>(
             names::methods::CONFIGURED_TOOL_CALL,
             (tinymcp_bus::ConfiguredToolCallRequest {
                 server: tinymcp_bus::McpServerConfig {
                     name: "artifact-one-shot".to_owned(),
                     endpoint: "not a valid endpoint".to_owned(),
-                    auth: tinymcp_bus::McpAuthConfig::BearerToken {
-                        token: "artifact-secret-sentinel".to_owned(),
-                    },
                     ..tinymcp_bus::McpServerConfig::default()
                 },
                 tool: "fixture".to_owned(),
                 arguments: json!({}),
             },),
         )
-        .await?;
-    if configured.outcome.ok
-        || configured.error_message.as_deref() != Some("could not configure the remote MCP server")
-    {
+        .await;
+    if !matches!(
+        configured,
+        Err(tinybus::Error::ConfidentialityRequired { .. })
+    ) {
         return Err(io::Error::other(
-            "compiled configured-call member did not return the safe local validation failure",
+            "compiled configured-call member did not refuse ordinary delivery",
         )
         .into());
     }
