@@ -147,6 +147,28 @@ async fn open_configured_complete(connection: &Connection, request: Value) -> St
     response.object_path
 }
 
+async fn conflicting_open_is_rejected_while_transition_is_pending(
+    connection: &Connection,
+    data_dir: &std::path::Path,
+    endpoint: &str,
+) {
+    use tokio::time::{Duration, timeout};
+
+    let error = timeout(
+        Duration::from_secs(3),
+        call_confidential::<OpenConfiguredResponse>(
+            connection,
+            OBJECT_PATH,
+            "OpenConfigured",
+            json!([configured_open(data_dir, "gamma", endpoint)]),
+        ),
+    )
+    .await
+    .expect("a conflicting pending reconfiguration is rejected without waiting")
+    .unwrap_err();
+    assert!(error.to_string().contains("pending"));
+}
+
 fn config_in(dir: &std::path::Path) -> ModuleConfig {
     ModuleConfig {
         data_dir: Some(dir.to_path_buf()),
@@ -537,33 +559,14 @@ async fn root_transition_status_is_nonblocking_before_tree_writer_registration()
     .unwrap();
     assert_eq!(same_settings_retry.transition_id, response.transition_id);
 
-    let competing_dir = tempfile::tempdir().unwrap();
-    let competing = timeout(
-        Duration::from_secs(3),
-        call_confidential::<OpenConfiguredResponse>(
-            &connection,
-            OBJECT_PATH,
-            "OpenConfigured",
-            json!([configured_open(competing_dir.path(), "gamma", &beta_url,)]),
-        ),
+    conflicting_open_is_rejected_while_transition_is_pending(
+        &connection,
+        root_dir.path(),
+        &beta_url,
     )
-    .await
-    .expect("a competing lifecycle request does not wait under dispatch")
-    .unwrap_err();
-    assert_eq!(failure_name(&competing), errors::INVALID_ARGUMENT);
-    let close_while_pending = timeout(
-        Duration::from_secs(3),
-        call::<Option<String>>(
-            &connection,
-            OBJECT_PATH,
-            "Close",
-            json!([root_dir.path().to_str().unwrap()]),
-        ),
-    )
-    .await
-    .expect("Close is fenced while replacement owns the lifecycle gate")
-    .unwrap_err();
-    assert_eq!(failure_name(&close_while_pending), errors::INVALID_ARGUMENT);
+    .await;
+
+    assert_competing_lifecycle_requests_are_rejected(&connection, root_dir.path(), &beta_url).await;
 
     gate.release.add_permits(1);
     let old_result = timeout(Duration::from_secs(3), active_call)
@@ -580,6 +583,42 @@ async fn root_transition_status_is_nonblocking_before_tree_writer_registration()
         .await
         .unwrap();
     assert_eq!(names, ["beta"]);
+}
+
+async fn assert_competing_lifecycle_requests_are_rejected(
+    connection: &Connection,
+    data_dir: &std::path::Path,
+    endpoint: &str,
+) {
+    use tokio::time::{Duration, timeout};
+
+    let competing_dir = tempfile::tempdir().unwrap();
+    let competing = timeout(
+        Duration::from_secs(3),
+        call_confidential::<OpenConfiguredResponse>(
+            connection,
+            OBJECT_PATH,
+            "OpenConfigured",
+            json!([configured_open(competing_dir.path(), "gamma", endpoint)]),
+        ),
+    )
+    .await
+    .expect("a competing lifecycle request does not wait under dispatch")
+    .unwrap_err();
+    assert_eq!(failure_name(&competing), errors::INVALID_ARGUMENT);
+    let close = timeout(
+        Duration::from_secs(3),
+        call::<Option<String>>(
+            connection,
+            OBJECT_PATH,
+            "Close",
+            json!([data_dir.to_str().unwrap()]),
+        ),
+    )
+    .await
+    .expect("Close is fenced while replacement owns the lifecycle gate")
+    .unwrap_err();
+    assert_eq!(failure_name(&close), errors::INVALID_ARGUMENT);
 }
 
 #[tokio::test]
