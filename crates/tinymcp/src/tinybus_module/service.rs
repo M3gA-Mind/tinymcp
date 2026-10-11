@@ -15,11 +15,11 @@ use crate::error::Result;
 use crate::registry::{McpRegistry, SecretRef, Store, SupervisorConfig};
 use tinybus::Connection;
 use tinymcp_bus::{
-    AuthDetection, ConfigApplyReport, ConfigApplyResponse, ConnStatus, ConnectOutcome,
-    ConnectedServerOverview, InstallOutcome, InstalledServer, McpTool, McpWriteListQuery,
-    McpWriteRecord, NewMcpWriteRecord, OpenConfiguredRequest, OpenConfiguredResponse,
-    RegistrySearchPage, RegistrySettings, SearchCuration, ServerDetail, ToolCallOutcome,
-    TransitionStatus, UpdateEnvOutcome,
+    AuthDetection, ClassifiedStaticToolCall, ConfigApplyReport, ConfigApplyResponse, ConnStatus,
+    ConnectOutcome, ConnectedServerOverview, InstallOutcome, InstalledServer, McpTool,
+    McpWriteListQuery, McpWriteRecord, NewMcpWriteRecord, OpenConfiguredRequest,
+    OpenConfiguredResponse, RegistrySearchPage, RegistrySettings, SearchCuration, ServerDetail,
+    ToolCallOutcome, TransitionStatus, UpdateEnvOutcome,
 };
 
 /// Everything the interface serves.
@@ -685,6 +685,58 @@ impl McpService {
         let mut outcome = ToolCallOutcome::from(result);
         scrubber.scrub_tool_call_outcome(&mut outcome);
         Ok(outcome)
+    }
+
+    /// `()` — returns the owner's fixed generic MCP bridge tool declarations.
+    async fn prepare_bridge_tools(&self) -> tinybus::Result<Vec<tinymcp_bus::AgentToolSpec>> {
+        std::future::ready(()).await;
+        Ok(tinymcp_bus::bridge_tool_specs())
+    }
+
+    /// `(server, tool, arguments)` — returns typed auth classification and a scrubbed rendering.
+    async fn static_call_tool_classified(
+        &self,
+        server: String,
+        tool: String,
+        arguments: Value,
+    ) -> tinybus::Result<ClassifiedStaticToolCall> {
+        let scrubber = SecretScrubber::for_server(&self.static_servers, &server);
+        match self
+            .static_servers
+            .call_tool(&server, &tool, arguments)
+            .await
+        {
+            Ok(result) => {
+                let mut call = ToolCallOutcome::from(result);
+                scrubber.scrub_tool_call_outcome(&mut call);
+                let outcome = tinymcp_bus::McpCallOutcome::answered(&server, &tool);
+                let envelope = tinymcp_bus::McpResultEnvelope::new(&server, &tool, &call.rendered)
+                    .with_outcome(outcome.clone());
+                Ok(ClassifiedStaticToolCall {
+                    outcome,
+                    rendered: Some(call.rendered),
+                    envelope: Some(envelope),
+                    error_message: None,
+                })
+            }
+            Err(error) => {
+                let outcome = tinymcp_bus::McpCallOutcome::failed(
+                    &server,
+                    &tool,
+                    tinymcp_bus::McpCallError {
+                        code: error.wire_name().to_string(),
+                        unauthorized: error.is_unauthorized(),
+                        advertises_oauth: error.advertises_oauth(),
+                    },
+                );
+                Ok(ClassifiedStaticToolCall {
+                    outcome,
+                    rendered: None,
+                    envelope: None,
+                    error_message: Some(scrubber.scrub(&format!("mcp_call_tool failed: {error}"))),
+                })
+            }
+        }
     }
 
     // -- the write-audit log -------------------------------------------------

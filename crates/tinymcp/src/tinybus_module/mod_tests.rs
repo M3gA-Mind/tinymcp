@@ -186,6 +186,25 @@ async fn prepare_agent_tools_preserves_names_schemas_tags_and_exposure() {
 }
 
 #[tokio::test]
+async fn prepare_bridge_tools_returns_the_owner_declarations() {
+    let response = ok(&service(), names::methods::PREPARE_BRIDGE_TOOLS, json!([])).await;
+    let tools = response.as_array().expect("declarations are an array");
+    assert_eq!(
+        tools
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["mcp_list_servers", "mcp_list_tools", "mcp_call_tool"]
+    );
+    assert_eq!(tools[0]["effect"], "read");
+    assert_eq!(tools[2]["effect"], "execute");
+    assert_eq!(
+        tools[2]["parameters"]["required"],
+        json!(["server", "tool", "arguments"])
+    );
+}
+
+#[tokio::test]
 async fn stored_state_probe_does_not_open_or_create_a_workspace_store() {
     let requested = tempfile::tempdir().unwrap();
     let path = crate::Store::path_for(requested.path());
@@ -379,7 +398,7 @@ use axum::Router;
 use axum::extract::State;
 use axum::http::Uri;
 use axum::response::IntoResponse as _;
-use axum::routing::get;
+use axum::routing::{get, post};
 use serde_json::{Value, json};
 use tinybus::name::MemberName;
 
@@ -1062,6 +1081,106 @@ async fn static_tool_call_redacts_the_configured_credential_before_bus_return() 
     .expect_err("the remote tool returned an RPC error");
     assert!(!error.to_string().contains(credential), "{error}");
     assert!(error.to_string().contains("[redacted]"), "{error}");
+}
+
+#[tokio::test]
+async fn classified_static_call_scrubs_rendered_success_and_envelope() {
+    let credential = "classified-static-secret-92";
+    let app = Router::new().route(
+        "/",
+        post(move |axum::Json(body): axum::Json<Value>| async move {
+            let result = match body["method"].as_str().unwrap_or_default() {
+                "initialize" => json!({
+                    "protocolVersion": tinymcp_bus::LATEST_PROTOCOL_VERSION,
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "fixture", "version": "1"}
+                }),
+                "tools/list" => json!({"tools": [{"name": "echo"}]}),
+                "tools/call" => json!({
+                    "content": [{"type": "text", "text": credential}],
+                    "structuredContent": {"echo": credential}
+                }),
+                _ => json!({}),
+            };
+            axum::Json(json!({"jsonrpc":"2.0", "id":body["id"], "result":result}))
+        }),
+    );
+    let endpoint = serve(app).await;
+    let service = McpService::new(&ModuleConfig {
+        data_dir: None,
+        client: McpClientConfig {
+            servers: vec![McpServerConfig {
+                name: "secret-server".into(),
+                endpoint,
+                auth: tinymcp_bus::McpAuthConfig::BearerToken {
+                    token: credential.into(),
+                },
+                ..McpServerConfig::default()
+            }],
+            ..McpClientConfig::default()
+        },
+    })
+    .unwrap();
+
+    let response = ok(
+        &service,
+        names::methods::STATIC_CALL_TOOL_CLASSIFIED,
+        json!(["secret-server", "echo", {}]),
+    )
+    .await;
+    assert_eq!(response["outcome"]["ok"], true, "{response}");
+    assert_eq!(response["rendered"]["content"][0]["text"], "[redacted]");
+    assert_eq!(response["envelope"]["outcome"]["ok"], true);
+    assert_eq!(
+        response["envelope"]["structured_content"]["echo"],
+        "[redacted]"
+    );
+    assert!(response["error_message"].is_null());
+    assert!(!response.to_string().contains(credential), "{response}");
+}
+
+#[tokio::test]
+async fn classified_static_call_preserves_unauthorized_oauth_signals() {
+    let app = Router::new().route(
+        "/",
+        post(|| async {
+            (
+                axum::http::StatusCode::UNAUTHORIZED,
+                [(
+                    "www-authenticate",
+                    "Bearer resource_metadata=\"https://auth.example/res\"",
+                )],
+                "",
+            )
+                .into_response()
+        }),
+    );
+    let endpoint = serve(app).await;
+    let service = McpService::new(&ModuleConfig {
+        data_dir: None,
+        client: McpClientConfig {
+            servers: vec![McpServerConfig {
+                name: "oauth-server".into(),
+                endpoint,
+                ..McpServerConfig::default()
+            }],
+            ..McpClientConfig::default()
+        },
+    })
+    .unwrap();
+
+    let response = ok(
+        &service,
+        names::methods::STATIC_CALL_TOOL_CLASSIFIED,
+        json!(["oauth-server", "whoami", {}]),
+    )
+    .await;
+    assert_eq!(response["outcome"]["ok"], false);
+    assert_eq!(response["outcome"]["error"]["unauthorized"], true);
+    assert_eq!(response["outcome"]["error"]["advertises_oauth"], true);
+    assert!(response["error_message"].as_str().unwrap().contains("401"));
+    assert_eq!(response["rendered"], Value::Null);
+    assert_eq!(response["envelope"], Value::Null);
 }
 
 // ---------------------------------------------------------------------------

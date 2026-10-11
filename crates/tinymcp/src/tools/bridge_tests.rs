@@ -238,6 +238,27 @@ fn declarations_are_byte_identical_to_the_host_originals() {
         })
     );
     assert_eq!(call.permission_level(), PermissionLevel::Execute);
+
+    let owner_specs = tinymcp_bus::bridge_tool_specs();
+    assert_eq!(owner_specs.len(), 3);
+    for (spec, wrapper) in owner_specs.iter().zip([
+        (&list_servers as &dyn Tool),
+        (&list_tools as &dyn Tool),
+        (&call as &dyn Tool),
+    ]) {
+        assert_eq!(spec.name, wrapper.name());
+        assert_eq!(spec.description, wrapper.description());
+        assert_eq!(spec.parameters, wrapper.parameters_schema());
+        assert_eq!(
+            spec.effect,
+            match wrapper.permission_level() {
+                PermissionLevel::ReadOnly => tinymcp_bus::AgentToolEffect::Read,
+                PermissionLevel::Execute => tinymcp_bus::AgentToolEffect::Execute,
+                _ => panic!("unexpected permission level for a bridge tool"),
+            }
+        );
+        assert!(!spec.deferred);
+    }
 }
 
 #[tokio::test]

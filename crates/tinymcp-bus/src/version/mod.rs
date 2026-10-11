@@ -24,7 +24,7 @@
 /// module-owned HTTP admission and server response metadata; 1.14 adds
 /// installed configuration-document read and apply operations; 1.15 adds
 /// no-create state lookup and module-prepared tool declarations.
-pub const CONTRACT_VERSION: (u32, u32) = (1, 15);
+pub const CONTRACT_VERSION: (u32, u32) = (1, 16);
 
 /// Returns whether a host holding [`CONTRACT_VERSION`] can bind to a module
 /// reporting `module`.

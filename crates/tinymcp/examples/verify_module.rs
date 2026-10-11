@@ -118,6 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err(io::Error::other("fresh registry reported supervisor observations").into());
     }
 
+    verify_static_bridge(&proxy).await?;
     verify_server_protocol(&proxy).await?;
     verify_metadata_operations(&proxy).await?;
 
@@ -130,6 +131,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     broker_task.abort();
+    Ok(())
+}
+
+/// Proves the new bridge declarations and typed call failure cross the real module ABI.
+async fn verify_static_bridge(proxy: &tinybus::Proxy) -> Result<(), Box<dyn std::error::Error>> {
+    let bridge_tools: Vec<tinymcp_bus::AgentToolSpec> =
+        proxy.call(names::methods::PREPARE_BRIDGE_TOOLS, ()).await?;
+    if bridge_tools
+        .iter()
+        .map(|tool| tool.name.as_str())
+        .collect::<Vec<_>>()
+        != ["mcp_list_servers", "mcp_list_tools", "mcp_call_tool"]
+    {
+        return Err(
+            io::Error::other("compiled module returned different MCP bridge declarations").into(),
+        );
+    }
+    let classified: tinymcp_bus::ClassifiedStaticToolCall = proxy
+        .call(
+            names::methods::STATIC_CALL_TOOL_CLASSIFIED,
+            ("unconfigured", "fixture", serde_json::json!({})),
+        )
+        .await?;
+    if classified.outcome.ok
+        || classified.outcome.error.is_none()
+        || classified.rendered.is_some()
+        || classified.envelope.is_some()
+        || classified.error_message.is_none()
+    {
+        return Err(io::Error::other(
+            "compiled module returned an invalid classified-call failure",
+        )
+        .into());
+    }
     Ok(())
 }
 
