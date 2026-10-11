@@ -59,6 +59,13 @@ pub mod methods {
     /// Replaces the registry-browse credentials.
     pub const REGISTRY_SETTINGS_SET: &str = "RegistrySettingsSet";
 
+    // -- User configuration document ---------------------------------------
+
+    /// Renders the installed servers as the persisted MCP configuration document.
+    pub const CONFIG_DOCUMENT_GET: &str = "ConfigDocumentGet";
+    /// Validates and applies a replacement MCP configuration document.
+    pub const CONFIG_DOCUMENT_APPLY: &str = "ConfigDocumentApply";
+
     // -- Registry: installs -------------------------------------------------
 
     /// Lists the servers the user has installed.
@@ -201,6 +208,9 @@ pub const METHODS: &[&str] = &[
     methods::REGISTRY_GET,
     methods::REGISTRY_SETTINGS_GET,
     methods::REGISTRY_SETTINGS_SET,
+    // User configuration document
+    methods::CONFIG_DOCUMENT_GET,
+    methods::CONFIG_DOCUMENT_APPLY,
     // Registry: installs
     methods::INSTALLED_LIST,
     methods::INSTALL,
