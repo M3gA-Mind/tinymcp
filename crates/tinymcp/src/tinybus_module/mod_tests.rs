@@ -1183,10 +1183,11 @@ async fn configured_tool_call_classifies_and_scrubs_provider_errors() {
                         axum::Json(response)
                     },
                 ),
-            )
-            .with_state(Arc::clone(&hits));
+        )
+        .with_state(Arc::clone(&hits));
     let endpoint = serve(app).await;
-    let service = service();
+    let directory = tempfile::tempdir().unwrap();
+    let service = service_at(directory.path(), "http://127.0.0.1:1");
 
     let call: ClassifiedStaticToolCall = serde_json::from_value(
         ok(
