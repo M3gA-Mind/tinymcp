@@ -311,8 +311,7 @@ async fn verify_metadata_operations(
     use serde_json::{Value, json};
     use tinymcp_bus::{
         McpRemoteTool, McpTool, McpToolExposure, McpToolPresentation, McpToolSourceSpec,
-        PrepareAgentToolsRequest, RemoteToolDisplay, ServerArgumentRule, ServerArgumentsValidation,
-        StaticServerSummary, TextTransform, TransformTextRequest, ValidateServerArgumentsRequest,
+        PrepareAgentToolsRequest, RemoteToolDisplay, TextTransform, TransformTextRequest,
     };
 
     let directory = tempfile::tempdir()?;
@@ -418,8 +417,8 @@ async fn verify_new_contract_operations(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use serde_json::{Map, json};
     use tinymcp_bus::{
-        ConfiguredToolCallRequest, McpServerConfig, ServerArgumentRule,
-        ServerArgumentsValidation, StaticServerSummary, ValidateServerArgumentsRequest,
+        ConfiguredToolCallRequest, McpServerConfig, ServerArgumentRule, ServerArgumentsValidation,
+        StaticServerSummary, ValidateServerArgumentsRequest,
     };
 
     let summaries: Vec<StaticServerSummary> = proxy
