@@ -162,6 +162,20 @@ fn callback_debug_never_contains_headers_arguments_or_resource_names() {
 }
 
 #[test]
+fn unsupported_calls_and_session_metadata_have_safe_debug_forms() {
+    let call = ServerHostCall::Unsupported;
+    assert_eq!(format!("{call:?}"), "Unsupported { .. }");
+
+    let metadata = ServerSessionMetadata {
+        initialized: true,
+        protocol_version: Some("2025-03-26".into()),
+    };
+    let debug = format!("{metadata:?}");
+    assert!(debug.contains("initialized: true"));
+    assert!(debug.contains("protocol_version: Some(\"2025-03-26\")"));
+}
+
+#[test]
 fn server_operation_payloads_keep_explicit_complete_wire_forms() {
     let session = ServerSessionConfig {
         session_id: "session-1".into(),
