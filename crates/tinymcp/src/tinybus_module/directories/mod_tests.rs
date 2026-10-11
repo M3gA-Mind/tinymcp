@@ -431,7 +431,10 @@ async fn reconfiguration_waits_for_an_in_flight_tool_call_before_replacing_the_s
         )
         .await
     });
-    let started = timeout(Duration::from_secs(3), gate.started.acquire())
+    // This is only the fixture's readiness barrier, not the latency being
+    // tested below. CI hosts can be heavily loaded while the in-process HTTP
+    // server and module bus are starting, so give that setup more headroom.
+    let started = timeout(Duration::from_secs(15), gate.started.acquire())
         .await
         .expect("the old static tool call reaches its provider")
         .unwrap();

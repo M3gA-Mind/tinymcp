@@ -1,7 +1,8 @@
 //! Converting a rendered MCP result into a `tinytools` result.
 
 pub use crate::processing::MAX_LLM_BLOCK_BYTES;
-use serde_json::{Value, json};
+use crate::processing::{bound_json, bound_text};
+use serde_json::Value;
 use tinymcp_bus::{McpResultEnvelope, McpToolContent, McpToolResult};
 use tinytools::{ToolContent, ToolResult};
 
@@ -63,32 +64,5 @@ pub(crate) fn passthrough(block: &McpToolContent) -> ToolContent {
 /// An unrecognized block as JSON, its payload elided above
 /// [`MAX_LLM_BLOCK_BYTES`].
 pub(crate) fn elide_oversized_block(block: &McpToolContent) -> Value {
-    let value = serde_json::to_value(block).unwrap_or(Value::Null);
-    let serialized = serde_json::to_string(&value).unwrap_or_default();
-    if serialized.len() <= MAX_LLM_BLOCK_BYTES {
-        return value;
-    }
-    let kind = value.get("type").cloned().unwrap_or(Value::Null);
-    json!({"type": kind, "data": elision_marker(serialized.len())})
-}
-
-fn bound_text(text: String) -> String {
-    if text.len() <= MAX_LLM_BLOCK_BYTES {
-        text
-    } else {
-        elision_marker(text.len())
-    }
-}
-
-fn bound_json(data: Value) -> Value {
-    let serialized = serde_json::to_string(&data).unwrap_or_default();
-    if serialized.len() <= MAX_LLM_BLOCK_BYTES {
-        data
-    } else {
-        Value::String(elision_marker(serialized.len()))
-    }
-}
-
-fn elision_marker(bytes: usize) -> String {
-    format!("[{bytes} bytes elided]")
+    crate::processing::elide_oversized_block(block)
 }
