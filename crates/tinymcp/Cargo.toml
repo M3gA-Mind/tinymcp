@@ -45,10 +45,11 @@ serde_json = { workspace = true }
 # serving MCP over stdio alone, or not serving at all, links neither.
 axum = { workspace = true, optional = true }
 tokio-stream = { workspace = true, optional = true }
-# TinyTools also provides generic lexical sanitization without optional features.
+# TinyTools Std owns generic lexical sanitization.
 # The remaining optional dependencies support the `tinytools::Tool` adapter over a
 # server's advertised tools. See the note on the workspace entry.
 tinytools.workspace = true
+tinytools-std.workspace = true
 async-trait = { workspace = true, optional = true }
 anyhow = { workspace = true, optional = true }
 # `SecretScrubber` (the `tools` feature) parses endpoints for userinfo and
