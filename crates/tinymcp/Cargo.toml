@@ -39,6 +39,8 @@ dirs = { workspace = true }
 rusqlite = { workspace = true }
 uuid = { workspace = true }
 sha2 = { workspace = true }
+# Opens the private fingerprint-key sidecar without following Unix symlinks.
+libc = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 # The Streamable HTTP server transport. Only `server-http` takes these: a host

@@ -1753,6 +1753,7 @@ dependencies = [
  "base64 0.23.1",
  "dirs",
  "futures-util",
+ "libc",
  "parking_lot",
  "regex",
  "reqwest",

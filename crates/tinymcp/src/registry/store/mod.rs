@@ -12,6 +12,10 @@
 //! | `mcp_registry_index` | the local copy of the official catalog, one row per server |
 //! | `mcp_registry_index_state` | where that copy's sync stands |
 //!
+//! Tool-cache definition fingerprints are keyed before they are stored in
+//! `SQLite`. The per-store key lives in a separate owner-only sidecar file so a
+//! database copy alone cannot be used to test guesses for configured secrets.
+//!
 //! The filename and schema are unchanged from the code this was extracted
 //! from, so a user upgrading across the move keeps every server they installed.
 //!

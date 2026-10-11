@@ -74,11 +74,30 @@ fn a_static_tool_fingerprint_tracks_auth_identity_without_storing_credentials() 
         value: "second-secret".into(),
     };
     assert_ne!(
-        registry_of(vec![server])
+        registry_of(vec![server.clone()])
             .get("weather")
             .expect("the server")
             .fingerprint(),
         first_header
+    );
+
+    server
+        .env
+        .insert("API_TOKEN".into(), "first-env-secret".into());
+    let first_env = registry_of(vec![server.clone()])
+        .get("weather")
+        .expect("the server")
+        .fingerprint()
+        .to_string();
+    server
+        .env
+        .insert("API_TOKEN".into(), "second-env-secret".into());
+    assert_ne!(
+        registry_of(vec![server])
+            .get("weather")
+            .expect("the server")
+            .fingerprint(),
+        first_env
     );
 }
 
