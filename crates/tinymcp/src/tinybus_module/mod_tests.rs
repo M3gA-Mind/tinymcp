@@ -1138,6 +1138,88 @@ async fn configured_tool_call_runs_confidentially_without_registering_server() {
 }
 
 #[tokio::test]
+async fn configured_tool_call_classifies_and_scrubs_provider_errors() {
+    use tinymcp_bus::{ClassifiedStaticToolCall, McpAuthConfig, ConfiguredToolCallRequest};
+
+    let credential = "configured-call-provider-secret-73";
+    let hits = Arc::new(AtomicUsize::new(0));
+    let app = Router::new()
+        .route(
+            "/",
+            post(
+                move |State(hits): State<Arc<AtomicUsize>>, axum::Json(body): axum::Json<Value>| async move {
+                    hits.fetch_add(1, Ordering::SeqCst);
+                    let response = match body["method"].as_str().unwrap_or_default() {
+                        "initialize" => json!({
+                            "jsonrpc": "2.0",
+                            "id": body["id"],
+                            "result": {
+                                "protocolVersion": tinymcp_bus::LATEST_PROTOCOL_VERSION,
+                                "capabilities": {"tools": {}},
+                                "serverInfo": {"name": "fixture", "version": "1"}
+                            }
+                        }),
+                        "tools/list" => json!({
+                            "jsonrpc": "2.0",
+                            "id": body["id"],
+                            "result": {"tools": [{"name": "lookup"}]}
+                        }),
+                        "tools/call" => json!({
+                            "jsonrpc": "2.0",
+                            "id": body["id"],
+                            "error": {
+                                "code": -32000,
+                                "message": format!("provider echoed {credential}")
+                            }
+                        }),
+                        _ => json!({
+                            "jsonrpc": "2.0",
+                            "id": body["id"],
+                            "result": {}
+                        }),
+                    };
+                    axum::Json(response)
+                },
+            ),
+        )
+        .with_state(Arc::clone(&hits));
+    let endpoint = serve(app).await;
+    let service = service();
+
+    let call: ClassifiedStaticToolCall = serde_json::from_value(
+        ok(
+            &service,
+            names::methods::CONFIGURED_TOOL_CALL,
+            serde_json::to_value([ConfiguredToolCallRequest {
+                server: McpServerConfig {
+                    name: "one-shot-error".into(),
+                    endpoint,
+                    auth: McpAuthConfig::BearerToken {
+                        token: credential.into(),
+                    },
+                    ..McpServerConfig::default()
+                },
+                tool: "lookup".into(),
+                arguments: json!({"query":"fixture"}),
+            }])
+            .unwrap(),
+        )
+        .await,
+    )
+    .expect("provider failures retain the classified result contract");
+
+    assert!(!call.outcome.ok);
+    assert_eq!(call.outcome.server, "one-shot-error");
+    assert_eq!(call.outcome.tool, "lookup");
+    assert!(call.outcome.error.is_some());
+    let error_message = call.error_message.expect("provider failure is explained");
+    assert!(!error_message.contains(credential), "{error_message}");
+    assert!(call.rendered.is_none());
+    assert!(call.envelope.is_none());
+    assert!(hits.load(Ordering::SeqCst) >= 3);
+}
+
+#[tokio::test]
 async fn server_argument_validation_normalizes_and_reports_module_errors() {
     let service = service();
     let request = tinymcp_bus::ValidateServerArgumentsRequest {
