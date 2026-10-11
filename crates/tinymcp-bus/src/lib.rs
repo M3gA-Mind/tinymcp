@@ -86,7 +86,7 @@ pub use auth::{AuthDetection, AuthKind};
 pub use config::{
     HttpHeader, McpAuthConfig, McpClientConfig, McpClientIdentityConfig, McpProxyConfig,
     McpRegistryAuthConfig, McpServerConfig, OpenConfiguredRequest, OpenConfiguredResponse,
-    TransitionStatus,
+    StaticServerSummary, TransitionStatus,
 };
 pub use config_document::{AppliedServer, ConfigApplyReport, ConfigApplyResponse};
 pub use method::{

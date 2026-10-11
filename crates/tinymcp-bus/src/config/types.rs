@@ -179,6 +179,34 @@ pub struct McpServerConfig {
     pub auth: McpAuthConfig,
 }
 
+/// A safe summary of one statically configured server for host tool output.
+///
+/// The endpoint has user information, query parameters, and fragments removed;
+/// authentication values are represented only by their kind and whether one
+/// is configured.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct StaticServerSummary {
+    /// Stable server name.
+    pub name: String,
+    /// Endpoint without user information, query, or fragment.
+    pub endpoint: String,
+    /// Optional human-readable description.
+    pub description: Option<String>,
+    /// Per-request timeout in seconds.
+    pub timeout_secs: u64,
+    /// Tools this server permits, or empty when unrestricted.
+    pub allowed_tools: Vec<String>,
+    /// Tools this server always denies.
+    pub disallowed_tools: Vec<String>,
+    /// Whether authentication is configured.
+    pub auth_configured: bool,
+    /// Authentication kind, never the credential value.
+    pub auth_kind: String,
+    /// Whether the entry came from host or user configuration.
+    pub source: String,
+}
+
 impl Default for McpServerConfig {
     fn default() -> Self {
         Self {

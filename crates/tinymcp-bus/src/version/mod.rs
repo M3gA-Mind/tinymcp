@@ -26,7 +26,7 @@
 /// no-create state lookup and module-prepared tool declarations. The released
 /// 1.16 vocabulary is the baseline for this addition; 1.17 adds module-owned
 /// scrubbing of credentials from static remote-tool metadata.
-pub const CONTRACT_VERSION: (u32, u32) = (1, 17);
+pub const CONTRACT_VERSION: (u32, u32) = (1, 18);
 
 /// Returns whether a host holding [`CONTRACT_VERSION`] can bind to a module
 /// reporting `module`.

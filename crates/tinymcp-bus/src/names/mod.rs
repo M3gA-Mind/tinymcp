@@ -138,6 +138,8 @@ pub mod methods {
 
     /// Lists the servers the host declared in its own configuration.
     pub const STATIC_LIST: &str = "StaticList";
+    /// Returns safe summaries of statically configured servers.
+    pub const STATIC_SERVER_SUMMARIES: &str = "StaticServerSummaries";
     /// Lists the tools one statically declared server advertises.
     pub const STATIC_LIST_TOOLS: &str = "StaticListTools";
     /// Scrubs configured credentials from remote metadata for static tools.
@@ -251,6 +253,7 @@ pub const METHODS: &[&str] = &[
     methods::SETUP_INSTALL_AND_CONNECT,
     // Static servers
     methods::STATIC_LIST,
+    methods::STATIC_SERVER_SUMMARIES,
     methods::STATIC_LIST_TOOLS,
     methods::STATIC_SCRUB_TOOLS,
     methods::STATIC_CACHED_LIST_TOOLS,
