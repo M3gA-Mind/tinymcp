@@ -2091,6 +2091,31 @@ async fn server_members_preserve_positional_arguments_callbacks_and_lifecycle() 
         match state.state {
             ServerOperationState::Pending => tokio::task::yield_now().await,
             ServerOperationState::Callback { callback } => {
+                // Host callbacks can need the generic argument validator while
+                // a server operation is awaiting their reply. Exercise a nested
+                // module call here so validation cannot depend on a lock held by
+                // the in-flight server operation.
+                let validation: tinymcp_bus::ServerArgumentsValidation =
+                    serde_json::from_value(
+                        call(
+                            &service,
+                            names::methods::VALIDATE_SERVER_ARGUMENTS,
+                            json!([{
+                                "arguments": {"query": "nested"},
+                                "allowed": ["query"],
+                                "rules": [{"kind":"required_non_empty_string", "key":"query"}]
+                            }]),
+                        )
+                        .await
+                        .unwrap(),
+                    )
+                    .unwrap();
+                assert_eq!(
+                    validation,
+                    tinymcp_bus::ServerArgumentsValidation::Valid(
+                        serde_json::from_value(json!({"query":"nested"})).unwrap()
+                    )
+                );
                 call(
                     &service,
                     names::methods::SERVER_COMPLETE,
