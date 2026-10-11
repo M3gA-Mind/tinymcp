@@ -179,6 +179,69 @@ pub fn registry_tool_specs() -> Vec<AgentToolSpec> {
         .collect()
 }
 
+/// The fixed tools for browsing and calling host-declared MCP servers.
+///
+/// These declarations are shared by the loadable module and the optional
+/// `tinytools::Tool` wrappers so model-facing names and schemas do not drift.
+#[must_use]
+pub fn bridge_tool_specs() -> Vec<AgentToolSpec> {
+    vec![
+        AgentToolSpec {
+            name: "mcp_list_servers".to_string(),
+            description: "List named remote MCP servers registered in OpenHuman core. Use this before browsing tools on a specific MCP server.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }),
+            effect: AgentToolEffect::Read,
+            deferred: false,
+        },
+        AgentToolSpec {
+            name: "mcp_list_tools".to_string(),
+            description: "List tools exposed by a named remote MCP server. Use this before calling `mcp_call_tool`.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "server": {
+                        "type": "string",
+                        "description": "Registered MCP server name from `mcp_list_servers`."
+                    }
+                },
+                "required": ["server"],
+                "additionalProperties": false
+            }),
+            effect: AgentToolEffect::Read,
+            deferred: false,
+        },
+        AgentToolSpec {
+            name: "mcp_call_tool".to_string(),
+            description: "Call a tool on a named remote MCP server. First inspect available tools with `mcp_list_tools`, then pass the remote tool name and its JSON arguments here.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "server": {
+                        "type": "string",
+                        "description": "Registered MCP server name from `mcp_list_servers`."
+                    },
+                    "tool": {
+                        "type": "string",
+                        "description": "Remote MCP tool name from `mcp_list_tools`."
+                    },
+                    "arguments": {
+                        "type": "object",
+                        "description": "Arguments object passed through to the remote MCP tool."
+                    }
+                },
+                "required": ["server", "tool", "arguments"],
+                "additionalProperties": false
+            }),
+            effect: AgentToolEffect::Execute,
+            deferred: false,
+        },
+    ]
+}
+
 /// The schema of a tool addressed by one installed server.
 fn server_id_schema() -> serde_json::Value {
     json!({

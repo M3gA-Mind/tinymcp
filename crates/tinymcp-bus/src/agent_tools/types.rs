@@ -142,6 +142,27 @@ pub struct McpToolPresentation {
     pub tags: Vec<String>,
 }
 
+/// A static-server tool call with its rendered result and host-facing classification.
+///
+/// `error_message` is present only when the call failed before a server reply;
+/// the implementation scrubs configured secrets before returning it. A remote
+/// tool's own error reply remains a successful call with `outcome.ok == true`
+/// and `rendered.is_error == true`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ClassifiedStaticToolCall {
+    /// Whether the server answered and, when it did not, why.
+    pub outcome: McpCallOutcome,
+    /// The model-facing rendering when the server answered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rendered: Option<crate::McpToolResult>,
+    /// Host-only reply data that the rendering omits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub envelope: Option<McpResultEnvelope>,
+    /// A scrubbed diagnostic for calls that did not receive a server reply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+}
+
 /// The `kind` discriminator an [`McpCallOutcome`] carries.
 ///
 /// A host that receives a tool result's metadata as an untyped JSON object

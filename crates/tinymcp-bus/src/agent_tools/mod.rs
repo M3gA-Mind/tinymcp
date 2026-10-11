@@ -34,11 +34,11 @@
 mod registry_tools;
 mod types;
 
-pub use registry_tools::{RegistryTool, registry_tool_specs};
+pub use registry_tools::{RegistryTool, bridge_tool_specs, registry_tool_specs};
 pub use types::{
-    AgentToolEffect, AgentToolSpec, ArgsError, MCP_CALL_RESULT_KIND, MCP_RESULT_KIND, McpCallError,
-    McpCallOutcome, McpResultEnvelope, McpToolExposure, McpToolPresentation, McpToolSourceSpec,
-    PrepareAgentToolsRequest,
+    AgentToolEffect, AgentToolSpec, ArgsError, ClassifiedStaticToolCall, MCP_CALL_RESULT_KIND,
+    MCP_RESULT_KIND, McpCallError, McpCallOutcome, McpResultEnvelope, McpToolExposure,
+    McpToolPresentation, McpToolSourceSpec, PrepareAgentToolsRequest,
 };
 
 #[cfg(test)]

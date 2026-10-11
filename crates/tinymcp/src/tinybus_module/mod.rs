@@ -133,6 +133,8 @@ export_module! {
         "StaticListTools",
         "StaticCachedListTools",
         "StaticCallTool",
+        "PrepareBridgeTools",
+        "StaticCallToolClassified",
         "AuditRecordWrite",
         "AuditListWrites",
         "DrainSupervisorEvents",

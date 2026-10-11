@@ -8,7 +8,7 @@ use serde_json::json;
 use super::{
     MCP_CALL_RESULT_KIND, MCP_RESULT_KIND, McpCallError, McpCallOutcome, McpResultEnvelope,
 };
-use crate::McpToolResult;
+use crate::{ClassifiedStaticToolCall, McpToolResult};
 
 fn rich_result() -> McpToolResult {
     let mut result = McpToolResult::success("ok");
@@ -40,6 +40,66 @@ fn the_envelope_wire_form_is_pinned() {
                 "ok": true,
             },
         })
+    );
+}
+
+#[test]
+fn classified_static_call_keeps_typed_failure_and_omits_unavailable_results() {
+    let classified = ClassifiedStaticToolCall {
+        outcome: McpCallOutcome::failed(
+            "docs",
+            "search",
+            McpCallError {
+                code: "ai.tinyhumans.tinymcp.Error.Unauthorized".to_string(),
+                unauthorized: true,
+                advertises_oauth: true,
+            },
+        ),
+        rendered: None,
+        envelope: None,
+        error_message: Some("mcp call failed (HTTP 401)".to_string()),
+    };
+
+    assert_eq!(
+        serde_json::to_value(classified).unwrap(),
+        json!({
+            "outcome": {
+                "kind": MCP_CALL_RESULT_KIND,
+                "server": "docs",
+                "tool": "search",
+                "ok": false,
+                "error": {
+                    "code": "ai.tinyhumans.tinymcp.Error.Unauthorized",
+                    "unauthorized": true,
+                    "advertises_oauth": true
+                }
+            },
+            "error_message": "mcp call failed (HTTP 401)"
+        })
+    );
+}
+
+#[test]
+fn fixed_bridge_declarations_keep_the_legacy_model_tool_wire_specs() {
+    let specs = super::bridge_tool_specs();
+    assert_eq!(specs.len(), 3);
+    assert_eq!(specs[0].name, "mcp_list_servers");
+    assert_eq!(specs[0].effect, crate::AgentToolEffect::Read);
+    assert_eq!(
+        specs[0].parameters,
+        json!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+        })
+    );
+    assert_eq!(specs[1].name, "mcp_list_tools");
+    assert_eq!(specs[1].parameters["required"], json!(["server"]));
+    assert_eq!(specs[2].name, "mcp_call_tool");
+    assert_eq!(specs[2].effect, crate::AgentToolEffect::Execute);
+    assert_eq!(
+        specs[2].parameters["required"],
+        json!(["server", "tool", "arguments"])
     );
 }
 

@@ -98,6 +98,8 @@ fn the_method_table_holds_every_declared_member() {
             methods::STATIC_LIST_TOOLS,
             methods::STATIC_CACHED_LIST_TOOLS,
             methods::STATIC_CALL_TOOL,
+            methods::PREPARE_BRIDGE_TOOLS,
+            methods::STATIC_CALL_TOOL_CLASSIFIED,
             methods::AUDIT_RECORD_WRITE,
             methods::AUDIT_LIST_WRITES,
             methods::DRAIN_SUPERVISOR_EVENTS,
@@ -151,12 +153,18 @@ fn the_static_members_are_named_as_a_family() {
         methods::STATIC_LIST_TOOLS,
         methods::STATIC_CACHED_LIST_TOOLS,
         methods::STATIC_CALL_TOOL,
+        methods::STATIC_CALL_TOOL_CLASSIFIED,
     ] {
         assert!(
             method.starts_with("Static"),
             "{method} is not a Static member"
         );
     }
+}
+
+#[test]
+fn the_bridge_declaration_member_is_named_as_a_family() {
+    assert!(methods::PREPARE_BRIDGE_TOOLS.starts_with("Prepare"));
 }
 
 #[test]

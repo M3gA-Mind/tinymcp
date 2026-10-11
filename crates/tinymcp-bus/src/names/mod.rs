@@ -145,6 +145,10 @@ pub mod methods {
     pub const STATIC_CACHED_LIST_TOOLS: &str = "StaticCachedListTools";
     /// Calls a tool on a statically declared server.
     pub const STATIC_CALL_TOOL: &str = "StaticCallTool";
+    /// Returns the fixed generic MCP bridge tool declarations.
+    pub const PREPARE_BRIDGE_TOOLS: &str = "PrepareBridgeTools";
+    /// Calls a static server tool with classified outcome and rendered result.
+    pub const STATIC_CALL_TOOL_CLASSIFIED: &str = "StaticCallToolClassified";
 
     // -- Audit --------------------------------------------------------------
 
@@ -248,6 +252,8 @@ pub const METHODS: &[&str] = &[
     methods::STATIC_LIST_TOOLS,
     methods::STATIC_CACHED_LIST_TOOLS,
     methods::STATIC_CALL_TOOL,
+    methods::PREPARE_BRIDGE_TOOLS,
+    methods::STATIC_CALL_TOOL_CLASSIFIED,
     // Audit
     methods::AUDIT_RECORD_WRITE,
     methods::AUDIT_LIST_WRITES,
