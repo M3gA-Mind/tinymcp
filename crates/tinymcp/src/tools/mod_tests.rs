@@ -692,7 +692,7 @@ fn oversized_text_json_and_markdown_results_are_elided() {
 #[test]
 fn bounded_bus_rendering_preserves_error_and_host_only_fields() {
     let oversized = "x".repeat(super::MAX_LLM_BLOCK_BYTES + 1);
-    let result = super::result::bound_mcp_tool_result(McpToolResult {
+    let result = crate::processing::bound_mcp_tool_result(McpToolResult {
         content: vec![
             McpToolContent::Text {
                 text: oversized.clone(),

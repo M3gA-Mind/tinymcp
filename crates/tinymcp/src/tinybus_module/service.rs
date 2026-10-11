@@ -13,7 +13,7 @@ use crate::audit::AuditStore;
 use crate::config_servers::McpServerRegistry;
 use crate::error::Result;
 use crate::registry::{McpRegistry, SecretRef, Store, SupervisorConfig};
-use crate::tools::bound_mcp_tool_result;
+use crate::processing::bound_mcp_tool_result;
 use tinybus::Connection;
 use tinymcp_bus::{
     AuthDetection, ClassifiedStaticToolCall, ConfigApplyReport, ConfigApplyResponse,

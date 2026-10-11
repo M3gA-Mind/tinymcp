@@ -53,7 +53,6 @@ mod scrub {
 pub use bridge::{ActGate, McpCallTool, McpListServersTool, McpListToolsTool};
 pub use invoker::McpToolInvoker;
 pub use result::{MAX_LLM_BLOCK_BYTES, tool_result, tool_result_for};
-pub(crate) use result::bound_mcp_tool_result;
 pub use source::{McpExposure, McpToolSource};
 pub use tool::McpServerTool;
 

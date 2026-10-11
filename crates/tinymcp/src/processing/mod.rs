@@ -1,10 +1,10 @@
 //! Bounded module-owned metadata preparation over shared contract requests.
 use crate::{Error, McpRemoteToolExt, Result};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use tinymcp_bus::{
     DisplayRemoteToolRequest, MAX_PROCESSING_BYTES, McpToolContent, McpToolPresentation,
-    PrepareAgentToolsRequest, RemoteToolDisplay, RenderToolOutputRequest, ScrubStaticToolsRequest,
-    TextTransform, ToolOutputFormat, TransformTextRequest,
+    McpToolResult, PrepareAgentToolsRequest, RemoteToolDisplay, RenderToolOutputRequest,
+    ScrubStaticToolsRequest, TextTransform, ToolOutputFormat, TransformTextRequest,
 };
 
 const MAX_AGENT_TOOL_SOURCES: usize = 256;
@@ -12,6 +12,65 @@ const MAX_AGENT_TOOL_PRESENTATIONS: usize = 4096;
 
 /// The largest model-facing MCP result or schema block before it is elided.
 pub const MAX_LLM_BLOCK_BYTES: usize = 64 * 1024;
+
+/// Applies the model-facing result caps while preserving host-only reply data.
+pub(crate) fn bound_mcp_tool_result(mut result: McpToolResult) -> McpToolResult {
+    result.content = result
+        .content
+        .into_iter()
+        .map(|block| match block {
+            McpToolContent::Text { text } => McpToolContent::Text {
+                text: bound_text(text),
+            },
+            McpToolContent::Json { data } => McpToolContent::Json {
+                data: bound_json(data),
+            },
+            other => {
+                let serialized = serde_json::to_string(&other).unwrap_or_default();
+                if serialized.len() <= MAX_LLM_BLOCK_BYTES {
+                    other
+                } else {
+                    McpToolContent::Json {
+                        data: elide_oversized_block(&other),
+                    }
+                }
+            }
+        })
+        .collect();
+    result.markdown_formatted = result.markdown_formatted.map(bound_text);
+    result
+}
+
+pub(crate) fn bound_text(text: String) -> String {
+    if text.len() <= MAX_LLM_BLOCK_BYTES {
+        text
+    } else {
+        elision_marker(text.len())
+    }
+}
+
+pub(crate) fn bound_json(data: Value) -> Value {
+    let serialized = serde_json::to_string(&data).unwrap_or_default();
+    if serialized.len() <= MAX_LLM_BLOCK_BYTES {
+        data
+    } else {
+        Value::String(elision_marker(serialized.len()))
+    }
+}
+
+pub(crate) fn elide_oversized_block(block: &McpToolContent) -> Value {
+    let value = serde_json::to_value(block).unwrap_or(Value::Null);
+    let serialized = serde_json::to_string(&value).unwrap_or_default();
+    if serialized.len() <= MAX_LLM_BLOCK_BYTES {
+        return value;
+    }
+    let kind = value.get("type").cloned().unwrap_or(Value::Null);
+    json!({"type": kind, "data": elision_marker(serialized.len())})
+}
+
+fn elision_marker(bytes: usize) -> String {
+    format!("[{bytes} bytes elided]")
+}
 
 fn limit_error() -> Error {
     Error::invalid_argument("metadata processing exceeds byte limit")
