@@ -1074,7 +1074,7 @@ async fn the_number_of_served_directories_is_bounded() {
     // The root's own directory already counts as one.
     for index in 1..MAX_OPEN_DIRECTORIES {
         let dir = parent.path().join(index.to_string());
-        let _: String = call(
+        let opened: String = call(
             &connection,
             OBJECT_PATH,
             "Open",
@@ -1082,6 +1082,14 @@ async fn the_number_of_served_directories_is_bounded() {
         )
         .await
         .unwrap();
+        // `Open` keeps its legacy string reply and schedules the object-tree
+        // write after the root call releases TinyBus's dispatch read lock.
+        // Touch the returned object before starting another lifecycle change,
+        // so this test measures the active-directory bound rather than racing
+        // that documented transition window.
+        let _: Vec<Value> = call(&connection, &opened, "InstalledList", json!([]))
+            .await
+            .unwrap();
     }
 
     let overflow = parent.path().join("one-too-many");
