@@ -3,6 +3,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -103,6 +104,9 @@ jobs:
             echo "of transports, async runtimes, HTTP clients and native libraries." >&2
             exit 1
           fi
+
+      - name: Test release version planning
+        run: scripts/test-release-version-plan.sh
 
       - name: Require 90% line coverage in every source file
         run: .github/scripts/check-file-coverage.sh 90 coverage.json
