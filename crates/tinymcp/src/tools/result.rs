@@ -38,6 +38,41 @@ pub fn tool_result(result: McpToolResult) -> ToolResult {
     }
 }
 
+/// Bounds model-facing fields in a rendered result while keeping its host-only
+/// envelope fields intact.
+///
+/// Classified bus calls carry both this result and a separate
+/// [`McpResultEnvelope`]. The content and Markdown returned to a caller that
+/// may build a model prompt use the same limits as [`tool_result`], while
+/// structured content, metadata, and embedded resources remain available for
+/// host UI rendering.
+pub(crate) fn bound_mcp_tool_result(mut result: McpToolResult) -> McpToolResult {
+    result.content = result
+        .content
+        .into_iter()
+        .map(|block| match block {
+            McpToolContent::Text { text } => McpToolContent::Text {
+                text: bound_text(text),
+            },
+            McpToolContent::Json { data } => McpToolContent::Json {
+                data: bound_json(data),
+            },
+            other => {
+                let serialized = serde_json::to_string(&other).unwrap_or_default();
+                if serialized.len() <= MAX_LLM_BLOCK_BYTES {
+                    other
+                } else {
+                    McpToolContent::Json {
+                        data: elide_oversized_block(&other),
+                    }
+                }
+            }
+        })
+        .collect();
+    result.markdown_formatted = result.markdown_formatted.map(bound_text);
+    result
+}
+
 /// Maps a rendered MCP result onto [`ToolResult`], as [`tool_result`] does,
 /// and attaches an [`McpResultEnvelope`] for `tool` on `server` as its
 /// host-only metadata.

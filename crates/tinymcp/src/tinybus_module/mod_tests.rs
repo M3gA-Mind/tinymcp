@@ -1053,6 +1053,8 @@ async fn configured_tool_call_runs_confidentially_without_registering_server() {
     use tinymcp_bus::{ClassifiedStaticToolCall, ConfiguredToolCallRequest};
 
     let hits = Arc::new(AtomicUsize::new(0));
+    let oversized = "y".repeat(crate::processing::MAX_LLM_BLOCK_BYTES + 1);
+    let expected_elision = format!("[{} bytes elided]", oversized.len());
     let app = Router::new()
         .route(
             "/",
@@ -1067,8 +1069,9 @@ async fn configured_tool_call_runs_confidentially_without_registering_server() {
                             "serverInfo": { "name": "one-shot", "version": "1" },
                         }),
                         "tools/call" => json!({
-                            "content": [{"type":"text", "text":"one-shot-result"}],
-                            "isError": false,
+                            "content": [{"type":"text", "text":oversized}],
+                            "isError": true,
+                            "structuredContent": {"source": "one-shot"},
                         }),
                         _ => json!({"tools": []}),
                     };
@@ -1119,11 +1122,17 @@ async fn configured_tool_call_runs_confidentially_without_registering_server() {
         .unwrap();
 
     assert!(call.outcome.ok);
+    let rendered = call.rendered.unwrap();
     assert_eq!(
-        call.rendered.unwrap().content,
+        rendered.content,
         vec![tinymcp_bus::McpToolContent::Text {
-            text: "one-shot-result".into()
+            text: expected_elision
         }]
+    );
+    assert!(rendered.is_error);
+    assert_eq!(
+        call.envelope.unwrap().structured_content,
+        Some(json!({"source": "one-shot"}))
     );
     assert!(hits.load(Ordering::SeqCst) >= 2);
     let servers: Vec<String> = proxy.call(names::methods::STATIC_LIST, ()).await.unwrap();

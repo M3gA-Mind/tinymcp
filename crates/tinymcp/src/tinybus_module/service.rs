@@ -13,6 +13,7 @@ use crate::audit::AuditStore;
 use crate::config_servers::McpServerRegistry;
 use crate::error::Result;
 use crate::registry::{McpRegistry, SecretRef, Store, SupervisorConfig};
+use crate::tools::bound_mcp_tool_result;
 use tinybus::Connection;
 use tinymcp_bus::{
     AuthDetection, ClassifiedStaticToolCall, ConfigApplyReport, ConfigApplyResponse,
@@ -696,9 +697,10 @@ impl McpService {
                 let outcome = tinymcp_bus::McpCallOutcome::answered(&server, &tool);
                 let envelope = tinymcp_bus::McpResultEnvelope::new(&server, &tool, &call.rendered)
                     .with_outcome(outcome.clone());
+                let rendered = bound_mcp_tool_result(call.rendered);
                 Ok(ClassifiedStaticToolCall {
                     outcome,
-                    rendered: Some(call.rendered),
+                    rendered: Some(rendered),
                     envelope: Some(envelope),
                     error_message: None,
                 })
@@ -852,9 +854,10 @@ impl McpService {
                 let outcome = tinymcp_bus::McpCallOutcome::answered(&server, &tool);
                 let envelope = tinymcp_bus::McpResultEnvelope::new(&server, &tool, &call.rendered)
                     .with_outcome(outcome.clone());
+                let rendered = bound_mcp_tool_result(call.rendered);
                 Ok(ClassifiedStaticToolCall {
                     outcome,
-                    rendered: Some(call.rendered),
+                    rendered: Some(rendered),
                     envelope: Some(envelope),
                     error_message: None,
                 })
