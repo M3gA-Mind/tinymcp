@@ -148,6 +148,8 @@ pub mod methods {
 
     /// Opens opaque server protocol state.
     pub const SERVER_OPEN: &str = "ServerOpen";
+    /// Opens protocol state with module-owned HTTP session admission.
+    pub const SERVER_OPEN_HTTP: &str = "ServerOpenHttp";
     /// Submits one line and transport headers.
     pub const SERVER_SUBMIT: &str = "ServerSubmit";
     /// Drains a callback or final response.
@@ -160,6 +162,10 @@ pub mod methods {
     pub const SERVER_CLOSE: &str = "ServerClose";
     /// Closes every session for this object.
     pub const SERVER_SHUTDOWN: &str = "ServerShutdown";
+    /// Reads initialization metadata without parsing the protocol response.
+    pub const SERVER_SESSION_METADATA: &str = "ServerSessionMetadata";
+    /// Applies module-owned HTTP GET or DELETE session admission and cleanup.
+    pub const SERVER_HTTP_SESSION: &str = "ServerHttpSession";
 
     /// Module-owned `TransformText` metadata operation.
     pub const TRANSFORM_TEXT: &str = "TransformText";
@@ -231,12 +237,15 @@ pub const METHODS: &[&str] = &[
     methods::AUDIT_LIST_WRITES,
     methods::DRAIN_SUPERVISOR_EVENTS,
     methods::SERVER_OPEN,
+    methods::SERVER_OPEN_HTTP,
     methods::SERVER_SUBMIT,
     methods::SERVER_POLL,
     methods::SERVER_COMPLETE,
     methods::SERVER_CANCEL,
     methods::SERVER_CLOSE,
     methods::SERVER_SHUTDOWN,
+    methods::SERVER_SESSION_METADATA,
+    methods::SERVER_HTTP_SESSION,
     methods::TRANSFORM_TEXT,
     methods::NORMALIZE_TOOL_ARGUMENTS,
     methods::DISPLAY_REMOTE_TOOL,

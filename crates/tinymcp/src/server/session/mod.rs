@@ -18,6 +18,8 @@ use serde_json::Value;
 pub struct ClientSession {
     prefix: String,
     client_source_type: Option<String>,
+    initialized: bool,
+    protocol_version: Option<String>,
 }
 
 impl ClientSession {
@@ -28,6 +30,23 @@ impl ClientSession {
         Self {
             prefix: prefix.into(),
             client_source_type: None,
+            initialized: false,
+            protocol_version: None,
+        }
+    }
+
+    /// Records the version selected by the latest successful initialize.
+    pub(crate) fn observe_initialize_response(&mut self, protocol_version: &str) {
+        self.initialized = true;
+        self.protocol_version = Some(protocol_version.to_owned());
+    }
+
+    /// Returns the module-owned transport metadata for this protocol session.
+    #[must_use]
+    pub(crate) fn metadata(&self) -> tinymcp_bus::ServerSessionMetadata {
+        tinymcp_bus::ServerSessionMetadata {
+            initialized: self.initialized,
+            protocol_version: self.protocol_version.clone(),
         }
     }
 

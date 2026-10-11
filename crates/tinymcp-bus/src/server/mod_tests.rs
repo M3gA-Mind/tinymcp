@@ -3,6 +3,7 @@
 
 use super::*;
 use serde_json::json;
+use std::collections::BTreeMap;
 #[test]
 fn callbacks_replies_and_states_round_trip() {
     let callback = ServerCallback {
@@ -189,10 +190,11 @@ fn server_operation_payloads_keep_explicit_complete_wire_forms() {
     let snapshot = ServerOperationSnapshot {
         operation_id: input.operation_id.clone(),
         state: ServerOperationState::Complete { response: None },
+        http_response: None,
     };
     assert_eq!(
         serde_json::to_value(&snapshot).unwrap(),
-        json!({"operation_id":"operation-1","state":{"state":"complete","response":null}})
+        json!({"operation_id":"operation-1","state":{"state":"complete","response":null},"http_response":null})
     );
     for (state, expected) in [
         (ServerOperationState::Pending, json!({"state":"pending"})),
@@ -219,6 +221,14 @@ fn server_operation_payloads_keep_explicit_complete_wire_forms() {
         json!({"session_id":"session-1","operation_id":"operation-1"})
     );
 
+    let metadata = ServerSessionMetadata {
+        initialized: true,
+        protocol_version: Some("2025-03-26".into()),
+    };
+    assert_eq!(
+        serde_json::to_value(metadata).unwrap(),
+        json!({"initialized":true,"protocol_version":"2025-03-26"})
+    );
     for (reply, expected) in [
         (
             ServerHostReply::Success {
@@ -247,6 +257,81 @@ fn server_operation_payloads_keep_explicit_complete_wire_forms() {
     ] {
         assert_eq!(serde_json::to_value(reply).unwrap(), expected);
     }
+}
+
+#[test]
+fn http_session_payloads_preserve_wire_shape_and_hide_secrets_from_debug() {
+    let server = ServerSessionConfig {
+        session_id: "session-1".into(),
+        info: json!({"name":"server","version":"1"}),
+        source_type_prefix: "mcp".into(),
+        resources: vec![json!({"uri":"fixture://info","name":"info"})],
+    };
+    let http_config = ServerHttpSessionConfig {
+        server,
+        requested_session_id: Some("http-session-secret".into()),
+        known_session: true,
+        expected_protocol_version: Some("2025-03-26".into()),
+    };
+    assert_eq!(
+        serde_json::to_value(&http_config).unwrap(),
+        json!({
+            "server":{
+                "session_id":"session-1",
+                "info":{"name":"server","version":"1"},
+                "source_type_prefix":"mcp",
+                "resources":[{"uri":"fixture://info","name":"info"}]
+            },
+            "requested_session_id":"http-session-secret",
+            "known_session":true,
+            "expected_protocol_version":"2025-03-26"
+        })
+    );
+    assert!(!format!("{http_config:?}").contains("http-session-secret"));
+
+    let request = ServerHttpSessionRequest {
+        method: ServerHttpSessionMethod::Delete,
+        requested_session_id: Some("http-session-secret".into()),
+        internal_session_id: Some("internal-session-secret".into()),
+        headers: serde_json::from_value(json!({
+            "Mcp-Session-Id":"http-session-secret",
+            "Authorization":"credential-secret"
+        }))
+        .unwrap(),
+    };
+    assert_eq!(
+        serde_json::to_value(&request).unwrap(),
+        json!({
+            "method":"delete",
+            "requested_session_id":"http-session-secret",
+            "internal_session_id":"internal-session-secret",
+            "headers":{
+                "Mcp-Session-Id":"http-session-secret",
+                "Authorization":"credential-secret"
+            }
+        })
+    );
+    let debug = format!("{request:?}");
+    assert!(!debug.contains("http-session-secret"));
+    assert!(!debug.contains("internal-session-secret"));
+    assert!(!debug.contains("credential-secret"));
+
+    let response = ServerHttpResponseMetadata {
+        status_code: 200,
+        headers: BTreeMap::from([("Mcp-Session-Id".into(), "http-session-secret".into())]),
+        content_type: Some("application/json".into()),
+        error_body: None,
+    };
+    assert_eq!(
+        serde_json::to_value(&response).unwrap(),
+        json!({
+            "status_code":200,
+            "headers":{"Mcp-Session-Id":"http-session-secret"},
+            "content_type":"application/json",
+            "error_body":null
+        })
+    );
+    assert!(!format!("{response:?}").contains("http-session-secret"));
 }
 
 #[test]

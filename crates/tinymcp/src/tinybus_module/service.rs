@@ -642,6 +642,16 @@ impl McpService {
             .await
             .map_err(|error| Self::failed(&error))
     }
+    /// `(config)` — opens session state with module-owned HTTP admission.
+    async fn server_open_http(
+        &self,
+        config: tinymcp_bus::ServerHttpSessionConfig,
+    ) -> tinybus::Result<String> {
+        self.server_sessions
+            .open_http(config)
+            .await
+            .map_err(|error| Self::failed(&error))
+    }
     /// `(session, headers, input)` — submits or retries caller-known input.
     async fn server_submit(
         &self,
@@ -696,6 +706,24 @@ impl McpService {
     /// `()` — closes every protocol session owned by this object.
     async fn server_shutdown(&self) -> tinybus::Result<usize> {
         Ok(self.server_sessions.shutdown().await)
+    }
+    /// `(session)` — reports protocol initialization state selected by the module.
+    async fn server_session_metadata(
+        &self,
+        session: String,
+    ) -> tinybus::Result<tinymcp_bus::ServerSessionMetadata> {
+        self.server_sessions
+            .metadata(&session)
+            .await
+            .map_err(|error| Self::failed(&error))
+    }
+    /// `(request)` — applies HTTP GET/DELETE session admission and cleanup.
+    async fn server_http_session(
+        &self,
+        request: tinymcp_bus::ServerHttpSessionRequest,
+    ) -> tinybus::Result<tinymcp_bus::ServerHttpResponseMetadata> {
+        std::future::ready(()).await;
+        Ok(self.server_sessions.http_session(request).await)
     }
 
     /// `(request)` — bounded shared lexical text processing.
