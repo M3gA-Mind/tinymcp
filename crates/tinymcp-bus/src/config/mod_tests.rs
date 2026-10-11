@@ -3,8 +3,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use super::{
-    McpAuthConfig, McpClientConfig, McpServerConfig, OpenConfiguredRequest, OpenConfiguredResponse,
-    TransitionStatus,
+    ConfiguredToolCallRequest, McpAuthConfig, McpClientConfig, McpServerConfig,
+    OpenConfiguredRequest, OpenConfiguredResponse, TransitionStatus,
 };
 use serde_json::json;
 
@@ -83,6 +83,36 @@ fn configured_open_debug_never_exposes_the_user_path_or_credentials() {
     assert!(!debug.contains("/private/user/workspace"));
     assert!(!debug.contains("private-server"));
     assert!(!debug.contains("sentinel-secret"));
+}
+
+#[test]
+fn configured_tool_call_debug_never_exposes_endpoint_auth_or_arguments() {
+    let request = ConfiguredToolCallRequest {
+        server: McpServerConfig {
+            name: "private-server".into(),
+            endpoint: "https://user:pass@example.test/mcp?token=url-secret".into(),
+            auth: McpAuthConfig::BearerToken {
+                token: "sentinel-secret".into(),
+            },
+            ..McpServerConfig::default()
+        },
+        tool: "lookup".into(),
+        arguments: json!({"query":"argument-secret"}),
+    };
+
+    let debug = format!("{request:?}");
+
+    assert!(debug.contains("ConfiguredToolCallRequest"));
+    assert!(debug.contains("lookup"));
+    for secret in [
+        "private-server",
+        "user:pass",
+        "url-secret",
+        "sentinel-secret",
+        "argument-secret",
+    ] {
+        assert!(!debug.contains(secret), "debug output exposed {secret}");
+    }
 }
 
 #[test]
