@@ -9,7 +9,7 @@ fn the_shipped_contract_version_is_pinned() {
 
 #[test]
 fn a_host_on_this_contract_refuses_a_module_from_before_it() {
-    // 1.6 added the tool UI presentation vocabulary; a 1.5 module predates it.
+    // 1.8 added module-owned server sessions; a 1.6 module predates them.
     assert!(!is_compatible((1, 0)));
     assert!(!is_compatible((1, 6)));
 }
