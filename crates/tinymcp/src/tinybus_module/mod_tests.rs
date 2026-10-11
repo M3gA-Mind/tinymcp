@@ -989,12 +989,7 @@ async fn static_server_summaries_keep_legacy_fields_and_redact_endpoint_secrets(
     })
     .unwrap();
 
-    let summaries = ok(
-        &service,
-        names::methods::STATIC_SERVER_SUMMARIES,
-        json!([]),
-    )
-    .await;
+    let summaries = ok(&service, names::methods::STATIC_SERVER_SUMMARIES, json!([])).await;
     assert_eq!(
         summaries,
         json!([{
@@ -1011,7 +1006,10 @@ async fn static_server_summaries_keep_legacy_fields_and_redact_endpoint_secrets(
     );
     let serialized = summaries.to_string();
     for secret in ["user", "pass", "token=secret", "fragment", "summary-secret"] {
-        assert!(!serialized.contains(secret), "leaked {secret}: {serialized}");
+        assert!(
+            !serialized.contains(secret),
+            "leaked {secret}: {serialized}"
+        );
     }
 }
 
