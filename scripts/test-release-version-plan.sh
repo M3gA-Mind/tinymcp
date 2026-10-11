@@ -35,6 +35,7 @@ git -C "$scratch" tag -a v0.13.0 -m "matching release" HEAD
 plan="$(cd -- "$scratch" && "$planner" current 0.13.0)"
 [[ "$plan" == "publish-current 0.13.0 v0.13.0 existing" ]]
 
+git -C "$scratch" tag -a v0.14.0 -m "mismatched release" HEAD
 if (cd -- "$scratch" && "$planner" current 0.14.0) >/dev/null 2>&1; then
   echo "current mode accepted a tag whose source version is mismatched" >&2
   exit 1
