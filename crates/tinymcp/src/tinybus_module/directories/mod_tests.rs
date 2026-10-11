@@ -1074,30 +1074,28 @@ async fn the_number_of_served_directories_is_bounded() {
     // The root's own directory already counts as one.
     for index in 1..MAX_OPEN_DIRECTORIES {
         let dir = parent.path().join(index.to_string());
-        let opened: String = call(
+        let opened = open_configured_complete(
             &connection,
-            OBJECT_PATH,
-            "Open",
-            json!([dir.to_str().unwrap()]),
+            json!({
+                "data_dir": dir,
+                "client": McpClientConfig::default(),
+            }),
         )
-        .await
-        .unwrap();
-        // `Open` keeps its legacy string reply and schedules the object-tree
-        // write after the root call releases TinyBus's dispatch read lock.
-        // Touch the returned object before starting another lifecycle change,
-        // so this test measures the active-directory bound rather than racing
-        // that documented transition window.
+        .await;
         let _: Vec<Value> = call(&connection, &opened, "InstalledList", json!([]))
             .await
             .unwrap();
     }
 
     let overflow = parent.path().join("one-too-many");
-    let error = call::<String>(
+    let error = call_confidential::<OpenConfiguredResponse>(
         &connection,
         OBJECT_PATH,
-        "Open",
-        json!([overflow.to_str().unwrap()]),
+        "OpenConfigured",
+        json!([{
+            "data_dir": overflow,
+            "client": McpClientConfig::default(),
+        }]),
     )
     .await
     .unwrap_err();
