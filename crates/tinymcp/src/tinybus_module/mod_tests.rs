@@ -1279,6 +1279,41 @@ async fn server_argument_validation_normalizes_and_reports_module_errors() {
 }
 
 #[tokio::test]
+async fn server_argument_validation_normalizes_optional_strings_and_required_string_arrays() {
+    let service = service();
+    let valid: tinymcp_bus::ServerArgumentsValidation = serde_json::from_value(
+        ok(
+            &service,
+            names::methods::VALIDATE_SERVER_ARGUMENTS,
+            json!([{
+                "arguments": {
+                    "description": "  project status  ",
+                    "labels": [" urgent ", "", " follow-up  "],
+                },
+                "allowed": ["description", "labels"],
+                "rules": [
+                    {"kind":"optional_non_empty_string", "key":"description"},
+                    {"kind":"required_non_empty_string_array", "key":"labels"}
+                ]
+            }]),
+        )
+        .await,
+    )
+    .expect("validation reply");
+
+    assert_eq!(
+        valid,
+        tinymcp_bus::ServerArgumentsValidation::Valid(
+            serde_json::from_value(json!({
+                "description": "project status",
+                "labels": ["urgent", "follow-up"],
+            }))
+            .unwrap()
+        )
+    );
+}
+
+#[tokio::test]
 async fn a_static_server_the_host_never_declared_is_unknown() {
     let directory = tempfile::tempdir().unwrap();
     let service = service_at(directory.path(), "http://127.0.0.1:1");
