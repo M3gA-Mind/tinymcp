@@ -3,7 +3,7 @@
 use crate::sanitize::sanitize_for_llm;
 use serde_json::{Value, json};
 
-use super::MAX_LLM_BLOCK_BYTES;
+use crate::processing::MAX_LLM_BLOCK_BYTES;
 
 /// The longest a description or title inside a schema may be.
 const MAX_SCHEMA_TEXT_BYTES: usize = 500;

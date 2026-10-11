@@ -206,6 +206,23 @@ fn cache_fingerprint_key_creation_requires_an_existing_store_directory() {
     assert!(super::types::load_cache_fingerprint_key(&database).is_err());
 }
 
+#[test]
+#[cfg(unix)]
+fn cache_fingerprint_key_rejects_a_directory_at_the_key_path() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = Store::path_for(directory.path());
+    std::fs::create_dir_all(database.parent().unwrap()).unwrap();
+    let key_path = database.with_extension("fingerprint-key");
+    std::fs::create_dir(&key_path).unwrap();
+
+    let error = super::types::load_cache_fingerprint_key(&database).unwrap_err();
+    assert!(matches!(
+        error,
+        crate::error::Error::StoreIo { ref source, .. }
+            if source.kind() == std::io::ErrorKind::InvalidData
+    ));
+}
+
 #[cfg(unix)]
 #[test]
 fn cache_fingerprint_key_with_invalid_length_is_rejected() {

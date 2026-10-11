@@ -54,10 +54,11 @@ tinytools.workspace = true
 tinytools-std.workspace = true
 async-trait = { workspace = true, optional = true }
 anyhow = { workspace = true, optional = true }
-# `SecretScrubber` (the `tools` feature) parses endpoints for userinfo and
-# credential-looking query values, and matches their percent-encoded spellings.
-url = { workspace = true, optional = true }
-urlencoding = { workspace = true, optional = true }
+# MCP module results must be scrubbed before they cross the bus. Endpoint
+# parsing and percent-encoding are therefore part of the module's base security
+# path, not only the optional `tinytools::Tool` adapter.
+url = { workspace = true }
+urlencoding = { workspace = true }
 # Finding URLs in tool results, for the `ui` feature's link extraction.
 regex = { workspace = true, optional = true }
 
@@ -102,11 +103,11 @@ server-http = ["dep:axum", "dep:tokio-stream", "tokio/net"]
 # `mcp_<server>_<tool>` names, sanitized descriptions and schemas, direct or
 # deferred exposure, and an invoker seam a host wraps with its own policy.
 # Off by default so the loadable module does not link the optional execution adapter.
-tools = ["dep:async-trait", "dep:anyhow", "dep:url", "dep:urlencoding"]
+tools = ["dep:async-trait", "dep:anyhow"]
 # Tool-provided UI for hosts (`tinymcp::ui`): widget template resolution,
 # widget document checks, link classification, and the widget tool-call and
 # rendering policy. Off by default; a host that renders tool UI turns it on.
-ui = ["dep:url", "dep:regex"]
+ui = ["dep:regex"]
 
 [lints]
 workspace = true

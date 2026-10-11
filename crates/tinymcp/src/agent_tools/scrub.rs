@@ -1,16 +1,18 @@
-//! Scrubbing a server's own credentials out of what it sends back.
+//! Scrubbing configured credentials before remote MCP data crosses a boundary.
 //!
 //! A remote server can echo a credential it was given: in an error body, a
 //! tool description, or a result. [`SecretScrubber`] knows every secret one
 //! configured server was dialled with — bearer tokens, basic-auth pairs,
 //! header and query-parameter values, URL userinfo, credential-looking query
-//! values — and replaces each occurrence with `[redacted]` in text, JSON and
-//! whole [`ToolResult`]s. A host wraps the [`crate::tools::McpToolInvoker`]
-//! path with it so no output reaches a model carrying a live credential.
+//! values — and replaces each occurrence with `[redacted]` in text, JSON, and
+//! bus tool outcomes. The module applies it before static and installed-server
+//! results reach a host; the optional `TinyTools` adapter reuses the same scrubber.
 
 use base64::Engine as _;
 use serde_json::Value;
 use tinymcp_bus::McpAuthConfig;
+use tinymcp_bus::{McpToolContent, ToolCallOutcome};
+#[cfg(feature = "tools")]
 use tinytools::{ToolContent, ToolResult};
 
 use crate::config_servers::McpServerRegistry;
@@ -178,6 +180,7 @@ impl SecretScrubber {
 
     /// An error's message, scrubbed.
     #[must_use]
+    #[cfg(feature = "tools")]
     pub fn scrub_error(&self, error: &anyhow::Error) -> String {
         self.scrub(&error.to_string())
     }
@@ -222,7 +225,7 @@ impl SecretScrubber {
         out
     }
 
-    pub(super) fn scrub_value(&self, value: &mut Value) {
+    pub(crate) fn scrub_value(&self, value: &mut Value) {
         match value {
             Value::String(text) => *text = self.scrub(text),
             Value::Array(items) => items.iter_mut().for_each(|item| self.scrub_value(item)),
@@ -244,9 +247,46 @@ impl SecretScrubber {
         }
     }
 
-    /// `result` with every known secret replaced in its text, JSON and
+    /// A bus tool outcome with known secrets replaced in all text and JSON fields.
+    pub fn scrub_tool_call_outcome(&self, outcome: &mut ToolCallOutcome) {
+        if self.secrets.is_empty() {
+            return;
+        }
+        self.scrub_value(&mut outcome.result);
+        for block in &mut outcome.rendered.content {
+            match block {
+                McpToolContent::Text { text } => *text = self.scrub(text),
+                McpToolContent::Json { data } => self.scrub_value(data),
+                _ => {}
+            }
+        }
+        if let Some(markdown) = outcome.rendered.markdown_formatted.as_mut() {
+            *markdown = self.scrub(markdown);
+        }
+        if let Some(structured) = outcome.rendered.structured_content.as_mut() {
+            self.scrub_value(structured);
+        }
+        if let Some(meta) = outcome.rendered.meta.as_mut() {
+            self.scrub_value(meta);
+        }
+        for resource in &mut outcome.rendered.resources {
+            resource.uri = self.scrub(&resource.uri);
+            if let Some(text) = resource.text.as_mut() {
+                *text = self.scrub(text);
+            }
+            if let Some(blob) = resource.blob.as_mut() {
+                *blob = self.scrub(blob);
+            }
+            if let Some(meta) = resource.meta.as_mut() {
+                self.scrub_value(meta);
+            }
+        }
+    }
+
+    /// A [`tinytools::ToolResult`] with every known secret replaced in its text, JSON and
     /// formatted Markdown blocks.
     #[must_use]
+    #[cfg(feature = "tools")]
     pub fn scrub_result(&self, mut result: ToolResult) -> ToolResult {
         if self.secrets.is_empty() {
             return result;

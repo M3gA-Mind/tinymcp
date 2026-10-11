@@ -1,5 +1,6 @@
 //! Converting a rendered MCP result into a `tinytools` result.
 
+pub use crate::processing::MAX_LLM_BLOCK_BYTES;
 use serde_json::{Value, json};
 use tinymcp_bus::{McpResultEnvelope, McpToolContent, McpToolResult};
 use tinytools::{ToolContent, ToolResult};
@@ -8,8 +9,6 @@ use tinytools::{ToolContent, ToolResult};
 ///
 /// Text, JSON, formatted Markdown, and unrecognized blocks are bounded before
 /// being returned to a model. Above this the payload is replaced with a marker.
-pub const MAX_LLM_BLOCK_BYTES: usize = 64 * 1024;
-
 /// Maps a rendered MCP result onto [`ToolResult`].
 ///
 /// The two shapes match by construction, so this is a mapping rather than a

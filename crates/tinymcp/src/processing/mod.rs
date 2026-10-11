@@ -2,9 +2,16 @@
 use crate::{Error, McpRemoteToolExt, Result};
 use serde_json::{Map, Value};
 use tinymcp_bus::{
-    DisplayRemoteToolRequest, MAX_PROCESSING_BYTES, McpToolContent, RemoteToolDisplay,
-    RenderToolOutputRequest, TextTransform, ToolOutputFormat, TransformTextRequest,
+    DisplayRemoteToolRequest, MAX_PROCESSING_BYTES, McpToolContent, McpToolPresentation,
+    PrepareAgentToolsRequest, RemoteToolDisplay, RenderToolOutputRequest, TextTransform,
+    ToolOutputFormat, TransformTextRequest,
 };
+
+const MAX_AGENT_TOOL_SOURCES: usize = 256;
+const MAX_AGENT_TOOL_PRESENTATIONS: usize = 4096;
+
+/// The largest model-facing MCP result or schema block before it is elided.
+pub const MAX_LLM_BLOCK_BYTES: usize = 64 * 1024;
 
 fn limit_error() -> Error {
     Error::invalid_argument("metadata processing exceeds byte limit")
@@ -85,6 +92,22 @@ pub fn display_remote_tool(tool: &DisplayRemoteToolRequest) -> Result<RemoteTool
         description: tool.display_description(),
         title: tool.display_title(),
     })
+}
+
+/// Builds the stable model-facing declarations for already-screened sources.
+/// # Errors
+/// Rejects oversized requests, source counts, or generated declarations.
+pub fn prepare_agent_tools(request: &PrepareAgentToolsRequest) -> Result<Vec<McpToolPresentation>> {
+    bounded(request)?;
+    if request.sources.len() > MAX_AGENT_TOOL_SOURCES {
+        return Err(limit_error());
+    }
+    let tools = crate::agent_tools::prepare_agent_tools(&request.sources);
+    if tools.len() > MAX_AGENT_TOOL_PRESENTATIONS {
+        return Err(limit_error());
+    }
+    bounded(&tools)?;
+    Ok(tools)
 }
 
 /// Projects a tool result without allocating oversized pretty JSON or joined output.

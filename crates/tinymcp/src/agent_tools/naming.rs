@@ -174,5 +174,11 @@ fn non_empty(value: String, fallback: &str) -> String {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    crate::registry::store::hex(bytes)
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(HEX[(byte >> 4) as usize] as char);
+        encoded.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    encoded
 }

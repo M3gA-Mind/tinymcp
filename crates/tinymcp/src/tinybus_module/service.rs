@@ -8,6 +8,7 @@ use serde_json::Value;
 use super::config::ModuleConfig;
 use super::directories::DirectoryOpener;
 use super::maintenance::{MAX_DRAIN, Maintenance};
+use crate::agent_tools::SecretScrubber;
 use crate::audit::AuditStore;
 use crate::config_servers::McpServerRegistry;
 use crate::error::Result;
@@ -201,6 +202,14 @@ impl McpService {
         }
     }
 
+    /// As [`Self::failed`], also removing any secret the remote server could echo.
+    fn failed_scrubbed(error: &crate::Error, scrubber: &SecretScrubber) -> tinybus::Error {
+        tinybus::Error::MethodFailed {
+            name: error.wire_name().to_string(),
+            message: scrubber.scrub(&error.to_string()),
+        }
+    }
+
     /// Reads a map of credential names to handles.
     fn parse_handles(raw: &HashMap<String, String>) -> Result<HashMap<String, SecretRef>> {
         raw.iter()
@@ -348,6 +357,19 @@ impl McpService {
                 connect_queued: report.connect_queued,
             },
         })
+    }
+
+    /// `(data_dir)` — checks for an existing database without opening it.
+    async fn has_stored_state(&self, data_dir: String) -> tinybus::Result<bool> {
+        std::future::ready(()).await;
+        let path = Store::path_for(std::path::Path::new(&data_dir));
+        match std::fs::symlink_metadata(path) {
+            Ok(metadata) => Ok(metadata.file_type().is_file()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(tinybus::Error::failed(format!(
+                "could not inspect MCP state: {error}"
+            ))),
+        }
     }
 
     // -- installs -----------------------------------------------------------
@@ -499,10 +521,22 @@ impl McpService {
         tool_name: String,
         arguments: Value,
     ) -> tinybus::Result<ToolCallOutcome> {
-        self.dynamic
+        // Resolve credentials before calling the remote tool. If the store
+        // cannot provide them, do not send a result across the bus unscreened.
+        let secrets = self
+            .dynamic
+            .store()
+            .load_env_values(&server_id)
+            .map_err(|error| Self::failed(&error))?;
+        let scrubber = SecretScrubber::new(&tinymcp_bus::McpAuthConfig::None, "")
+            .with_secrets(secrets.into_values());
+        let mut outcome = self
+            .dynamic
             .tool_call(&server_id, &tool_name, arguments)
             .await
-            .map_err(|error| Self::failed(&error))
+            .map_err(|error| Self::failed_scrubbed(&error, &scrubber))?;
+        scrubber.scrub_tool_call_outcome(&mut outcome);
+        Ok(outcome)
     }
 
     /// `(qualified_name)`
@@ -641,13 +675,16 @@ impl McpService {
         tool: String,
         arguments: Value,
     ) -> tinybus::Result<ToolCallOutcome> {
+        let scrubber = SecretScrubber::for_server(&self.static_servers, &server);
         let result = self
             .static_servers
             .call_tool(&server, &tool, arguments)
             .await
-            .map_err(|error| Self::failed(&error))?;
+            .map_err(|error| Self::failed_scrubbed(&error, &scrubber))?;
 
-        Ok(ToolCallOutcome::from(result))
+        let mut outcome = ToolCallOutcome::from(result);
+        scrubber.scrub_tool_call_outcome(&mut outcome);
+        Ok(outcome)
     }
 
     // -- the write-audit log -------------------------------------------------
@@ -811,6 +848,14 @@ impl McpService {
     ) -> tinybus::Result<String> {
         std::future::ready(()).await;
         crate::processing::render_tool_output(&request).map_err(|error| Self::failed(&error))
+    }
+    /// `(request)` — prepares module-owned names and schemas for host-screened tools.
+    async fn prepare_agent_tools(
+        &self,
+        request: tinymcp_bus::PrepareAgentToolsRequest,
+    ) -> tinybus::Result<Vec<tinymcp_bus::McpToolPresentation>> {
+        std::future::ready(()).await;
+        crate::processing::prepare_agent_tools(&request).map_err(|error| Self::failed(&error))
     }
 
     // -- directories ----------------------------------------------------------

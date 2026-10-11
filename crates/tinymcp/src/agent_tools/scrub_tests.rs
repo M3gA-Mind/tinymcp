@@ -4,7 +4,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use serde_json::json;
-use tinymcp_bus::{HttpHeader, McpAuthConfig};
+use tinymcp_bus::{
+    HttpHeader, McpAuthConfig, McpResourceContents, McpToolContent, McpToolResult, ToolCallOutcome,
+};
 
 use super::scrub::SecretScrubber;
 
@@ -80,6 +82,47 @@ fn scrubber_redacts_short_query_credentials_even_inside_other_text() {
 }
 
 #[test]
+fn scrubber_redacts_credentials_from_bus_tool_outcomes() {
+    let scrubber = SecretScrubber::new(
+        &McpAuthConfig::BearerToken {
+            token: "private-token-value".into(),
+        },
+        "https://example.test/mcp?api_key=query-secret-value",
+    );
+    let mut outcome = ToolCallOutcome {
+        result: json!({"echo": "private-token-value", "nested": ["query-secret-value"]}),
+        is_error: false,
+        rendered: McpToolResult {
+            content: vec![
+                McpToolContent::Text {
+                    text: "private-token-value".into(),
+                },
+                McpToolContent::Json {
+                    data: json!({"echo": "query-secret-value"}),
+                },
+            ],
+            markdown_formatted: Some("private-token-value".into()),
+            structured_content: Some(json!({"echo": "query-secret-value"})),
+            meta: Some(json!({"echo": "private-token-value"})),
+            resources: vec![McpResourceContents {
+                uri: "private-token-value".into(),
+                mime_type: None,
+                text: Some("query-secret-value".into()),
+                blob: None,
+                meta: Some(json!({"echo": "private-token-value"})),
+            }],
+            ..McpToolResult::default()
+        },
+    };
+
+    scrubber.scrub_tool_call_outcome(&mut outcome);
+    let encoded = serde_json::to_string(&outcome).unwrap();
+    assert!(!encoded.contains("private-token-value"), "{encoded}");
+    assert!(!encoded.contains("query-secret-value"), "{encoded}");
+    assert!(encoded.matches("[redacted]").count() >= 8, "{encoded}");
+}
+
+#[test]
 fn short_query_credentials_do_not_rewrite_json_structure_keys() {
     let scrubber = SecretScrubber::new(&McpAuthConfig::None, "https://example.com/mcp?api_key=abc");
     let mut value = json!({ "prefixabc": "prefixabc", "abc": "abc" });
@@ -150,6 +193,18 @@ fn extra_secrets_join_the_configured_ones_longest_first() {
         scrubber.scrub("configured-token-extended and configured-token"),
         "[redacted] and [redacted]"
     );
+}
+
+#[cfg(feature = "tools")]
+#[test]
+fn scrubber_redacts_secrets_from_the_tinytools_adapter_result() {
+    let scrubber = SecretScrubber::new(
+        &McpAuthConfig::BearerToken {
+            token: "configured-token".into(),
+        },
+        "https://example.com/mcp",
+    )
+    .with_secrets(["configured-token-extended".to_string()]);
     let result = scrubber.scrub_result(tinytools::ToolResult::json(
         json!({ "echo": "configured-token-extended" }),
     ));
