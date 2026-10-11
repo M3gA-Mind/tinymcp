@@ -15,13 +15,13 @@ use crate::error::Result;
 use crate::registry::{McpRegistry, SecretRef, Store, SupervisorConfig};
 use tinybus::Connection;
 use tinymcp_bus::{
-    AuthDetection, ClassifiedStaticToolCall, ConfigApplyReport, ConfigApplyResponse, ConnStatus,
-    ConfiguredToolCallRequest, ConnectOutcome, ConnectedServerOverview, InstallOutcome,
-    InstalledServer, McpTool,
-    McpWriteListQuery, McpWriteRecord, NewMcpWriteRecord, OpenConfiguredRequest,
-    OpenConfiguredResponse, RegistrySearchPage, RegistrySettings, ScrubStaticToolsRequest,
-    SearchCuration, ServerArgumentRule, ServerArgumentsValidation, ServerDetail,
-    ToolCallOutcome, TransitionStatus, UpdateEnvOutcome, ValidateServerArgumentsRequest,
+    AuthDetection, ClassifiedStaticToolCall, ConfigApplyReport, ConfigApplyResponse,
+    ConfiguredToolCallRequest, ConnStatus, ConnectOutcome, ConnectedServerOverview, InstallOutcome,
+    InstalledServer, McpTool, McpWriteListQuery, McpWriteRecord, NewMcpWriteRecord,
+    OpenConfiguredRequest, OpenConfiguredResponse, RegistrySearchPage, RegistrySettings,
+    ScrubStaticToolsRequest, SearchCuration, ServerArgumentRule, ServerArgumentsValidation,
+    ServerDetail, ToolCallOutcome, TransitionStatus, UpdateEnvOutcome,
+    ValidateServerArgumentsRequest,
 };
 
 /// Everything the interface serves.
@@ -689,10 +689,7 @@ impl McpService {
             }
         };
         let scrubber = SecretScrubber::for_server(&registry, &server);
-        match registry
-            .call_tool(&server, &tool, request.arguments)
-            .await
-        {
+        match registry.call_tool(&server, &tool, request.arguments).await {
             Ok(result) => {
                 let mut call = ToolCallOutcome::from(result);
                 scrubber.scrub_tool_call_outcome(&mut call);
@@ -720,9 +717,7 @@ impl McpService {
                     outcome,
                     rendered: None,
                     envelope: None,
-                    error_message: Some(scrubber.scrub(&format!(
-                        "mcp_call_tool failed: {error}"
-                    ))),
+                    error_message: Some(scrubber.scrub(&format!("mcp_call_tool failed: {error}"))),
                 })
             }
         }
@@ -739,15 +734,17 @@ impl McpService {
     ) -> tinybus::Result<ServerArgumentsValidation> {
         let result = (|| {
             let mut arguments = crate::server::args::object_arguments(request.arguments)?;
-            let allowed = request.allowed.iter().map(String::as_str).collect::<Vec<_>>();
+            let allowed = request
+                .allowed
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
             crate::server::args::reject_unexpected_arguments(&arguments, &allowed)?;
             for rule in request.rules {
                 match rule {
                     ServerArgumentRule::RequiredNonEmptyString { key } => {
-                        let value = crate::server::args::required_non_empty_string(
-                            &arguments,
-                            &key,
-                        )?;
+                        let value =
+                            crate::server::args::required_non_empty_string(&arguments, &key)?;
                         arguments.insert(key, Value::String(value));
                     }
                     ServerArgumentRule::OptionalNonEmptyString { key } => {
@@ -758,10 +755,8 @@ impl McpService {
                         }
                     }
                     ServerArgumentRule::RequiredNonEmptyStringArray { key } => {
-                        let values = crate::server::args::required_non_empty_string_array(
-                            &arguments,
-                            &key,
-                        )?;
+                        let values =
+                            crate::server::args::required_non_empty_string_array(&arguments, &key)?;
                         arguments.insert(key, Value::from(values));
                     }
                     ServerArgumentRule::OptionalPositiveU64 { key, max } => {

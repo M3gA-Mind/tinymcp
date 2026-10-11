@@ -1018,21 +1018,23 @@ async fn static_server_summaries_keep_legacy_fields_and_redact_endpoint_secrets(
 #[tokio::test]
 async fn configured_tool_call_does_not_register_the_one_shot_server() {
     let service = service();
-    let call: tinymcp_bus::ClassifiedStaticToolCall = serde_json::from_value(ok(
-        &service,
-        names::methods::CONFIGURED_TOOL_CALL,
-        json!([{
-            "server": {
-                "name": "docs",
-                "endpoint": "not a URL?token=one-shot-secret",
-                "enabled": true,
-                "timeout_secs": 4
-            },
-            "tool": "search",
-            "arguments": {"query": "mcp"}
-        }]),
+    let call: tinymcp_bus::ClassifiedStaticToolCall = serde_json::from_value(
+        ok(
+            &service,
+            names::methods::CONFIGURED_TOOL_CALL,
+            json!([{
+                "server": {
+                    "name": "docs",
+                    "endpoint": "not a URL?token=one-shot-secret",
+                    "enabled": true,
+                    "timeout_secs": 4
+                },
+                "tool": "search",
+                "arguments": {"query": "mcp"}
+            }]),
+        )
+        .await,
     )
-    .await)
     .expect("classified call reply");
 
     assert!(!call.outcome.ok);
@@ -1062,34 +1064,42 @@ async fn server_argument_validation_normalizes_and_reports_module_errors() {
         ],
     };
     let valid: tinymcp_bus::ServerArgumentsValidation = serde_json::from_value(
-        ok(&service, names::methods::VALIDATE_SERVER_ARGUMENTS, json!([request])).await,
+        ok(
+            &service,
+            names::methods::VALIDATE_SERVER_ARGUMENTS,
+            json!([request]),
+        )
+        .await,
     )
     .expect("validation reply");
     assert_eq!(
         valid,
-        tinymcp_bus::ServerArgumentsValidation::Valid(serde_json::from_value(json!({
-            "query":"weather", "limit":3
-        })).unwrap())
+        tinymcp_bus::ServerArgumentsValidation::Valid(
+            serde_json::from_value(json!({
+                "query":"weather", "limit":3
+            }))
+            .unwrap()
+        )
     );
 
-    let invalid: tinymcp_bus::ServerArgumentsValidation = serde_json::from_value(ok(
-        &service,
-        names::methods::VALIDATE_SERVER_ARGUMENTS,
-        json!([{
-            "arguments": {"query":"  ", "extra":true},
-            "allowed": ["query"],
-            "rules": [{"kind":"required_non_empty_string", "key":"query"}]
-        }]),
+    let invalid: tinymcp_bus::ServerArgumentsValidation = serde_json::from_value(
+        ok(
+            &service,
+            names::methods::VALIDATE_SERVER_ARGUMENTS,
+            json!([{
+                "arguments": {"query":"  ", "extra":true},
+                "allowed": ["query"],
+                "rules": [{"kind":"required_non_empty_string", "key":"query"}]
+            }]),
+        )
+        .await,
     )
-    .await)
     .expect("validation reply");
     assert_eq!(
         invalid,
-        tinymcp_bus::ServerArgumentsValidation::Invalid(
-            tinymcp_bus::ToolCallError::InvalidParams(
-                "unexpected argument `extra`".into()
-            )
-        )
+        tinymcp_bus::ServerArgumentsValidation::Invalid(tinymcp_bus::ToolCallError::InvalidParams(
+            "unexpected argument `extra`".into()
+        ))
     );
 }
 
