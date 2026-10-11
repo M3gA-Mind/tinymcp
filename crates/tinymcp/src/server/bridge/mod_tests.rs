@@ -4,7 +4,9 @@
 use super::*;
 use serde_json::{Value, json};
 use tinymcp_bus::{
-    ServerHostCall, ServerHostReply, ServerInput, ServerOperationState, ServerSessionConfig,
+    HEADER_PROTOCOL_VERSION, HEADER_SESSION_ID, ServerHostCall, ServerHostReply,
+    ServerHttpResponseMetadata, ServerHttpSessionConfig, ServerInput, ServerOperationState,
+    ServerSessionConfig,
 };
 
 fn input(line: String) -> ServerInput {
@@ -19,6 +21,18 @@ fn config() -> ServerSessionConfig {
         info: json!({"name":"host", "version":"1"}),
         source_type_prefix: "mcp".into(),
         resources: vec![json!({"uri":"host://info", "name":"info"})],
+    }
+}
+fn http_config(
+    requested_session_id: Option<&str>,
+    known_session: bool,
+    expected_protocol_version: Option<&str>,
+) -> ServerHttpSessionConfig {
+    ServerHttpSessionConfig {
+        server: config(),
+        requested_session_id: requested_session_id.map(str::to_owned),
+        known_session,
+        expected_protocol_version: expected_protocol_version.map(str::to_owned),
     }
 }
 async fn ready(sessions: &ServerSessions, id: &str) -> ServerOperationState {
@@ -98,6 +112,209 @@ async fn initialize_freezes_provenance_and_host_dispatches_normalized_calls() {
             .await
             .is_err()
     );
+}
+
+#[tokio::test]
+async fn session_metadata_reports_the_module_negotiated_protocol_version() {
+    let sessions = ServerSessions::default();
+    let id = sessions.open(config()).await.unwrap();
+    assert_eq!(
+        sessions.metadata(&id).await.unwrap(),
+        tinymcp_bus::ServerSessionMetadata {
+            initialized: false,
+            protocol_version: None,
+        }
+    );
+
+    submit(
+        &sessions,
+        &id,
+        json!({
+            "jsonrpc":"2.0",
+            "id":1,
+            "method":"initialize",
+            "params":{"protocolVersion":"unsupported-version"}
+        }),
+    )
+    .await;
+    let initialize_response = response(&sessions, &id).await;
+    assert_eq!(
+        sessions.metadata(&id).await.unwrap(),
+        tinymcp_bus::ServerSessionMetadata {
+            initialized: true,
+            protocol_version: Some(
+                initialize_response["result"]["protocolVersion"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            ),
+        }
+    );
+    assert_eq!(
+        sessions
+            .metadata(&id)
+            .await
+            .unwrap()
+            .protocol_version
+            .as_deref(),
+        Some(tinymcp_bus::LATEST_PROTOCOL_VERSION)
+    );
+    submit(
+        &sessions,
+        &id,
+        json!({
+            "jsonrpc":"2.0",
+            "id":2,
+            "method":"initialize",
+            "params":{"protocolVersion":tinymcp_bus::SUPPORTED_PROTOCOL_VERSIONS[0]}
+        }),
+    )
+    .await;
+    let _ = response(&sessions, &id).await;
+    assert_eq!(
+        sessions
+            .metadata(&id)
+            .await
+            .unwrap()
+            .protocol_version
+            .as_deref(),
+        Some(tinymcp_bus::SUPPORTED_PROTOCOL_VERSIONS[0])
+    );
+}
+
+#[tokio::test]
+async fn http_admission_rejects_preinitialize_tools_before_host_callbacks() {
+    let sessions = ServerSessions::default();
+    let id = sessions
+        .open_http(http_config(None, false, None))
+        .await
+        .unwrap();
+    submit(
+        &sessions,
+        &id,
+        json!({
+            "jsonrpc":"2.0",
+            "id":1,
+            "method":"tools/call",
+            "params":{"name":"must-not-run"}
+        }),
+    )
+    .await;
+
+    assert_eq!(
+        ready(&sessions, &id).await,
+        ServerOperationState::Complete { response: None }
+    );
+    assert_eq!(
+        sessions.poll(&id).await.unwrap().http_response,
+        Some(ServerHttpResponseMetadata {
+            status_code: 400,
+            headers: std::collections::BTreeMap::default(),
+            content_type: Some("text/plain; charset=utf-8".into()),
+            error_body: Some("missing or invalid Mcp-Session-Id header".into()),
+        })
+    );
+}
+
+#[tokio::test]
+async fn http_initialize_returns_module_negotiated_session_headers() {
+    let sessions = ServerSessions::default();
+    let id = sessions
+        .open_http(http_config(None, false, None))
+        .await
+        .unwrap();
+    submit(
+        &sessions,
+        &id,
+        json!({
+            "jsonrpc":"2.0",
+            "id":1,
+            "method":"initialize",
+            "params":{"protocolVersion":"unsupported-version"}
+        }),
+    )
+    .await;
+    let initialize_response = response(&sessions, &id).await;
+    assert_eq!(
+        sessions
+            .metadata(&id)
+            .await
+            .unwrap()
+            .protocol_version
+            .as_deref(),
+        Some(tinymcp_bus::LATEST_PROTOCOL_VERSION)
+    );
+    assert_eq!(
+        initialize_response["result"]["protocolVersion"],
+        tinymcp_bus::LATEST_PROTOCOL_VERSION
+    );
+    let http_response = sessions.poll(&id).await.unwrap().http_response.unwrap();
+    assert_eq!(http_response.status_code, 200);
+    assert_eq!(
+        http_response.content_type.as_deref(),
+        Some("application/json")
+    );
+    assert!(!http_response.headers.contains_key(HEADER_PROTOCOL_VERSION));
+    let external_id = http_response.headers[HEADER_SESSION_ID].clone();
+
+    sessions
+        .submit(
+            &id,
+            serde_json::Map::from_iter([
+                (HEADER_SESSION_ID.into(), json!(external_id)),
+                (
+                    HEADER_PROTOCOL_VERSION.into(),
+                    json!(tinymcp_bus::LATEST_PROTOCOL_VERSION),
+                ),
+            ]),
+            input(json!({"jsonrpc":"2.0","id":2,"method":"ping"}).to_string()),
+        )
+        .await
+        .unwrap();
+    let response = response(&sessions, &id).await;
+    assert_eq!(response["result"], json!({}));
+    let http_response = sessions.poll(&id).await.unwrap().http_response.unwrap();
+    assert_eq!(http_response.status_code, 200);
+    assert!(http_response.headers.is_empty());
+}
+
+#[tokio::test]
+async fn http_stale_and_mismatched_sessions_have_transport_statuses() {
+    for (context, headers, expected_status, expected_body) in [
+        (
+            http_config(Some("expired-session"), false, None),
+            serde_json::Map::from_iter([(HEADER_SESSION_ID.into(), json!("expired-session"))]),
+            404,
+            "unknown or expired MCP session",
+        ),
+        (
+            http_config(Some("known-session"), true, Some("2025-11-25")),
+            serde_json::Map::from_iter([
+                (HEADER_SESSION_ID.into(), json!("known-session")),
+                (HEADER_PROTOCOL_VERSION.into(), json!("wrong-version")),
+            ]),
+            400,
+            "missing or invalid MCP-Protocol-Version header",
+        ),
+    ] {
+        let sessions = ServerSessions::default();
+        let id = sessions.open_http(context).await.unwrap();
+        sessions
+            .submit(
+                &id,
+                headers,
+                input(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}).to_string()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            ready(&sessions, &id).await,
+            ServerOperationState::Complete { response: None }
+        );
+        let response = sessions.poll(&id).await.unwrap().http_response.unwrap();
+        assert_eq!(response.status_code, expected_status);
+        assert_eq!(response.error_body.as_deref(), Some(expected_body));
+    }
 }
 #[tokio::test]
 async fn callback_failures_are_jsonrpc_errors_and_cancellation_releases_waiters() {

@@ -298,6 +298,9 @@ async fn handle_request(
                 session.source_type()
             );
             let mut result = initialize_result(&handler.server_info(), &params);
+            if let Some(protocol_version) = result.get("protocolVersion").and_then(Value::as_str) {
+                session.observe_initialize_response(protocol_version);
+            }
             if handler.supports_prompts() {
                 result["capabilities"]["prompts"] = json!({});
             }

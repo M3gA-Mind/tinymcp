@@ -1,17 +1,20 @@
 # Compiled-module server protocol
 
 `ServerSessions` owns opaque session identifiers and runs the existing server
-protocol. The bus service publishes seven positional operations:
+protocol. The bus service publishes ten positional operations:
 
 | Member | Arguments | Result |
 | --- | --- | --- |
 | ServerOpen | config | opaque session string |
+| ServerOpenHttp | HTTP session context | opaque session string |
 | ServerSubmit | session, headers, input | unit |
-| ServerPoll | session | operation id plus pending, callback, complete, cancelled or failed |
+| ServerPoll | session | operation id, pending/callback/terminal state and operation-bound HTTP metadata |
 | ServerComplete | session, callback id, reply | unit |
 | ServerCancel | {session_id, operation_id} | unit |
 | ServerClose | session | unit |
 | ServerShutdown | none | closed session count |
+| ServerSessionMetadata | session | initialize state and negotiated protocol version |
+| ServerHttpSession | typed method, requested ID, known internal ID, headers | module-selected HTTP status, headers and error body |
 
 Issue `session_id` as a nonzero UUID-encoded integer sequence before calling
 `ServerOpen`, then use
@@ -70,3 +73,17 @@ how the host changes identity/resources. Tools and prompts are requested from th
 host for each relevant MCP request. The stdio and HTTP library entrypoints keep
 working; module-owned listeners are a separate migration slice. No host should
 reimplement MCP framing around these operations.
+
+After the initialize operation reaches a terminal state, `ServerPoll` returns
+HTTP response metadata bound to that operation ID, including negotiated session
+headers. `ServerSessionMetadata` reports whether initialization succeeded and
+which protocol version the module selected. Hosts must treat the response body
+as opaque rather than parsing JSON-RPC to recover protocol state.
+
+HTTP adapters use `ServerOpenHttp` for sessions that need HTTP admission. The
+module rejects missing, stale or mismatched POST headers before producing host
+callbacks. `ServerHttpSession` owns GET protocol validation and DELETE session
+cleanup; a successful DELETE joins protocol work before returning its 204
+receipt, while stale deletes remain idempotent. `ServerPoll` returns HTTP status,
+response headers and any transport-level error body bound to its operation ID.
+`ServerOpen` keeps the existing stdio behavior and argument shape.

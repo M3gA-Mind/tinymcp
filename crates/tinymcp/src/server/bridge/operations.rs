@@ -5,11 +5,12 @@ use crate::RequestHeadersExt;
 use crate::server::{ClientSession, RequestHeaders};
 use crate::{Error, Result};
 use serde_json::{Map, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use tinymcp_bus::{
-    ServerHostReply, ServerInput, ServerOperationSnapshot, ServerOperationState,
-    ServerSessionConfig,
+    HEADER_PROTOCOL_VERSION, HEADER_SESSION_ID, ServerHostReply, ServerHttpResponseMetadata,
+    ServerHttpSessionConfig, ServerHttpSessionMethod, ServerHttpSessionRequest, ServerInput,
+    ServerOperationSnapshot, ServerOperationState, ServerSessionConfig,
 };
 use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinHandle;
@@ -22,6 +23,8 @@ struct Operation {
     waiting: Option<WaitingCallback>,
     terminal: Option<ServerOperationState>,
     reply_bytes: usize,
+    http_initialization: bool,
+    http_response: Option<ServerHttpResponseMetadata>,
 }
 impl Drop for Operation {
     fn drop(&mut self) {
@@ -60,8 +63,17 @@ impl Operation {
 struct Session {
     client: Arc<Mutex<ClientSession>>,
     config: ServerSessionConfig,
+    http_open_context: Option<HttpSessionContext>,
+    http: Option<HttpSessionContext>,
     operation: Option<Operation>,
     operation_sequence: u128,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct HttpSessionContext {
+    requested_session_id: Option<String>,
+    known_session: bool,
+    expected_protocol_version: Option<String>,
 }
 
 const ADMISSION_WINDOW: u128 = 4096;
@@ -110,6 +122,14 @@ impl std::fmt::Debug for ServerSessions {
 fn invalid(message: &str) -> Error {
     Error::invalid_argument(message)
 }
+fn http_error(status_code: u16, message: &str) -> ServerHttpResponseMetadata {
+    ServerHttpResponseMetadata {
+        status_code,
+        headers: BTreeMap::new(),
+        content_type: Some("text/plain; charset=utf-8".into()),
+        error_body: Some(message.into()),
+    }
+}
 fn validate_id(id: &str) -> Result<uuid::Uuid> {
     let id = uuid::Uuid::parse_str(id).map_err(|_| invalid("invalid server identifier"))?;
     if id.is_nil() {
@@ -126,6 +146,121 @@ fn bounded<T: serde::Serialize>(value: &T) -> Result<usize> {
     }
     Ok(bytes)
 }
+fn is_initialize_request(line: &str) -> bool {
+    serde_json::from_str::<Value>(line)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("method")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .is_some_and(|method| method == "initialize")
+}
+fn header_value<'a>(headers: &'a Map<String, Value>, name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case(name))
+        .and_then(|(_, value)| value.as_str())
+}
+fn http_admission_error(
+    context: &HttpSessionContext,
+    session_header: Option<&str>,
+    protocol_header: Option<&str>,
+) -> Option<ServerHttpResponseMetadata> {
+    let status_code;
+    let message;
+    match context.requested_session_id.as_deref() {
+        None => {
+            status_code = 400;
+            message = "missing or invalid Mcp-Session-Id header";
+        }
+        Some(_) if !context.known_session => {
+            status_code = 404;
+            message = "unknown or expired MCP session";
+        }
+        Some(session_id) if session_header != Some(session_id) => {
+            status_code = 404;
+            message = "unknown or expired MCP session";
+        }
+        Some(_) if protocol_header != context.expected_protocol_version.as_deref() => {
+            status_code = 400;
+            message = "missing or invalid MCP-Protocol-Version header";
+        }
+        Some(_) => return None,
+    }
+    Some(ServerHttpResponseMetadata {
+        status_code,
+        headers: BTreeMap::default(),
+        content_type: Some("text/plain; charset=utf-8".into()),
+        error_body: Some(message.into()),
+    })
+}
+fn http_response_metadata(
+    state: &ServerOperationState,
+    initialization: bool,
+    client: &tinymcp_bus::ServerSessionMetadata,
+) -> (ServerHttpResponseMetadata, Option<HttpSessionContext>) {
+    let (status_code, error_body, success_content_type) = match state {
+        ServerOperationState::Complete { response: Some(_) } => {
+            (200, None, Some("application/json".to_owned()))
+        }
+        ServerOperationState::Complete { response: None } => (204, None, None),
+        ServerOperationState::Cancelled => (503, Some("server operation cancelled".into()), None),
+        ServerOperationState::Failed { .. } => (500, Some("internal server error".into()), None),
+        ServerOperationState::Pending | ServerOperationState::Callback { .. } | _ => {
+            (500, Some("server operation incomplete".into()), None)
+        }
+    };
+    let mut headers = BTreeMap::new();
+    let mut next_context = None;
+    if initialization
+        && client.initialized
+        && let Some(protocol_version) = client.protocol_version.as_ref()
+        && status_code == 200
+    {
+        let session_id = uuid::Uuid::new_v4().to_string();
+        headers.insert(HEADER_SESSION_ID.to_owned(), session_id.clone());
+        next_context = Some(HttpSessionContext {
+            requested_session_id: Some(session_id),
+            known_session: true,
+            expected_protocol_version: Some(protocol_version.clone()),
+        });
+    }
+    let content_type = if error_body.is_some() {
+        Some("text/plain; charset=utf-8".to_owned())
+    } else {
+        success_content_type
+    };
+    (
+        ServerHttpResponseMetadata {
+            status_code,
+            headers,
+            content_type,
+            error_body,
+        },
+        next_context,
+    )
+}
+fn rejected_http_operation(
+    input: ServerInput,
+    headers: RequestHeaders,
+    http_initialization: bool,
+    response: ServerHttpResponseMetadata,
+) -> Operation {
+    let (_sender, receiver) = mpsc::channel(1);
+    Operation {
+        input,
+        headers,
+        task: None,
+        receiver,
+        waiting: None,
+        terminal: Some(ServerOperationState::Complete { response: None }),
+        reply_bytes: 0,
+        http_initialization,
+        http_response: Some(response),
+    }
+}
 impl ServerSessions {
     /// Opens or retries a caller-known session reservation with frozen declarations.
     ///
@@ -133,6 +268,36 @@ impl ServerSessions {
     /// Rejects invalid declarations, conflicting IDs, more than 32 active sessions,
     /// oversized payloads or retired/out-of-window reservation identifiers.
     pub async fn open(&self, config: ServerSessionConfig) -> Result<String> {
+        self.open_with_transport(config, None).await
+    }
+
+    /// Opens a session that applies HTTP session and protocol-header admission.
+    ///
+    /// # Errors
+    /// Rejects inconsistent HTTP session context or the same errors as [`Self::open`].
+    pub async fn open_http(&self, config: ServerHttpSessionConfig) -> Result<String> {
+        bounded(&config)?;
+        if config.known_session
+            != (config.requested_session_id.is_some() && config.expected_protocol_version.is_some())
+        {
+            return Err(invalid("invalid HTTP session context"));
+        }
+        self.open_with_transport(
+            config.server,
+            Some(HttpSessionContext {
+                requested_session_id: config.requested_session_id,
+                known_session: config.known_session,
+                expected_protocol_version: config.expected_protocol_version,
+            }),
+        )
+        .await
+    }
+
+    async fn open_with_transport(
+        &self,
+        config: ServerSessionConfig,
+        http: Option<HttpSessionContext>,
+    ) -> Result<String> {
         bounded(&config)?;
         let _: crate::server::ServerInfo = serde_json::from_value(config.info.clone())
             .map_err(|_| invalid("invalid server identity"))?;
@@ -146,7 +311,7 @@ impl ServerSessions {
         let id = identifier.to_string();
         let mut sessions = self.sessions.lock().await;
         if let Some(existing) = sessions.active.get(&id) {
-            return if existing.config == config {
+            return if existing.config == config && existing.http_open_context == http {
                 Ok(id)
             } else {
                 Err(invalid("server session identifier already reserved"))
@@ -161,11 +326,109 @@ impl ServerSessions {
             Session {
                 client: Arc::new(Mutex::new(ClientSession::new(&config.source_type_prefix))),
                 config,
+                http_open_context: http.clone(),
+                http,
                 operation: None,
                 operation_sequence: 0,
             },
         );
         Ok(id)
+    }
+    /// Returns transport metadata captured by the module for an open session.
+    ///
+    /// # Errors
+    /// Rejects an unknown session identifier.
+    pub async fn metadata(&self, id: &str) -> Result<tinymcp_bus::ServerSessionMetadata> {
+        let sessions = self.sessions.lock().await;
+        let session = sessions
+            .active
+            .get(&validate_id(id)?.to_string())
+            .ok_or_else(|| invalid("unknown server session"))?;
+        let client = Arc::clone(&session.client);
+        drop(sessions);
+        Ok(client.lock().await.metadata())
+    }
+
+    /// Applies module-owned GET/DELETE session admission for the HTTP transport.
+    ///
+    /// DELETE joins the session worker before acknowledging a known session;
+    /// stale deletes remain idempotent. GET returns event-stream metadata only
+    /// after the session and negotiated protocol version are validated.
+    pub async fn http_session(
+        &self,
+        request: ServerHttpSessionRequest,
+    ) -> ServerHttpResponseMetadata {
+        if bounded(&request).is_err() {
+            return http_error(400, "invalid HTTP session request");
+        }
+        let session_header = header_value(&request.headers, HEADER_SESSION_ID);
+        let protocol_header = header_value(&request.headers, HEADER_PROTOCOL_VERSION);
+        let Some(supplied_id) = session_header else {
+            return http_error(400, "missing Mcp-Session-Id header");
+        };
+        match request.method {
+            ServerHttpSessionMethod::Delete => {
+                if request.requested_session_id.as_deref() == Some(supplied_id)
+                    && let Some(internal_id) = request.internal_session_id.as_deref()
+                    && self
+                        .close_http_session(supplied_id, internal_id)
+                        .await
+                        .is_err()
+                {
+                    return http_error(500, "internal server error");
+                }
+                ServerHttpResponseMetadata {
+                    status_code: 204,
+                    headers: BTreeMap::new(),
+                    content_type: None,
+                    error_body: None,
+                }
+            }
+            ServerHttpSessionMethod::Get => {
+                let (Some(requested_id), Some(internal_id)) = (
+                    request.requested_session_id.as_deref(),
+                    request.internal_session_id.as_deref(),
+                ) else {
+                    return http_error(404, "unknown or expired MCP session");
+                };
+                if requested_id != supplied_id {
+                    return http_error(404, "unknown or expired MCP session");
+                }
+                let Ok(identifier) = validate_id(internal_id) else {
+                    return http_error(404, "unknown or expired MCP session");
+                };
+                let sessions = self.sessions.lock().await;
+                let Some(session) = sessions.active.get(&identifier.to_string()) else {
+                    return http_error(404, "unknown or expired MCP session");
+                };
+                let Some(context) = session.http.as_ref() else {
+                    return http_error(404, "unknown or expired MCP session");
+                };
+                if !context.known_session
+                    || context.requested_session_id.as_deref() != Some(requested_id)
+                {
+                    return http_error(404, "unknown or expired MCP session");
+                }
+                let expected_protocol = context.expected_protocol_version.clone();
+                let client = Arc::clone(&session.client);
+                drop(sessions);
+                let metadata = client.lock().await.metadata();
+                if !metadata.initialized {
+                    return http_error(404, "unknown or expired MCP session");
+                }
+                if protocol_header != expected_protocol.as_deref()
+                    || protocol_header != metadata.protocol_version.as_deref()
+                {
+                    return http_error(400, "missing or invalid MCP-Protocol-Version header");
+                }
+                ServerHttpResponseMetadata {
+                    status_code: 200,
+                    headers: BTreeMap::new(),
+                    content_type: Some("text/event-stream".into()),
+                    error_body: None,
+                }
+            }
+        }
     }
     /// Submits or retries caller-known input. New input acknowledges prior terminal state.
     ///
@@ -186,6 +449,9 @@ impl ServerSessions {
         {
             return Err(invalid("server batch exceeds item limit"));
         }
+        let http_initialization = is_initialize_request(&input.line);
+        let session_header = header_value(&headers, HEADER_SESSION_ID).map(str::to_owned);
+        let protocol_header = header_value(&headers, HEADER_PROTOCOL_VERSION).map(str::to_owned);
         let mut request_headers = RequestHeaders::new();
         for (key, value) in headers {
             request_headers.insert(
@@ -214,6 +480,27 @@ impl ServerSessions {
         }
         if operation_sequence <= session.operation_sequence {
             return Err(invalid("server operation identifier already used"));
+        }
+        let http_rejection = if http_initialization {
+            None
+        } else {
+            session.http.as_ref().and_then(|context| {
+                http_admission_error(
+                    context,
+                    session_header.as_deref(),
+                    protocol_header.as_deref(),
+                )
+            })
+        };
+        if let Some(http_response) = http_rejection {
+            session.operation_sequence = operation_sequence;
+            session.operation = Some(rejected_http_operation(
+                input,
+                request_headers,
+                http_initialization,
+                http_response,
+            ));
+            return Ok(());
         }
         let (sender, receiver) = mpsc::channel(1);
         let handler = Arc::new(CallbackHandler {
@@ -247,6 +534,8 @@ impl ServerSessions {
             waiting: None,
             terminal: None,
             reply_bytes: 0,
+            http_initialization,
+            http_response: None,
         });
         Ok(())
     }
@@ -256,14 +545,34 @@ impl ServerSessions {
     /// Rejects unknown or idle sessions.
     pub async fn poll(&self, id: &str) -> Result<ServerOperationSnapshot> {
         let mut sessions = self.sessions.lock().await;
-        let operation = sessions
+        let session = sessions
             .active
             .get_mut(&validate_id(id)?.to_string())
-            .ok_or_else(|| invalid("unknown server session"))?
+            .ok_or_else(|| invalid("unknown server session"))?;
+        let operation = session
             .operation
             .as_mut()
             .ok_or_else(|| invalid("server session has no operation"))?;
         operation.finish().await;
+        let completed = operation.terminal.clone();
+        let http_initialization = operation.http_initialization;
+        if session.http.is_some()
+            && operation.http_response.is_none()
+            && let Some(state) = completed.as_ref()
+        {
+            let client = Arc::clone(&session.client);
+            let client_metadata = client.lock().await.metadata();
+            let (response, next_context) =
+                http_response_metadata(state, http_initialization, &client_metadata);
+            if let Some(next_context) = next_context {
+                session.http = Some(next_context);
+            }
+            operation.http_response = Some(response);
+        }
+        let operation = session
+            .operation
+            .as_mut()
+            .ok_or_else(|| invalid("server session has no operation"))?;
         let state = if let Some(terminal) = &operation.terminal {
             terminal.clone()
         } else if let Some(waiting) = &operation.waiting {
@@ -280,6 +589,7 @@ impl ServerSessions {
         Ok(ServerOperationSnapshot {
             operation_id: operation.input.operation_id.clone(),
             state,
+            http_response: operation.http_response.clone(),
         })
     }
     /// Completes one outstanding callback after host policy and execution.
@@ -356,6 +666,25 @@ impl ServerSessions {
         let mut sessions = self.sessions.lock().await;
         if !sessions.active.contains_key(&identifier.to_string()) {
             sessions.reserve_close(identifier.as_u128());
+        }
+        if let Some(mut session) = sessions.active.remove(&identifier.to_string())
+            && let Some(mut operation) = session.operation.take()
+        {
+            operation.stop().await;
+        }
+        Ok(())
+    }
+    async fn close_http_session(&self, requested_id: &str, internal_id: &str) -> Result<()> {
+        let identifier = validate_id(internal_id)?;
+        let mut sessions = self.sessions.lock().await;
+        let Some(session) = sessions.active.get(&identifier.to_string()) else {
+            sessions.reserve_close(identifier.as_u128());
+            return Ok(());
+        };
+        if !session.http.as_ref().is_some_and(|context| {
+            context.known_session && context.requested_session_id.as_deref() == Some(requested_id)
+        }) {
+            return Ok(());
         }
         if let Some(mut session) = sessions.active.remove(&identifier.to_string())
             && let Some(mut operation) = session.operation.take()

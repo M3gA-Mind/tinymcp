@@ -1470,6 +1470,7 @@ async fn supervisor_drain_without_maintenance_is_empty_and_checks_arity() {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn server_members_preserve_positional_arguments_callbacks_and_lifecycle() {
     use serde_json::json;
     use tinymcp_bus::{
@@ -1488,6 +1489,16 @@ async fn server_members_preserve_positional_arguments_callbacks_and_lifecycle() 
             .unwrap(),
     )
     .unwrap();
+    assert_eq!(
+        call(
+            &service,
+            names::methods::SERVER_SESSION_METADATA,
+            json!([id])
+        )
+        .await
+        .unwrap(),
+        json!({"initialized":false,"protocol_version":null})
+    );
     call(
         &service,
         names::methods::SERVER_SUBMIT,
@@ -1569,6 +1580,82 @@ async fn server_members_preserve_positional_arguments_callbacks_and_lifecycle() 
             .await
             .unwrap(),
         0
+    );
+}
+
+#[tokio::test]
+async fn http_server_member_returns_preinitialize_admission_without_host_dispatch() {
+    use serde_json::json;
+    use tinymcp_bus::{ServerHttpSessionConfig, ServerOperationSnapshot, ServerOperationState};
+
+    let service = service();
+    let id: String = serde_json::from_value(
+        call(
+            &service,
+            names::methods::SERVER_OPEN_HTTP,
+            json!([ServerHttpSessionConfig {
+                server: tinymcp_bus::ServerSessionConfig {
+                    session_id: next_id(),
+                    info: json!({"name":"fixture","version":"1"}),
+                    source_type_prefix: "mcp".into(),
+                    resources: vec![],
+                },
+                requested_session_id: None,
+                known_session: false,
+                expected_protocol_version: None,
+            }]),
+        )
+        .await
+        .unwrap(),
+    )
+    .unwrap();
+    call(
+        &service,
+        names::methods::SERVER_SUBMIT,
+        json!([
+            id,
+            {},
+            {"operation_id":next_id(),"line":json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"must-not-run"}}).to_string()}
+        ]),
+    )
+    .await
+    .unwrap();
+    let state: ServerOperationSnapshot = serde_json::from_value(
+        call(&service, names::methods::SERVER_POLL, json!([id]))
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        state.state,
+        ServerOperationState::Complete { response: None }
+    );
+    assert_eq!(state.http_response.unwrap().status_code, 400);
+}
+
+#[tokio::test]
+async fn http_session_member_owns_missing_session_response() {
+    use serde_json::json;
+    let service = service();
+    let missing_get: tinymcp_bus::ServerHttpResponseMetadata = serde_json::from_value(
+        call(
+            &service,
+            names::methods::SERVER_HTTP_SESSION,
+            json!([tinymcp_bus::ServerHttpSessionRequest {
+                method: tinymcp_bus::ServerHttpSessionMethod::Get,
+                requested_session_id: None,
+                internal_session_id: None,
+                headers: serde_json::Map::new(),
+            }]),
+        )
+        .await
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(missing_get.status_code, 400);
+    assert_eq!(
+        missing_get.error_body.as_deref(),
+        Some("missing Mcp-Session-Id header")
     );
 }
 

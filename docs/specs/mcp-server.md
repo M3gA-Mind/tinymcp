@@ -29,8 +29,9 @@ trait. Non-goal: moving any OpenHuman policy, or changing a byte on the wire.
   socket links no server stack.
 - Transport headers reach the handler through `RequestContext`; host-specific
   header semantics (OpenHuman's subagent depth) stay in the host.
-- These are in-process Rust APIs. Nothing is added to `tinymcp-bus`, which
-  stays transport-free.
+- The in-process Rust APIs keep the generic library transport optional. The
+  compiled-module server contract lives in `tinymcp-bus`, which stays free of
+  transport implementations and runtimes.
 
 ## Invariants and constraints
 
@@ -39,6 +40,25 @@ trait. Non-goal: moving any OpenHuman policy, or changing a byte on the wire.
   the same shapes against a demo handler.
 - Host policy stays in the host: configuration, security policy, audit, agent
   turns, tool catalog, prompt resources, subagent depth, token minting.
+
+## Module-owned transport metadata
+
+The TinyBus server-session API exposes whether a session successfully handled
+`initialize` and, when it did, the protocol version selected by the module.
+HTTP response metadata is attached to the replayable operation snapshot, so the
+status and headers stay bound to that operation ID even if another request is
+later admitted. The operation response remains opaque; stdio adapters may ignore
+the transport metadata.
+
+The bus payload is additive and does not change the existing server method
+arities or the JSON-RPC wire representation.
+
+HTTP adapters open HTTP-aware server sessions. The module enforces the
+initialize-first rule and validates known, stale and absent POST session headers
+before creating host callbacks. A typed HTTP session operation owns GET protocol
+validation and DELETE cleanup, including joining active work before a known
+DELETE returns. It reports transport status and response headers as typed
+metadata. The existing `ServerOpen` path retains stdio semantics.
 
 ## Acceptance criteria
 

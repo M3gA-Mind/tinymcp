@@ -343,6 +343,228 @@ fn next_id() -> String {
 }
 
 #[tokio::test]
+async fn http_get_admission_is_module_owned() {
+    use tinymcp_bus::{
+        HEADER_PROTOCOL_VERSION, HEADER_SESSION_ID, ServerHttpSessionMethod,
+        ServerHttpSessionRequest,
+    };
+
+    let sessions = ServerSessions::default();
+    let missing = sessions
+        .http_session(ServerHttpSessionRequest {
+            method: ServerHttpSessionMethod::Get,
+            requested_session_id: None,
+            internal_session_id: None,
+            headers: Map::new(),
+        })
+        .await;
+    assert_eq!(missing.status_code, 400);
+    assert_eq!(
+        missing.error_body.as_deref(),
+        Some("missing Mcp-Session-Id header")
+    );
+    let (id, wire_id) = initialized_http_session(&sessions).await;
+    let unknown = sessions
+        .http_session(ServerHttpSessionRequest {
+            method: ServerHttpSessionMethod::Get,
+            requested_session_id: Some("wire-stale".into()),
+            internal_session_id: None,
+            headers: serde_json::from_value(json!({HEADER_SESSION_ID:"wire-stale"})).unwrap(),
+        })
+        .await;
+    assert_eq!(unknown.status_code, 404);
+
+    let mismatch = sessions
+        .http_session(ServerHttpSessionRequest {
+            method: ServerHttpSessionMethod::Get,
+            requested_session_id: Some(wire_id.clone()),
+            internal_session_id: Some(id.clone()),
+            headers: serde_json::from_value(json!({HEADER_SESSION_ID:wire_id})).unwrap(),
+        })
+        .await;
+    assert_eq!(mismatch.status_code, 400);
+    assert_eq!(
+        mismatch.error_body.as_deref(),
+        Some("missing or invalid MCP-Protocol-Version header")
+    );
+
+    let misrouted = sessions
+        .http_session(ServerHttpSessionRequest {
+            method: ServerHttpSessionMethod::Get,
+            requested_session_id: Some("wire-alias".into()),
+            internal_session_id: Some(id.clone()),
+            headers: serde_json::from_value(json!({
+                HEADER_SESSION_ID:"wire-alias",
+                HEADER_PROTOCOL_VERSION:tinymcp_bus::LATEST_PROTOCOL_VERSION
+            }))
+            .unwrap(),
+        })
+        .await;
+    assert_eq!(misrouted.status_code, 404);
+
+    let valid = sessions
+        .http_session(ServerHttpSessionRequest {
+            method: ServerHttpSessionMethod::Get,
+            requested_session_id: Some(wire_id.clone()),
+            internal_session_id: Some(id.clone()),
+            headers: serde_json::from_value(json!({
+                HEADER_SESSION_ID:wire_id,
+                HEADER_PROTOCOL_VERSION:tinymcp_bus::LATEST_PROTOCOL_VERSION
+            }))
+            .unwrap(),
+        })
+        .await;
+    assert_eq!(valid.status_code, 200);
+    assert_eq!(valid.content_type.as_deref(), Some("text/event-stream"));
+}
+
+#[tokio::test]
+async fn http_delete_is_idempotent_and_joins_known_session_cleanup() {
+    use tinymcp_bus::{HEADER_SESSION_ID, ServerHttpSessionMethod, ServerHttpSessionRequest};
+
+    let sessions = ServerSessions::default();
+    let missing = sessions
+        .http_session(ServerHttpSessionRequest {
+            method: ServerHttpSessionMethod::Delete,
+            requested_session_id: None,
+            internal_session_id: None,
+            headers: Map::new(),
+        })
+        .await;
+    assert_eq!(missing.status_code, 400);
+
+    let (id, wire_id) = initialized_http_session(&sessions).await;
+    let misrouted_delete = sessions
+        .http_session(ServerHttpSessionRequest {
+            method: ServerHttpSessionMethod::Delete,
+            requested_session_id: Some("wire-alias".into()),
+            internal_session_id: Some(id.clone()),
+            headers: serde_json::from_value(json!({HEADER_SESSION_ID:"wire-alias"})).unwrap(),
+        })
+        .await;
+    assert_eq!(misrouted_delete.status_code, 204);
+    assert!(sessions.metadata(&id).await.is_ok());
+
+    let deleted = sessions
+        .http_session(ServerHttpSessionRequest {
+            method: ServerHttpSessionMethod::Delete,
+            requested_session_id: Some(wire_id.clone()),
+            internal_session_id: Some(id.clone()),
+            headers: serde_json::from_value(json!({HEADER_SESSION_ID:wire_id})).unwrap(),
+        })
+        .await;
+    assert_eq!(deleted.status_code, 204);
+    assert!(sessions.metadata(&id).await.is_err());
+
+    let failed_cleanup = sessions
+        .http_session(ServerHttpSessionRequest {
+            method: ServerHttpSessionMethod::Delete,
+            requested_session_id: Some("wire-current".into()),
+            internal_session_id: Some("not-a-session-uuid".into()),
+            headers: serde_json::from_value(json!({HEADER_SESSION_ID:"wire-current"})).unwrap(),
+        })
+        .await;
+    assert_eq!(failed_cleanup.status_code, 500);
+
+    let stale_delete = sessions
+        .http_session(ServerHttpSessionRequest {
+            method: ServerHttpSessionMethod::Delete,
+            requested_session_id: Some("wire-stale".into()),
+            internal_session_id: None,
+            headers: serde_json::from_value(json!({HEADER_SESSION_ID:"wire-stale"})).unwrap(),
+        })
+        .await;
+    assert_eq!(stale_delete.status_code, 204);
+}
+
+async fn initialized_http_session(sessions: &ServerSessions) -> (String, String) {
+    let id = sessions
+        .open_http(tinymcp_bus::ServerHttpSessionConfig {
+            server: config(),
+            requested_session_id: None,
+            known_session: false,
+            expected_protocol_version: None,
+        })
+        .await
+        .unwrap();
+    sessions
+        .submit(
+            &id,
+            Map::new(),
+            ServerInput {
+                operation_id: next_id(),
+                line: json!({
+                    "jsonrpc":"2.0",
+                    "id":1,
+                    "method":"initialize",
+                    "params":{"protocolVersion":tinymcp_bus::LATEST_PROTOCOL_VERSION}
+                })
+                .to_string(),
+            },
+        )
+        .await
+        .unwrap();
+    let initialized = visible(sessions, &id).await;
+    assert!(matches!(
+        initialized.state,
+        ServerOperationState::Complete { .. }
+    ));
+    let wire_id = initialized
+        .http_response
+        .expect("HTTP initialize metadata")
+        .headers[HEADER_SESSION_ID]
+        .clone();
+    (id, wire_id)
+}
+
+#[tokio::test]
+async fn http_response_metadata_is_bound_to_the_polled_operation() {
+    use tinymcp_bus::{ServerHttpSessionConfig, ServerOperationState};
+
+    let sessions = ServerSessions::default();
+    let id = sessions
+        .open_http(ServerHttpSessionConfig {
+            server: config(),
+            requested_session_id: Some("wire-session".into()),
+            known_session: true,
+            expected_protocol_version: Some(tinymcp_bus::LATEST_PROTOCOL_VERSION.into()),
+        })
+        .await
+        .unwrap();
+    let first = ServerInput {
+        operation_id: next_id(),
+        line: json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}).to_string(),
+    };
+    let headers = serde_json::from_value(json!({HEADER_SESSION_ID:"wrong"})).unwrap();
+    sessions.submit(&id, headers, first.clone()).await.unwrap();
+    let first_snapshot = sessions.poll(&id).await.unwrap();
+    assert!(matches!(
+        first_snapshot.state,
+        ServerOperationState::Complete { .. }
+    ));
+    assert_eq!(
+        first_snapshot.http_response.as_ref().unwrap().status_code,
+        404
+    );
+
+    let second = ServerInput {
+        operation_id: next_id(),
+        line: json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}).to_string(),
+    };
+    let headers = serde_json::from_value(json!({HEADER_SESSION_ID:"wire-session"})).unwrap();
+    sessions.submit(&id, headers, second).await.unwrap();
+    let second_snapshot = sessions.poll(&id).await.unwrap();
+    assert_eq!(
+        second_snapshot.http_response.as_ref().unwrap().status_code,
+        400
+    );
+    assert_eq!(
+        first_snapshot.http_response.as_ref().unwrap().status_code,
+        404
+    );
+}
+
+#[tokio::test]
 async fn admission_window_allows_reordered_opens_and_close_only_retires_its_identifier() {
     let sessions = ServerSessions::default();
     let lower = ServerSessionConfig {

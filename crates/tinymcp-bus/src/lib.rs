@@ -112,8 +112,10 @@ pub use version::{CONTRACT_VERSION, is_compatible};
 pub use supervisor::{ProbeOutcome, ServerRef, SupervisorBatch, SupervisorEvent, TickReport};
 
 pub use server::{
-    ServerCallback, ServerHostCall, ServerHostReply, ServerInput, ServerOperationRef,
-    ServerOperationSnapshot, ServerOperationState, ServerSessionConfig,
+    ServerCallback, ServerHostCall, ServerHostReply, ServerHttpResponseMetadata,
+    ServerHttpSessionConfig, ServerHttpSessionMethod, ServerHttpSessionRequest, ServerInput,
+    ServerOperationRef, ServerOperationSnapshot, ServerOperationState, ServerSessionConfig,
+    ServerSessionMetadata,
 };
 
 pub use server::{
