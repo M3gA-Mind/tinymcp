@@ -60,6 +60,7 @@ pub mod agent_tools;
 pub mod audit;
 pub mod auth;
 pub mod config;
+pub mod config_document;
 pub mod errors;
 pub mod method;
 pub mod names;
@@ -85,6 +86,7 @@ pub use config::{
     McpRegistryAuthConfig, McpServerConfig, OpenConfiguredRequest, OpenConfiguredResponse,
     TransitionStatus,
 };
+pub use config_document::{AppliedServer, ConfigApplyReport, ConfigApplyResponse};
 pub use method::{
     ConnectOutcome, InstallOutcome, RegistryFreshness, RegistrySearchPage, RegistrySettings,
     SearchCuration, ServerDetail, ToolCallOutcome, UpdateEnvOutcome, UpdateEnvStatus,

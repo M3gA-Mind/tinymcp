@@ -14,10 +14,11 @@ use crate::error::Result;
 use crate::registry::{McpRegistry, SecretRef, Store, SupervisorConfig};
 use tinybus::Connection;
 use tinymcp_bus::{
-    AuthDetection, ConnStatus, ConnectOutcome, ConnectedServerOverview, InstallOutcome,
-    InstalledServer, McpTool, McpWriteListQuery, McpWriteRecord, NewMcpWriteRecord,
-    OpenConfiguredRequest, OpenConfiguredResponse, RegistrySearchPage, RegistrySettings,
-    SearchCuration, ServerDetail, ToolCallOutcome, TransitionStatus, UpdateEnvOutcome,
+    AuthDetection, ConfigApplyReport, ConfigApplyResponse, ConnStatus, ConnectOutcome,
+    ConnectedServerOverview, InstallOutcome, InstalledServer, McpTool, McpWriteListQuery,
+    McpWriteRecord, NewMcpWriteRecord, OpenConfiguredRequest, OpenConfiguredResponse,
+    RegistrySearchPage, RegistrySettings, SearchCuration, ServerDetail, ToolCallOutcome,
+    TransitionStatus, UpdateEnvOutcome,
 };
 
 /// Everything the interface serves.
@@ -294,6 +295,59 @@ impl McpService {
             mcp_official_base,
             mcp_official_token,
         ))
+    }
+
+    /// `()` — renders the document without returning stored credential values.
+    async fn config_document_get(&self) -> tinybus::Result<Value> {
+        std::future::ready(()).await;
+        self.dynamic
+            .render_config_doc()
+            .map_err(|error| Self::failed(&error))
+    }
+
+    /// `(document)` — replaces installs and returns the resulting document and changes.
+    #[tinybus(confidential)]
+    async fn config_document_apply(&self, document: Value) -> tinybus::Result<ConfigApplyResponse> {
+        let report = self
+            .dynamic
+            .apply_config_doc(&document)
+            .await
+            .map_err(|error| Self::failed(&error))?;
+        let document = self
+            .dynamic
+            .render_config_doc()
+            .map_err(|error| Self::failed(&error))?;
+
+        Ok(ConfigApplyResponse {
+            document,
+            report: ConfigApplyReport {
+                installed: report
+                    .installed
+                    .into_iter()
+                    .map(|server| tinymcp_bus::AppliedServer {
+                        server_id: server.server_id,
+                        name: server.name,
+                    })
+                    .collect(),
+                updated: report
+                    .updated
+                    .into_iter()
+                    .map(|server| tinymcp_bus::AppliedServer {
+                        server_id: server.server_id,
+                        name: server.name,
+                    })
+                    .collect(),
+                removed: report
+                    .removed
+                    .into_iter()
+                    .map(|server| tinymcp_bus::AppliedServer {
+                        server_id: server.server_id,
+                        name: server.name,
+                    })
+                    .collect(),
+                connect_queued: report.connect_queued,
+            },
+        })
     }
 
     // -- installs -----------------------------------------------------------

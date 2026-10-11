@@ -104,6 +104,8 @@ export_module! {
         "RegistryGet",
         "RegistrySettingsGet",
         "RegistrySettingsSet",
+        "ConfigDocumentGet",
+        "ConfigDocumentApply",
         "InstalledList",
         "Install",
         "Uninstall",
