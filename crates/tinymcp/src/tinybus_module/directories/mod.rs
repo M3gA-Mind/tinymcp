@@ -12,21 +12,28 @@
 //! # The seam
 //!
 //! The root object grows `Open(data_dir)` and `OpenConfigured(request)` members
-//! that serve a new object and return its path. `Open` keeps its original
-//! load-time client settings; `OpenConfigured` supplies a workspace's own
-//! server set, credentials, identity and proxy together with its data directory.
+//! that serve an object. `Open` keeps its original load-time client settings
+//! and string response; `OpenConfigured` supplies a workspace's own server set,
+//! credentials, identity and proxy together with its data directory, returning
+//! an object path and opaque transition id.
 //! Each object is an ordinary [`McpService`](super::McpService) over its own
-//! store and client configuration. The root object keeps answering for the
-//! directory and configuration the module was loaded with.
+//! store and client configuration. A changed configuration replaces the
+//! service at the same object path after current calls finish, then stops the
+//! old service's background work and transports. `TransitionStatus` observes
+//! that work without waiting under `TinyBus` dispatch. `Close(data_dir)` removes
+//! a child object or resets the root to an empty in-memory service; its
+//! transition is complete only after module-owned cleanup finishes.
 //!
 //! # One object per directory
 //!
 //! Opening the same directory with the same client settings twice returns the
-//! same path, and the root's own directory maps to the root path. Reopening a
-//! directory with different client settings is refused: silently returning an
-//! object with stale credentials or endpoints would misroute requests. Two live
-//! handles to one `SQLite` file is how migrations race each other, so the map is
-//! held across the whole open rather than only the lookup.
+//! same path, and the root's own directory maps to the root path. `Open` keeps
+//! its legacy idempotent behavior; `OpenConfigured` replaces a service when its
+//! client settings change instead of returning stale credentials or endpoints.
+//! At most one lifecycle operation runs at a time. While a transition is
+//! pending, another mutation fails quickly and the caller can retry after
+//! `TransitionStatus` reports completion. Active reservations remain counted
+//! through close cleanup.
 //!
 //! Directories are matched by the exact absolute path the caller supplied. A
 //! host should pass the same spelling each time; the module does not resolve
@@ -34,10 +41,10 @@
 //!
 //! # Bounds
 //!
-//! The bus cannot unserve an object a caller may still hold, so nothing here
-//! ever closes one. [`MAX_OPEN_DIRECTORIES`] caps how many a process serves, far
-//! above what a per-user host needs, so a caller opening directories in a loop
-//! is refused by name rather than exhausting file descriptors.
+//! Closed child objects become unknown paths. Their monotonically allocated
+//! identifiers are never reused. [`MAX_OPEN_DIRECTORIES`] caps active and
+//! closing reservations, so callers can release workspaces without allowing a
+//! fast open/close loop to exhaust file descriptors.
 //!
 //! Each opened directory also runs its own boot pass and supervisor, so a user's
 //! installed servers are connected after a login just as they were at load.

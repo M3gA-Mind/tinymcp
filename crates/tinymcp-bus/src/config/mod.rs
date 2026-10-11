@@ -29,7 +29,8 @@ mod types;
 
 pub use types::{
     HttpHeader, McpAuthConfig, McpClientConfig, McpClientIdentityConfig, McpProxyConfig,
-    McpRegistryAuthConfig, McpServerConfig, OpenConfiguredRequest,
+    McpRegistryAuthConfig, McpServerConfig, OpenConfiguredRequest, OpenConfiguredResponse,
+    TransitionStatus,
 };
 
 #[cfg(test)]

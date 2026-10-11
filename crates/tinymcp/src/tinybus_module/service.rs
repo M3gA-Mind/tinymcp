@@ -16,8 +16,8 @@ use tinybus::Connection;
 use tinymcp_bus::{
     AuthDetection, ConnStatus, ConnectOutcome, ConnectedServerOverview, InstallOutcome,
     InstalledServer, McpTool, McpWriteListQuery, McpWriteRecord, NewMcpWriteRecord,
-    OpenConfiguredRequest, RegistrySearchPage, RegistrySettings, SearchCuration, ServerDetail,
-    ToolCallOutcome, UpdateEnvOutcome,
+    OpenConfiguredRequest, OpenConfiguredResponse, RegistrySearchPage, RegistrySettings,
+    SearchCuration, ServerDetail, ToolCallOutcome, TransitionStatus, UpdateEnvOutcome,
 };
 
 /// Everything the interface serves.
@@ -42,6 +42,8 @@ pub struct McpService {
     /// Present on the root object only: a directory opened through `Open`
     /// cannot open further ones.
     opener: Option<Arc<DirectoryOpener>>,
+    /// Admission gate shared by the exported wrapper and lifecycle owner.
+    dispatch_gate: Arc<tokio::sync::RwLock<bool>>,
 }
 
 impl McpService {
@@ -76,6 +78,7 @@ impl McpService {
             server_sessions: crate::server::bridge::ServerSessions::default(),
             maintenance: None,
             opener: None,
+            dispatch_gate: Arc::new(tokio::sync::RwLock::new(true)),
         })
     }
 
@@ -110,6 +113,46 @@ impl McpService {
             connection, config, supervisor,
         )?));
         Ok(self)
+    }
+
+    /// Keeps the root opener when its own data directory is reconfigured.
+    pub(super) fn with_directory_opener(mut self, opener: Arc<DirectoryOpener>) -> Self {
+        self.opener = Some(opener);
+        self
+    }
+
+    pub(super) fn register_root(self: &Arc<Self>) {
+        if let Some(opener) = &self.opener {
+            opener.register_root(self);
+        }
+    }
+
+    /// Stops all module-owned work before a replaced object is released.
+    pub(super) async fn shutdown(&self) {
+        self.quiesce().await;
+        if let Some(maintenance) = &self.maintenance {
+            maintenance.shutdown().await;
+        }
+        self.server_sessions.shutdown().await;
+        self.dynamic.connections().disconnect_all().await;
+    }
+
+    /// Stops new dispatches after existing handlers have returned.
+    pub(super) async fn quiesce(&self) {
+        let mut accepting = self.dispatch_gate.write().await;
+        *accepting = false;
+    }
+
+    pub(super) async fn resume_dispatch(&self) {
+        let mut accepting = self.dispatch_gate.write().await;
+        *accepting = true;
+    }
+
+    /// Wraps this service with its dispatch admission gate for `TinyBus` export.
+    pub(super) fn dispatch_interface(self: &Arc<Self>) -> Arc<dyn tinybus::service::Interface> {
+        Arc::new(DispatchInterface {
+            service: Arc::clone(self),
+        })
     }
 
     /// Waits for the boot connect pass to finish, when maintenance was started.
@@ -689,7 +732,11 @@ impl McpService {
     }
 
     /// `(request)` — opens one directory with its own client configuration.
-    async fn open_configured(&self, request: OpenConfiguredRequest) -> tinybus::Result<String> {
+    #[tinybus(confidential)]
+    async fn open_configured(
+        &self,
+        request: OpenConfiguredRequest,
+    ) -> tinybus::Result<OpenConfiguredResponse> {
         let Some(opener) = &self.opener else {
             return Err(Self::failed(&crate::Error::invalid_argument(
                 "only the root object can open data directories",
@@ -700,6 +747,78 @@ impl McpService {
             .open_configured(&request.data_dir, &request.client)
             .await
             .map_err(|error| Self::failed(&error))
+    }
+
+    /// `(data_dir)` — starts closing one directory and returns a transition id.
+    async fn close(&self, data_dir: String) -> tinybus::Result<Option<String>> {
+        let Some(opener) = &self.opener else {
+            return Err(Self::failed(&crate::Error::invalid_argument(
+                "only the root object can close data directories",
+            )));
+        };
+
+        opener
+            .close(&data_dir)
+            .await
+            .map_err(|error| Self::failed(&error))
+    }
+
+    /// `(transition_id)` — observes lifecycle progress without waiting.
+    async fn transition_status(&self, transition_id: String) -> tinybus::Result<TransitionStatus> {
+        let Some(opener) = &self.opener else {
+            return Err(Self::failed(&crate::Error::invalid_argument(
+                "only the root object can observe directory transitions",
+            )));
+        };
+
+        let status = opener.transition_status(&transition_id);
+        Ok(std::future::ready(status).await)
+    }
+}
+
+struct DispatchInterface {
+    service: Arc<McpService>,
+}
+
+#[tinybus::__private::async_trait]
+impl tinybus::service::Interface for DispatchInterface {
+    fn name(&self) -> tinybus::InterfaceName {
+        tinybus::service::Interface::name(self.service.as_ref())
+    }
+
+    fn members(&self) -> Vec<tinybus::MemberName> {
+        tinybus::service::Interface::members(self.service.as_ref())
+    }
+
+    fn requires_confidential(&self, member: &tinybus::MemberName) -> bool {
+        tinybus::service::Interface::requires_confidential(self.service.as_ref(), member)
+    }
+
+    async fn call(&self, member: &tinybus::MemberName, arguments: Value) -> tinybus::Result<Value> {
+        // Lifecycle calls must reach their nonblocking transition gate while
+        // the old root is draining; waiting on the dispatch gate while holding
+        // the global object-tree reader would prevent the pending replacement
+        // writer from acquiring that tree. Status is read-only and must remain
+        // observable throughout the transition.
+        if [
+            tinymcp_bus::names::methods::OPEN,
+            tinymcp_bus::names::methods::OPEN_CONFIGURED,
+            tinymcp_bus::names::methods::CLOSE,
+            tinymcp_bus::names::methods::TRANSITION_STATUS,
+        ]
+        .contains(&member.as_str())
+        {
+            return tinybus::service::Interface::call(self.service.as_ref(), member, arguments)
+                .await;
+        }
+        let accepting = self.service.dispatch_gate.read().await;
+        if !*accepting {
+            return Err(tinybus::Error::MethodFailed {
+                name: "ai.tinyhumans.tinymcp.Error.InvalidArgument".into(),
+                message: "the directory service is closed".into(),
+            });
+        }
+        tinybus::service::Interface::call(self.service.as_ref(), member, arguments).await
     }
 }
 

@@ -171,6 +171,10 @@ pub mod methods {
     pub const OPEN: &str = "Open";
     /// Opens a data directory with its own static server and client settings.
     pub const OPEN_CONFIGURED: &str = "OpenConfigured";
+    /// Stops serving a data directory and returns its cleanup transition id.
+    pub const CLOSE: &str = "Close";
+    /// Reports lifecycle transition progress without waiting under dispatch.
+    pub const TRANSITION_STATUS: &str = "TransitionStatus";
 }
 
 /// Every member of [`INTERFACE`], in the order the interface dispatches them.
@@ -232,6 +236,8 @@ pub const METHODS: &[&str] = &[
     // Directories
     methods::OPEN,
     methods::OPEN_CONFIGURED,
+    methods::CLOSE,
+    methods::TRANSITION_STATUS,
 ];
 
 #[cfg(test)]

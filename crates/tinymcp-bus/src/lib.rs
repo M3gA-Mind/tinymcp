@@ -82,7 +82,8 @@ pub use audit::{
 pub use auth::{AuthDetection, AuthKind};
 pub use config::{
     HttpHeader, McpAuthConfig, McpClientConfig, McpClientIdentityConfig, McpProxyConfig,
-    McpRegistryAuthConfig, McpServerConfig, OpenConfiguredRequest,
+    McpRegistryAuthConfig, McpServerConfig, OpenConfiguredRequest, OpenConfiguredResponse,
+    TransitionStatus,
 };
 pub use method::{
     ConnectOutcome, InstallOutcome, RegistryFreshness, RegistrySearchPage, RegistrySettings,

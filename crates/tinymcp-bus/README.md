@@ -22,8 +22,12 @@ Contract 1.10 adds the one-argument `OpenConfigured` operation and its
 `OpenConfiguredRequest` payload. It pairs a data directory with that host's
 MCP client settings; `Open` and its original string argument remain unchanged.
 Because those settings may contain credentials, callers send this request using
-TinyBus's confidential-call path. A directory already opened with different
-settings is rejected rather than silently returning a stale object.
+TinyBus's confidential-call path. Contract 1.11 adds `Close(data_dir)` and the
+nonblocking `TransitionStatus(id)` observation. `OpenConfigured` returns an
+`OpenConfiguredResponse` carrying the object path and lifecycle transition id;
+replacement and old-service cleanup are complete only when the status is
+`complete`. The root remains available after close, with no persistent
+directory or static client configuration.
 
 Library consumers bring implementation extension traits into scope for moved
 DTO methods. Contract-only hosts call the compiled module. See

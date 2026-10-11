@@ -72,13 +72,51 @@ impl Default for McpClientConfig {
 /// cross the bus together so two workspaces opened by one module instance do
 /// not inherit one another's settings. Hosts should send this payload through
 /// `TinyBus`'s confidential-call path because `client` may contain credentials.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct OpenConfiguredRequest {
     /// Absolute directory that owns this object's persistent state.
     pub data_dir: String,
     /// The settings this object uses for static and registry server access.
     pub client: McpClientConfig,
+}
+
+/// The object identity and cleanup transition created by `OpenConfigured`.
+///
+/// Replacing an object is queued behind in-flight `TinyBus` calls. Hosts use the
+/// transition id with `TransitionStatus` to learn when the old service and its
+/// transports have been shut down.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct OpenConfiguredResponse {
+    /// Object path that will serve this directory after the transition.
+    pub object_path: String,
+    /// Opaque id for observing replacement and old-service cleanup.
+    pub transition_id: String,
+}
+
+/// A nonblocking observation of a directory lifecycle transition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum TransitionStatus {
+    /// The object-tree update or owned-resource cleanup is still running.
+    Pending,
+    /// The object-tree update and all module-owned cleanup have completed.
+    Complete,
+    /// The transition failed; the prior owner remains available for retry.
+    Failed,
+    /// The token is unknown or its bounded observation record was retired.
+    Unknown,
+}
+
+impl std::fmt::Debug for OpenConfiguredRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("OpenConfiguredRequest")
+            .finish_non_exhaustive()
+    }
 }
 
 /// One statically declared MCP server.
