@@ -6,7 +6,7 @@ use tinymcp_bus::{SupervisorBatch, SupervisorEvent, TickReport};
 const MAX_EVENTS: usize = 1024;
 const MAX_EVENT_BYTES: usize = 16 * 1024;
 /// Largest number of events one drain can return.
-pub(super) const MAX_DRAIN: usize = 256;
+pub(in crate::tinybus_module) const MAX_DRAIN: usize = 256;
 
 #[derive(Debug, Default)]
 struct State {
