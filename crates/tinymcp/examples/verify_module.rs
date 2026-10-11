@@ -274,7 +274,52 @@ async fn verify_metadata_operations(
     proxy: &tinybus::Proxy,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use serde_json::{Value, json};
-    use tinymcp_bus::{McpRemoteTool, RemoteToolDisplay, TextTransform, TransformTextRequest};
+    use tinymcp_bus::{
+        McpRemoteTool, McpTool, McpToolExposure, McpToolPresentation, McpToolSourceSpec,
+        PrepareAgentToolsRequest, RemoteToolDisplay, TextTransform, TransformTextRequest,
+    };
+
+    let directory = tempfile::tempdir()?;
+    let has_stored_state: bool = proxy
+        .call(
+            names::methods::HAS_STORED_STATE,
+            (directory.path().to_string_lossy().into_owned(),),
+        )
+        .await?;
+    if has_stored_state {
+        return Err(io::Error::other("an empty directory reported stored state").into());
+    }
+
+    let prepared: Vec<McpToolPresentation> = proxy
+        .call(
+            names::methods::PREPARE_AGENT_TOOLS,
+            (PrepareAgentToolsRequest {
+                sources: vec![McpToolSourceSpec {
+                    server_id: "artifact-fixture".into(),
+                    label: "fixture".into(),
+                    family: "fixture".into(),
+                    display_name: "Fixture MCP server".into(),
+                    tools: vec![McpTool {
+                        name: "read_fixture".into(),
+                        description: Some("Read the fixture".into()),
+                        input_schema: json!({"type":"object", "properties":{"id":{"type":"string"}}}),
+                    }],
+                    default_exposure: McpToolExposure::Direct,
+                    direct_tools: Vec::new(),
+                }],
+            },),
+        )
+        .await?;
+    if prepared.len() != 1
+        || prepared[0].server_id != "artifact-fixture"
+        || prepared[0].remote_name != "read_fixture"
+        || prepared[0].parameters["type"] != "object"
+        || prepared[0].deferred
+    {
+        return Err(
+            io::Error::other("agent tool preparation returned the wrong presentation").into(),
+        );
+    }
     let text: String = proxy
         .call(
             names::methods::TRANSFORM_TEXT,
