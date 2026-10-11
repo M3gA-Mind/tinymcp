@@ -1048,6 +1048,96 @@ async fn configured_tool_call_does_not_register_the_one_shot_server() {
 }
 
 #[tokio::test]
+async fn configured_tool_call_runs_confidentially_without_registering_server() {
+    use tinybus::{Connection, broker::Broker, module::ModuleHost, transport::memory::MemoryBus};
+    use tinymcp_bus::{ClassifiedStaticToolCall, ConfiguredToolCallRequest};
+
+    let hits = Arc::new(AtomicUsize::new(0));
+    let app = Router::new()
+        .route(
+            "/",
+            post(
+                |State(hits): State<Arc<AtomicUsize>>, axum::Json(body): axum::Json<Value>| async move {
+                    hits.fetch_add(1, Ordering::SeqCst);
+                    let method = body["method"].as_str().unwrap_or_default();
+                    let result = match method {
+                        "initialize" => json!({
+                            "protocolVersion": tinymcp_bus::LATEST_PROTOCOL_VERSION,
+                            "capabilities": {},
+                            "serverInfo": { "name": "one-shot", "version": "1" },
+                        }),
+                        "tools/call" => json!({
+                            "content": [{"type":"text", "text":"one-shot-result"}],
+                            "isError": false,
+                        }),
+                        _ => json!({"tools": []}),
+                    };
+                    axum::Json(json!({
+                        "jsonrpc": "2.0",
+                        "id": body.get("id").cloned().unwrap_or(Value::Null),
+                        "result": result,
+                    }))
+                },
+            ),
+        )
+        .with_state(Arc::clone(&hits));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let endpoint = format!("http://{addr}/");
+    let server_task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let bus = MemoryBus::new();
+    let broker = Broker::new();
+    let broker_task = broker.spawn(bus.clone());
+    let host = ModuleHost::new(broker);
+    host.attach_linked_with_config(
+        test_linked_module().unwrap(),
+        serde_json::to_value(ModuleConfig::default()).unwrap(),
+    )
+    .unwrap();
+    let connection = Connection::connect(bus.connect().await.unwrap())
+        .await
+        .unwrap();
+    let proxy = connection
+        .proxy(names::INTERFACE, names::OBJECT_PATH, names::INTERFACE)
+        .unwrap();
+
+    let call: ClassifiedStaticToolCall = proxy
+        .call_confidential(
+            names::methods::CONFIGURED_TOOL_CALL,
+            (ConfiguredToolCallRequest {
+                server: McpServerConfig {
+                    name: "gitbooks-one-shot".into(),
+                    endpoint,
+                    ..McpServerConfig::default()
+                },
+                tool: "lookup".into(),
+                arguments: json!({"query":"fixture"}),
+            },),
+        )
+        .await
+        .unwrap();
+
+    assert!(call.outcome.ok);
+    assert_eq!(
+        call.rendered.unwrap().content,
+        vec![tinymcp_bus::McpToolContent::Text {
+            text: "one-shot-result".into()
+        }]
+    );
+    assert!(hits.load(Ordering::SeqCst) >= 2);
+    let servers: Vec<String> = proxy.call(names::methods::STATIC_LIST, ()).await.unwrap();
+    assert!(
+        servers.is_empty(),
+        "the one-shot server entered static discovery"
+    );
+
+    broker_task.abort();
+    server_task.abort();
+    drop(host);
+}
+
+#[tokio::test]
 async fn server_argument_validation_normalizes_and_reports_module_errors() {
     let service = service();
     let request = tinymcp_bus::ValidateServerArgumentsRequest {
