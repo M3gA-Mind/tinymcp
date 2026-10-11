@@ -96,6 +96,17 @@ active-directory bound includes pending closes, and monotonic object ids prevent
 a stale path from naming a later workspace. An unknown or retired transition
 id does not claim cleanup succeeded.
 
+## Additive contract 1.12 cached tool reads
+
+`CachedOverview()` returns every enabled installed server's live tools when
+connected, or its persisted tool-cache entry when disconnected, without
+dialling it. The existing `ConnectedOverview()` remains live-only. The static
+`StaticCachedListTools(server)` operation reads the persisted cache for one
+host-declared server without connecting; `StaticListTools(server)` retains its
+existing response and refreshes the cache after a successful listing. Both
+reads use the current definition fingerprint and reapply its allow/deny rules,
+so edits cannot expose metadata from an older endpoint or relaxed policy.
+
 ## Remaining work
 
 This slice does not wire OpenHuman adapters, stdio/HTTP listener ownership,

@@ -19,7 +19,7 @@ use tinybus::Connection;
 use tinybus::broker::Broker;
 use tinybus::module::ModuleHost;
 use tinybus::transport::memory::MemoryBus;
-use tinymcp::{InstalledServer, names};
+use tinymcp::{ConnectedServerOverview, InstalledServer, McpTool, names};
 
 /// How long to wait for the module to claim its name.
 const CLAIM_TIMEOUT: Duration = Duration::from_secs(5);
@@ -97,6 +97,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             installed.len()
         ))
         .into());
+    }
+
+    let cached: Vec<ConnectedServerOverview> =
+        proxy.call(names::methods::CACHED_OVERVIEW, ()).await?;
+    if !cached.is_empty() {
+        return Err(io::Error::other("a fresh registry reported cached servers").into());
+    }
+    let static_cached: Option<Vec<McpTool>> = proxy
+        .call(names::methods::STATIC_CACHED_LIST_TOOLS, ("unconfigured",))
+        .await?;
+    if static_cached.is_some() {
+        return Err(io::Error::other("an unconfigured static server had cached tools").into());
     }
 
     let observations: tinymcp_bus::SupervisorBatch = proxy

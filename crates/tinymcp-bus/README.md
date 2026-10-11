@@ -29,6 +29,14 @@ replacement and old-service cleanup are complete only when the status is
 `complete`. The root remains available after close, with no persistent
 directory or static client configuration.
 
+Contract 1.12 adds no-argument `CachedOverview`, which returns live tools for
+connected installs and persisted, fingerprint-matched cached tools for enabled
+disconnected installs without dialling them. `StaticCachedListTools(server)`
+reads one static server's persisted cache without a network request;
+`StaticListTools(server)` keeps its response shape and refreshes that cache
+after a successful listing. Both cached reads use the current definition's
+fingerprint and reapply its allow and deny rules.
+
 Library consumers bring implementation extension traits into scope for moved
 DTO methods. Contract-only hosts call the compiled module. See
 [the relocation specification](../../docs/specs/pure-vocabulary.md) for public
