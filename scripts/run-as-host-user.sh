@@ -7,6 +7,9 @@ if [[ ! "$uid" =~ ^[0-9]+$ || ! "$gid" =~ ^[0-9]+$ || $# -lt 3 ]]; then
   exit 2
 fi
 shift 2
+if [[ "$uid" == "$(id -u)" && "$gid" == "$(id -g)" ]]; then
+  exec "$@"
+fi
 command -v setpriv >/dev/null 2>&1 || {
   echo "setpriv is required to verify modules as the workspace owner" >&2
   exit 2

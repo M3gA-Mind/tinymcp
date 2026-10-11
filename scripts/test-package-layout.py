@@ -106,7 +106,7 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(
                 capture.read_text().splitlines(),
                 ["-Syu", "--disable-sandbox-filesystem", "--noconfirm", "base-devel", "cmake",
-                 "curl", "git", "gzip", "jq", "openssl", "perl"],
+                 "curl", "git", "gzip", "jq", "openssl", "perl", "util-linux"],
             )
 
 if __name__ == "__main__": unittest.main()
