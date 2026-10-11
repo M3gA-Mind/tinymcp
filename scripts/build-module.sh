@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$root"
 target_root="${CARGO_TARGET_DIR:-$root/target}"
 [[ "$target_root" == /* ]] || target_root="$root/$target_root"
@@ -44,13 +44,15 @@ jq -e 'type == "array" and all(.[]; type == "string" and test("^docs/[A-Za-z0-9.
   echo "extra files must be repository-local docs paths without traversal" >&2
   exit 2
 }
-cargo build --locked --release --manifest-path Cargo.toml --package "$crate" --target "$rust_target"
+cargo build --locked --release --lib --manifest-path Cargo.toml --package "$crate" --target "$rust_target"
 stage="$target_root/module-package"
 rm -rf "$stage"
 mkdir -p "$stage" "$output"
 output="$(cd "$output" && pwd -P)"
 [[ "$output" == "$root"/* ]] || { echo "output directory must stay inside the repository" >&2; exit 2; }
-install -m 755 "$target_root/$rust_target/release/$library" "$stage/$library"
+shipped_library="${library/tinymcp/tinymcp_module}"
+install -m 755 "$target_root/$rust_target/release/$library" "$stage/$shipped_library"
+library="$shipped_library"
 if command -v sha256sum >/dev/null 2>&1; then
   hash="$(sha256sum "$stage/$library" | awk '{print $1}')"
 else

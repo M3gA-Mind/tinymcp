@@ -39,7 +39,7 @@ template-specific value.
 | Layout | A cargo workspace under `crates/`, split into a dependency-light wire contract and the module that implements it; directory modules with `mod.rs` / `types.rs` / `test.rs`, a crate-wide error type, integration tests, and a runnable example |
 | Lints | `unsafe_code` forbidden, `missing_docs`, clippy `all` + `pedantic`, no `unwrap`/`expect`/`panic`/`todo` in library code — all declared once in `[workspace.lints]` so every crate, local run, and CI run agree |
 | CI | Format, clippy, build, test (default and all features), a run of the bundled example, an assertion that the contract crate stays transport-free, at least 90% line coverage in every source file, rustdoc with `-D warnings`, an MSRV build, and a `cargo-deny` supply-chain check |
-| Release | Manual `workflow_dispatch` bump that validates, versions, tags, and creates installable native module packages for every supported platform |
+| Release | A reviewed version tag triggers the shared 17-platform module release |
 | Community | Issue and pull request templates, Dependabot, contributing, security, support, and code of conduct docs |
 | Agents | [`AGENTS.md`](AGENTS.md) as the single source of truth, symlinked as `CLAUDE.md`, plus a `.claude/settings.json` allowlist for the standard commands |
 | Vendor | TinyBus host types and module SDK pinned as the `vendor/tinybus` build-time submodule |
@@ -122,24 +122,16 @@ cargo install cargo-llvm-cov         # once, before running the coverage gate
 
 ## Releasing
 
-Run the **Release** workflow from the Actions tab with a `patch`, `minor`, or
-`major` bump. Use `current` only to resume an interrupted release whose version
-commit and tag already exist. The workflow revalidates the workspace, versions
-and tags it — one `[workspace.package]` version that every member inherits —
-builds `crates/tinymcp` as a TinyBus `cdylib`, and creates a GitHub release.
-Assets follow `template-<version>-<platform>.<tar.gz|zip>` and contain the
-native module, its SHA-256 `modules.toml`, license, and
-[`MODULE.md`](MODULE.md). Every release also publishes `checksum.toml`, which
-TinyBus uses to verify an archive before extraction. The workflow loads the
-published Ubuntu archive through TinyBus's GitHub release API and calls its
-`Greet` method before declaring the release successful. TinyBus itself is not
-shipped by this repository; the pinned submodule is the build-time SDK. The stable native
-matrix covers Ubuntu 22.04 and 24.04 on x86_64 and ARM64; Fedora 43 and 44 on
-x86_64 and ARM64; rolling Arch Linux on its officially supported x86_64
-architecture; macOS 15 and 26 on Intel and Apple Silicon; Windows Server 2022
-and 2025 on x86_64; and Windows 11 on ARM64. Preview, deprecated, and unofficial
-architecture images are not release gates. Do not hand-edit the version in the
-root `Cargo.toml`.
+Update the shared workspace version and lockfile in a reviewed PR. After it
+merges, push a vX.Y.Z tag at that commit, or dispatch Release with an existing
+tag. The shared pipeline builds and loads the 11 native plus six distro
+archives before publishing the immutable release and checksum.toml.
+
+Archives use tinymcp-<version>-<host>.tar.gz or .zip and include the native
+library under its installed tinymcp_module name, modules.toml, LICENSE,
+README.md, and MODULE.md. TinyBus is a pinned build dependency. See the
+[shared release contract](https://github.com/tinyhumansai/.github/blob/main/docs/module-ci-contract.md)
+for the platform matrix and required CI checks.
 
 ## Documentation
 

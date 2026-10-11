@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 if [[ "${1:-}" == --archive ]]; then shift; fi
 archive="${1:?usage: verify-module.sh --archive <module-archive>}"
 archive="$(cd "$(dirname "$archive")" && pwd -P)/$(basename "$archive")"
@@ -34,8 +34,8 @@ case "$archive" in
   *) echo "unsupported module archive: $archive" >&2; exit 2 ;;
 esac
 case "$(uname -s)" in
-  Darwin) library="$work/libtinymcp.dylib" ;;
-  Linux) library="$work/libtinymcp.so" ;;
+  Darwin) library="$work/libtinymcp_module.dylib" ;;
+  Linux) library="$work/libtinymcp_module.so" ;;
   *) echo "verify-module.sh requires a Unix runner" >&2; exit 1 ;;
 esac
 test -f "$work/modules.toml"

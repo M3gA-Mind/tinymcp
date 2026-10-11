@@ -58,7 +58,8 @@ $extension = switch -Regex ($Target) {
 }
 $libraryName = if ($extension -eq 'dylib') { 'libtinymcp.dylib' } elseif ($extension -eq 'so') { 'libtinymcp.so' } else { 'tinymcp.dll' }
 $library = Join-Path $targetRoot "$Target/release/$libraryName"
-Copy-Item -LiteralPath $library -Destination $stage
+$libraryName = $libraryName.Replace('tinymcp.', 'tinymcp_module.')
+Copy-Item -LiteralPath $library -Destination (Join-Path $stage $libraryName)
 $stagedLibrary = Join-Path $stage $libraryName
 $hash = (Get-FileHash -LiteralPath $stagedLibrary -Algorithm SHA256).Hash.ToLowerInvariant()
 '"{0}" = "{1}"' -f $libraryName, $hash | Set-Content -Path (Join-Path $stage 'modules.toml') -Encoding utf8NoBOM

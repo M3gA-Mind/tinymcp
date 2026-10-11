@@ -40,7 +40,7 @@ try {
     }
     Set-Acl -LiteralPath $work -AclObject $security
     Expand-Archive -LiteralPath $resolvedArchive -DestinationPath $work
-    $library = Join-Path $work 'tinymcp.dll'
+    $library = Join-Path $work 'tinymcp_module.dll'
     if (-not (Test-Path (Join-Path $work 'modules.toml'))) { throw 'modules.toml missing from archive' }
     cargo run --locked --release --manifest-path Cargo.toml --package tinymcp --example verify_module -- $library
     if ($LASTEXITCODE -ne 0) { throw 'tinymcp module verification failed' }
