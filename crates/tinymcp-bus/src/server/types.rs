@@ -20,6 +20,7 @@ pub struct ServerSessionConfig {
 /// A validated operation awaiting host policy and execution.
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ServerHostCall {
     /// List the tools the host permits this client to see.
     ListTools {
@@ -109,6 +110,7 @@ pub struct ServerCallback {
 /// The current observable state of a submitted input line.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "state", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ServerOperationState {
     /// Processing input, or waiting for a previously drained callback reply.
     Pending,

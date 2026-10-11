@@ -103,7 +103,14 @@ fn the_method_table_holds_every_declared_member() {
             methods::SERVER_CANCEL,
             methods::SERVER_CLOSE,
             methods::SERVER_SHUTDOWN,
+            methods::TRANSFORM_TEXT,
+            methods::NORMALIZE_TOOL_ARGUMENTS,
+            methods::DISPLAY_REMOTE_TOOL,
+            methods::RENDER_TOOL_OUTPUT,
             methods::OPEN,
+            methods::OPEN_CONFIGURED,
+            methods::CLOSE,
+            methods::TRANSITION_STATUS,
         ]
     );
 }
@@ -159,6 +166,9 @@ fn the_members_added_for_hosts_dropping_the_path_dependency_are_pinned() {
     assert_eq!(methods::CONNECTED_OVERVIEW, "ConnectedOverview");
     assert_eq!(methods::REGISTRY_SEARCH_CURATED, "RegistrySearchCurated");
     assert_eq!(methods::OPEN, "Open");
+    assert_eq!(methods::OPEN_CONFIGURED, "OpenConfigured");
+    assert_eq!(methods::CLOSE, "Close");
+    assert_eq!(methods::TRANSITION_STATUS, "TransitionStatus");
 }
 
 #[test]

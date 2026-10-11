@@ -19,6 +19,7 @@
 //! Anything else is `-32601 Method not found`. A message without an `id` is a
 //! notification and is never answered.
 
+use crate::{ResourceSpecExt, ServerToolSpecExt};
 use serde_json::{Map, Value, json};
 use tinymcp_bus::{LATEST_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS};
 
@@ -52,11 +53,12 @@ pub async fn handle_line(
         }
     };
 
+    let is_batch = matches!(&value, Value::Array(items) if !items.is_empty());
     let mut responses = handle_value(handler, session, headers, value).await;
-    match responses.len() {
-        0 => None,
-        1 => responses.pop().map(|response| response.to_string()),
-        _ => Some(Value::Array(responses).to_string()),
+    match (is_batch, responses.len()) {
+        (_, 0) => None,
+        (false, 1) => responses.pop().map(|response| response.to_string()),
+        (true | false, _) => Some(Value::Array(responses).to_string()),
     }
 }
 
@@ -79,6 +81,7 @@ pub(crate) async fn handle_line_bounded(
         };
     };
     let empty_batch = value.as_array().is_some_and(Vec::is_empty);
+    let is_batch = matches!(&value, Value::Array(items) if !items.is_empty());
     let items = match value {
         Value::Array(items) if !items.is_empty() => items,
         other => vec![other],
@@ -89,6 +92,12 @@ pub(crate) async fn handle_line_bounded(
     };
     let mut count = 0;
     for item in items {
+        if is_batch
+            && let Some(minimum) = minimum_response_len(&item)
+            && output.bytes.len() + 1 + minimum + 1 > limit
+        {
+            return Err(());
+        }
         let response = if empty_batch {
             Some(error_response(
                 Value::Null,
@@ -100,16 +109,15 @@ pub(crate) async fn handle_line_bounded(
             handle_single_message(handler, session, headers, item).await
         };
         if let Some(response) = response {
-            if count == 1 {
+            if count == 0 && is_batch {
                 std::io::Write::write_all(&mut output, b"[").map_err(|_| ())?;
-                output.bytes.rotate_right(1);
             }
             if count > 0 {
                 std::io::Write::write_all(&mut output, b",").map_err(|_| ())?;
             }
             serde_json::to_writer(&mut output, &response).map_err(|_| ())?;
             count += 1;
-            if count > 1 && output.bytes.len() == limit {
+            if is_batch && output.bytes.len() + 1 > limit {
                 return Err(());
             }
         }
@@ -117,10 +125,37 @@ pub(crate) async fn handle_line_bounded(
     if count == 0 {
         return Ok(None);
     }
-    if count > 1 {
+    if is_batch {
         std::io::Write::write_all(&mut output, b"]").map_err(|_| ())?;
     }
     String::from_utf8(output.bytes).map(Some).map_err(|_| ())
+}
+
+fn minimum_response_len(item: &Value) -> Option<usize> {
+    let Some(object) = item.as_object() else {
+        return serde_json::to_vec(&error_response(
+            Value::Null,
+            INVALID_REQUEST,
+            "Invalid Request",
+            Some(json!("message must be a JSON object")),
+        ))
+        .ok()
+        .map(|response| response.len());
+    };
+    let id = object.get("id")?;
+    let response = if valid_request_id(id) {
+        success_response(id.clone(), json!({}))
+    } else {
+        error_response(
+            Value::Null,
+            INVALID_REQUEST,
+            "Invalid Request",
+            Some(json!("id must be a string or integer")),
+        )
+    };
+    serde_json::to_vec(&response)
+        .ok()
+        .map(|response| response.len())
 }
 
 struct LimitedOutput {
@@ -527,7 +562,7 @@ fn parse_tool_call_params(params: &Value) -> Result<(String, Map<String, Value>)
         .map(str::trim)
         .filter(|name| !name.is_empty())
         .ok_or_else(|| "tools/call params.name must be a non-empty string".to_string())?;
-    let arguments = tinymcp_bus::normalize_tool_arguments(object.get("arguments").cloned())
+    let arguments = crate::normalize_tool_arguments(object.get("arguments").cloned())
         .map_err(|error| format!("tools/call params.arguments: {error}"))?;
     Ok((name.to_string(), arguments))
 }

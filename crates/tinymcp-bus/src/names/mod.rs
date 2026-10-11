@@ -155,11 +155,26 @@ pub mod methods {
     /// Closes every session for this object.
     pub const SERVER_SHUTDOWN: &str = "ServerShutdown";
 
+    /// Module-owned `TransformText` metadata operation.
+    pub const TRANSFORM_TEXT: &str = "TransformText";
+    /// Module-owned `NormalizeToolArguments` metadata operation.
+    pub const NORMALIZE_TOOL_ARGUMENTS: &str = "NormalizeToolArguments";
+    /// Module-owned `DisplayRemoteTool` metadata operation.
+    pub const DISPLAY_REMOTE_TOOL: &str = "DisplayRemoteTool";
+    /// Module-owned `RenderToolOutput` metadata operation.
+    pub const RENDER_TOOL_OUTPUT: &str = "RenderToolOutput";
+
     // -- Directories --------------------------------------------------------
 
     /// Opens a data directory as its own object and returns the object path
     /// it is served at.
     pub const OPEN: &str = "Open";
+    /// Opens a data directory with its own static server and client settings.
+    pub const OPEN_CONFIGURED: &str = "OpenConfigured";
+    /// Stops serving a data directory and returns its cleanup transition id.
+    pub const CLOSE: &str = "Close";
+    /// Reports lifecycle transition progress without waiting under dispatch.
+    pub const TRANSITION_STATUS: &str = "TransitionStatus";
 }
 
 /// Every member of [`INTERFACE`], in the order the interface dispatches them.
@@ -214,8 +229,15 @@ pub const METHODS: &[&str] = &[
     methods::SERVER_CANCEL,
     methods::SERVER_CLOSE,
     methods::SERVER_SHUTDOWN,
+    methods::TRANSFORM_TEXT,
+    methods::NORMALIZE_TOOL_ARGUMENTS,
+    methods::DISPLAY_REMOTE_TOOL,
+    methods::RENDER_TOOL_OUTPUT,
     // Directories
     methods::OPEN,
+    methods::OPEN_CONFIGURED,
+    methods::CLOSE,
+    methods::TRANSITION_STATUS,
 ];
 
 #[cfg(test)]

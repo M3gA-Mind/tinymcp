@@ -57,7 +57,7 @@ impl Pacing {
 #[derive(Debug)]
 pub(in crate::tinybus_module) struct Maintenance {
     booted: watch::Receiver<Option<BootOutcome>>,
-    task: JoinHandle<()>,
+    task: std::sync::Mutex<Option<JoinHandle<()>>>,
     events: Arc<Events>,
 }
 
@@ -96,8 +96,26 @@ impl Maintenance {
 
         Self {
             booted,
-            task,
+            task: std::sync::Mutex::new(Some(task)),
             events,
+        }
+    }
+
+    /// Aborts and joins the maintenance task before its registry is replaced.
+    pub(in crate::tinybus_module) async fn shutdown(&self) {
+        let task = self
+            .task
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        let Some(task) = task else {
+            return;
+        };
+        task.abort();
+        if let Err(error) = task.await
+            && !error.is_cancelled()
+        {
+            tracing::error!("MCP maintenance task failed while stopping: {error}");
         }
     }
 
@@ -123,7 +141,11 @@ impl Maintenance {
 
 impl Drop for Maintenance {
     fn drop(&mut self) {
-        self.task.abort();
+        if let Ok(mut task) = self.task.lock()
+            && let Some(task) = task.take()
+        {
+            task.abort();
+        }
     }
 }
 

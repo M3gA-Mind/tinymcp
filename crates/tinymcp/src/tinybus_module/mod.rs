@@ -30,6 +30,7 @@ mod service;
 pub use config::ModuleConfig;
 pub use service::McpService;
 
+use std::sync::Arc;
 use tinybus::{Connection, Result as TinyBusResult};
 use tinymcp_bus::names;
 
@@ -47,15 +48,19 @@ use crate::registry::SupervisorConfig;
 /// is down delays nothing. See [`maintenance`].
 pub(super) async fn setup(connection: Connection, config: ModuleConfig) -> TinyBusResult<()> {
     let supervisor = SupervisorConfig::default();
-    let service = McpService::new(&config)
-        .map_err(|error| tinybus::Error::failed(format!("tinymcp could not start: {error}")))?
-        .with_maintenance(supervisor.clone())
-        .await
-        .with_opener(connection.clone(), &config, supervisor)
-        .map_err(|error| tinybus::Error::failed(format!("tinymcp could not start: {error}")))?;
+    let service = Arc::new(
+        McpService::new(&config)
+            .map_err(|error| tinybus::Error::failed(format!("tinymcp could not start: {error}")))?
+            .with_maintenance(supervisor.clone())
+            .await
+            .with_opener(connection.clone(), &config, supervisor)
+            .map_err(|error| tinybus::Error::failed(format!("tinymcp could not start: {error}")))?,
+    );
+
+    service.register_root();
 
     connection
-        .serve_at(names::OBJECT_PATH.try_into()?, service)
+        .serve_at(names::OBJECT_PATH.try_into()?, service.dispatch_interface())
         .await?;
     connection.request_name(names::INTERFACE).await?;
 
@@ -64,18 +69,20 @@ pub(super) async fn setup(connection: Connection, config: ModuleConfig) -> TinyB
 
 macro_rules! export_module {
     ($($declaration:tt)*) => {
-        #[cfg(feature = "static-link")]
+        #[cfg(any(feature = "static-link", test))]
         mod linked_exports {
             // TinyBus generates these three ABI items without rustdoc.
-            #![expect(missing_docs, reason = "generated TinyBus ABI entries")]
+            #![cfg_attr(not(test), expect(missing_docs, reason = "generated TinyBus ABI entries"))]
             use super::*;
             tinybus_module::module_export_static! { $($declaration)* }
         }
-        #[cfg(feature = "static-link")]
+        #[cfg(all(feature = "static-link", not(test)))]
         pub use linked_exports::{
             TINYBUS_MODULE_ABI_V1, tinybus_module_init_v1, tinybus_module_manifest_v1,
         };
-        #[cfg(not(feature = "static-link"))]
+        #[cfg(test)]
+        pub(crate) use linked_exports::linked_module as test_linked_module;
+        #[cfg(not(any(feature = "static-link", test)))]
         mod dynamic_exports {
             use super::*;
             tinybus_module::module_export! { $($declaration)* }
@@ -131,7 +138,14 @@ export_module! {
         "ServerCancel",
         "ServerClose",
         "ServerShutdown",
+        "TransformText",
+        "NormalizeToolArguments",
+        "DisplayRemoteTool",
+        "RenderToolOutput",
         "Open",
+        "OpenConfigured",
+        "Close",
+        "TransitionStatus",
     ],
     signals = [],
     requires = [],

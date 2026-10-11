@@ -1,6 +1,7 @@
 //! Replayable operations, acquisition reservations and joined cancellation.
 
 use super::handler::{CallbackHandler, WaitingCallback};
+use crate::RequestHeadersExt;
 use crate::server::{ClientSession, RequestHeaders};
 use crate::{Error, Result};
 use serde_json::{Map, Value};
@@ -85,6 +86,14 @@ impl Registry {
         self.reserved.retain(|id| *id > floor);
         self.reserved.insert(sequence);
         Ok(())
+    }
+
+    fn reserve_close(&mut self, sequence: u128) {
+        let floor = self.sequence.saturating_sub(ADMISSION_WINDOW);
+        let ceiling = self.sequence.saturating_add(ADMISSION_WINDOW);
+        if sequence > floor && sequence <= ceiling && !self.reserved.contains(&sequence) {
+            self.reserved.insert(sequence);
+        }
     }
 }
 
@@ -345,7 +354,9 @@ impl ServerSessions {
     pub async fn close(&self, id: &str) -> Result<()> {
         let identifier = validate_id(id)?;
         let mut sessions = self.sessions.lock().await;
-        let _ = sessions.reserve(identifier.as_u128());
+        if !sessions.active.contains_key(&identifier.to_string()) {
+            sessions.reserve_close(identifier.as_u128());
+        }
         if let Some(mut session) = sessions.active.remove(&identifier.to_string())
             && let Some(mut operation) = session.operation.take()
         {
