@@ -69,6 +69,8 @@ fn the_method_table_holds_every_declared_member() {
             methods::REGISTRY_GET,
             methods::REGISTRY_SETTINGS_GET,
             methods::REGISTRY_SETTINGS_SET,
+            methods::CONFIG_DOCUMENT_GET,
+            methods::CONFIG_DOCUMENT_APPLY,
             methods::INSTALLED_LIST,
             methods::INSTALL,
             methods::UNINSTALL,
