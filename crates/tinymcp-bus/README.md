@@ -37,6 +37,12 @@ reads one static server's persisted cache without a network request;
 after a successful listing. Both cached reads use the current definition's
 fingerprint and reapply its allow and deny rules.
 
+Contract 1.14 adds module-owned configuration-document read and apply members.
+The apply request can contain credentials and therefore requires TinyBus's
+confidential-call path. Its response includes the re-rendered document, which
+contains credential names but never credential values, and the ordered change
+report.
+
 Library consumers bring implementation extension traits into scope for moved
 DTO methods. Contract-only hosts call the compiled module. See
 [the relocation specification](../../docs/specs/pure-vocabulary.md) for public
