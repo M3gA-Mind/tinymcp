@@ -131,6 +131,7 @@ export_module! {
         "SetupInstallAndConnect",
         "StaticList",
         "StaticListTools",
+        "StaticScrubTools",
         "StaticCachedListTools",
         "StaticCallTool",
         "PrepareBridgeTools",

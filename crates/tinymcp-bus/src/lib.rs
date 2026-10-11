@@ -6,8 +6,8 @@
 //! all-feature dependency closures contain only serialization and schema utilities.
 //!
 //! Untrusted remote text stays raw in these DTOs. Loadable consumers prepare it
-//! through `DisplayRemoteTool`, `TransformText`, `NormalizeToolArguments` and
-//! `RenderToolOutput`. Library consumers use implementation extension traits;
+//! through `DisplayRemoteTool`, `StaticScrubTools`, `TransformText`,
+//! `NormalizeToolArguments` and `RenderToolOutput`. Library consumers use implementation extension traits;
 //! generic lexical helpers live in `TinyTools`. [`sanitize`] holds MCP byte caps.
 //!
 //! # Exhaustiveness
@@ -130,5 +130,5 @@ pub use server::{
 pub mod processing;
 pub use processing::{
     DisplayRemoteToolRequest, MAX_PROCESSING_BYTES, RemoteToolDisplay, RenderToolOutputRequest,
-    TextTransform, ToolOutputFormat, TransformTextRequest,
+    ScrubStaticToolsRequest, TextTransform, ToolOutputFormat, TransformTextRequest,
 };
