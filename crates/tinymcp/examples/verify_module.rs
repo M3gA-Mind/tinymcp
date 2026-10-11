@@ -311,7 +311,9 @@ async fn verify_metadata_operations(
     use serde_json::{Value, json};
     use tinymcp_bus::{
         McpRemoteTool, McpTool, McpToolExposure, McpToolPresentation, McpToolSourceSpec,
-        PrepareAgentToolsRequest, RemoteToolDisplay, TextTransform, TransformTextRequest,
+        PrepareAgentToolsRequest, RemoteToolDisplay, ServerArgumentRule,
+        ServerArgumentsValidation, StaticServerSummary, TextTransform,
+        TransformTextRequest, ValidateServerArgumentsRequest,
     };
 
     let directory = tempfile::tempdir()?;
@@ -323,6 +325,52 @@ async fn verify_metadata_operations(
         .await?;
     if has_stored_state {
         return Err(io::Error::other("an empty directory reported stored state").into());
+    }
+
+    let summaries: Vec<StaticServerSummary> =
+        proxy.call(names::methods::STATIC_SERVER_SUMMARIES, ()).await?;
+    if !summaries.is_empty() {
+        return Err(io::Error::other("a fresh registry reported static server summaries").into());
+    }
+
+    let validation: ServerArgumentsValidation = proxy
+        .call(
+            names::methods::VALIDATE_SERVER_ARGUMENTS,
+            (ValidateServerArgumentsRequest {
+                arguments: json!({"query":"fixture"}),
+                allowed: vec!["query".to_owned()],
+                rules: vec![ServerArgumentRule::RequiredNonEmptyString {
+                    key: "query".to_owned(),
+                }],
+            },),
+        )
+        .await?;
+    if validation != ServerArgumentsValidation::Valid(json!({"query":"fixture"}).as_object().unwrap().clone()) {
+        return Err(io::Error::other("module argument validation returned the wrong result").into());
+    }
+
+    let configured = proxy
+        .call_confidential::<tinymcp_bus::ClassifiedStaticToolCall>(
+            names::methods::CONFIGURED_TOOL_CALL,
+            (tinymcp_bus::ConfiguredToolCallRequest {
+                server: tinymcp_bus::McpServerConfig {
+                    name: "artifact-one-shot".to_owned(),
+                    endpoint: "https://fixture.invalid/mcp".to_owned(),
+                    auth: tinymcp_bus::McpAuthConfig::BearerToken {
+                        token: "artifact-secret-sentinel".to_owned(),
+                    },
+                    ..tinymcp_bus::McpServerConfig::default()
+                },
+                tool: "fixture".to_owned(),
+                arguments: json!({}),
+            },),
+        )
+        .await;
+    if !matches!(configured, Err(tinybus::Error::NotAttested { .. })) {
+        return Err(io::Error::other(
+            "an unsigned compiled module accepted a confidential configured call",
+        )
+        .into());
     }
 
     let prepared: Vec<McpToolPresentation> = proxy
