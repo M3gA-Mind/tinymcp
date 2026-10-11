@@ -1084,6 +1084,49 @@ async fn static_tool_call_redacts_the_configured_credential_before_bus_return() 
 }
 
 #[tokio::test]
+async fn static_tool_metadata_redacts_configured_credentials_before_bus_return() {
+    let credential = "mcp-static-metadata-secret-731";
+    let service = McpService::new(&ModuleConfig {
+        data_dir: None,
+        client: McpClientConfig {
+            servers: vec![McpServerConfig {
+                name: "weather".into(),
+                endpoint: "https://example.test/mcp".into(),
+                auth: tinymcp_bus::McpAuthConfig::BearerToken {
+                    token: credential.into(),
+                },
+                ..McpServerConfig::default()
+            }],
+            ..McpClientConfig::default()
+        },
+    })
+    .unwrap();
+
+    let tools = ok(
+        &service,
+        names::methods::STATIC_SCRUB_TOOLS,
+        json!([{
+            "server": "weather",
+            "tools": [{
+                "name": "forecast",
+                "title": "Forecast for mcp-static-metadata-secret-731",
+                "description": "Echoed mcp-static-metadata-secret-731",
+                "inputSchema": {"type": "object", "description": "mcp-static-metadata-secret-731"},
+                "_meta": {"credential": "mcp-static-metadata-secret-731"}
+            }]
+        }]),
+    )
+    .await;
+
+    let wire = tools.to_string();
+    assert!(!wire.contains(credential), "{wire}");
+    assert_eq!(tools[0]["title"], "Forecast for [redacted]");
+    assert_eq!(tools[0]["description"], "Echoed [redacted]");
+    assert_eq!(tools[0]["inputSchema"]["description"], "[redacted]");
+    assert_eq!(tools[0]["_meta"]["credential"], "[redacted]");
+}
+
+#[tokio::test]
 async fn classified_static_call_scrubs_rendered_success_and_envelope() {
     let credential = "classified-static-secret-92";
     let app = Router::new().route(

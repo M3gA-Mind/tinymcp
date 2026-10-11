@@ -96,6 +96,7 @@ fn the_method_table_holds_every_declared_member() {
             methods::SETUP_INSTALL_AND_CONNECT,
             methods::STATIC_LIST,
             methods::STATIC_LIST_TOOLS,
+            methods::STATIC_SCRUB_TOOLS,
             methods::STATIC_CACHED_LIST_TOOLS,
             methods::STATIC_CALL_TOOL,
             methods::PREPARE_BRIDGE_TOOLS,
@@ -151,6 +152,7 @@ fn the_static_members_are_named_as_a_family() {
     for method in [
         methods::STATIC_LIST,
         methods::STATIC_LIST_TOOLS,
+        methods::STATIC_SCRUB_TOOLS,
         methods::STATIC_CACHED_LIST_TOOLS,
         methods::STATIC_CALL_TOOL,
         methods::STATIC_CALL_TOOL_CLASSIFIED,

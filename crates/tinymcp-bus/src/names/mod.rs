@@ -140,6 +140,8 @@ pub mod methods {
     pub const STATIC_LIST: &str = "StaticList";
     /// Lists the tools one statically declared server advertises.
     pub const STATIC_LIST_TOOLS: &str = "StaticListTools";
+    /// Scrubs configured credentials from remote metadata for static tools.
+    pub const STATIC_SCRUB_TOOLS: &str = "StaticScrubTools";
     /// Lists one statically declared server's persisted cached tools without
     /// dialling it.
     pub const STATIC_CACHED_LIST_TOOLS: &str = "StaticCachedListTools";
@@ -250,6 +252,7 @@ pub const METHODS: &[&str] = &[
     // Static servers
     methods::STATIC_LIST,
     methods::STATIC_LIST_TOOLS,
+    methods::STATIC_SCRUB_TOOLS,
     methods::STATIC_CACHED_LIST_TOOLS,
     methods::STATIC_CALL_TOOL,
     methods::PREPARE_BRIDGE_TOOLS,

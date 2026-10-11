@@ -3,8 +3,8 @@ use crate::{Error, McpRemoteToolExt, Result};
 use serde_json::{Map, Value};
 use tinymcp_bus::{
     DisplayRemoteToolRequest, MAX_PROCESSING_BYTES, McpToolContent, McpToolPresentation,
-    PrepareAgentToolsRequest, RemoteToolDisplay, RenderToolOutputRequest, TextTransform,
-    ToolOutputFormat, TransformTextRequest,
+    PrepareAgentToolsRequest, RemoteToolDisplay, RenderToolOutputRequest, ScrubStaticToolsRequest,
+    TextTransform, ToolOutputFormat, TransformTextRequest,
 };
 
 const MAX_AGENT_TOOL_SOURCES: usize = 256;
@@ -92,6 +92,30 @@ pub fn display_remote_tool(tool: &DisplayRemoteToolRequest) -> Result<RemoteTool
         description: tool.display_description(),
         title: tool.display_title(),
     })
+}
+
+/// Removes this configured server's credentials from remote tool metadata.
+/// # Errors
+/// Rejects an oversized serialized request.
+pub fn scrub_static_tools(
+    request: &ScrubStaticToolsRequest,
+    scrubber: &crate::agent_tools::SecretScrubber,
+) -> Result<Vec<tinymcp_bus::McpRemoteTool>> {
+    bounded(request)?;
+    let mut tools = request.tools.clone();
+    for tool in &mut tools {
+        if let Some(title) = &mut tool.title {
+            *title = scrubber.scrub(title);
+        }
+        if let Some(description) = &mut tool.description {
+            *description = scrubber.scrub(description);
+        }
+        scrubber.scrub_value(&mut tool.input_schema);
+        if let Some(meta) = &mut tool.meta {
+            scrubber.scrub_value(meta);
+        }
+    }
+    Ok(tools)
 }
 
 /// Builds the stable model-facing declarations for already-screened sources.

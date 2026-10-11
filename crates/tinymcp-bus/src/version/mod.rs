@@ -23,8 +23,10 @@
 /// 1.12 adds no-dial dynamic and static tool-cache reads; 1.13 adds
 /// module-owned HTTP admission and server response metadata; 1.14 adds
 /// installed configuration-document read and apply operations; 1.15 adds
-/// no-create state lookup and module-prepared tool declarations.
-pub const CONTRACT_VERSION: (u32, u32) = (1, 16);
+/// no-create state lookup and module-prepared tool declarations. The released
+/// 1.16 vocabulary is the baseline for this addition; 1.17 adds module-owned
+/// scrubbing of credentials from static remote-tool metadata.
+pub const CONTRACT_VERSION: (u32, u32) = (1, 17);
 
 /// Returns whether a host holding [`CONTRACT_VERSION`] can bind to a module
 /// reporting `module`.
@@ -38,7 +40,7 @@ pub const CONTRACT_VERSION: (u32, u32) = (1, 16);
 /// ```
 /// # use tinymcp_bus::{is_compatible, CONTRACT_VERSION};
 /// assert!(is_compatible(CONTRACT_VERSION));
-/// assert!(is_compatible((1, 16)));
+/// assert!(is_compatible((1, 17)));
 /// assert!(!is_compatible((1, 14)));
 /// assert!(!is_compatible((2, 0)));
 /// ```

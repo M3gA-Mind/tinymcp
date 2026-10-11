@@ -1,0 +1,3 @@
+[ci-cancel-aware] exec: rustup run stable cargo clippy --manifest-path vendor/tinymcp/Cargo.toml --workspace --all-targets --all-features -- -D warnings 
+    Checking tinymcp v0.12.0 (/home/enamakel/work/openhuman/worktrees/mcp-server-bus-cutover/vendor/tinymcp/crates/tinymcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 10.15s

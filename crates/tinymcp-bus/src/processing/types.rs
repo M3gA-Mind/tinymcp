@@ -69,3 +69,14 @@ pub struct RenderToolOutputRequest {
 
 /// Input to `DisplayRemoteTool` uses the ordinary shared MCP remote-tool DTO.
 pub type DisplayRemoteToolRequest = McpRemoteTool;
+
+/// A bounded request to scrub one configured server's credentials from raw
+/// remote tool metadata before the host presents it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScrubStaticToolsRequest {
+    /// The statically configured server whose credentials are known to the
+    /// module.
+    pub server: String,
+    /// Raw tools returned by that server or its persistent cache.
+    pub tools: Vec<McpRemoteTool>,
+}

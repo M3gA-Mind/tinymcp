@@ -18,8 +18,8 @@ use tinymcp_bus::{
     AuthDetection, ClassifiedStaticToolCall, ConfigApplyReport, ConfigApplyResponse, ConnStatus,
     ConnectOutcome, ConnectedServerOverview, InstallOutcome, InstalledServer, McpTool,
     McpWriteListQuery, McpWriteRecord, NewMcpWriteRecord, OpenConfiguredRequest,
-    OpenConfiguredResponse, RegistrySearchPage, RegistrySettings, SearchCuration, ServerDetail,
-    ToolCallOutcome, TransitionStatus, UpdateEnvOutcome,
+    OpenConfiguredResponse, RegistrySearchPage, RegistrySettings, ScrubStaticToolsRequest,
+    SearchCuration, ServerDetail, ToolCallOutcome, TransitionStatus, UpdateEnvOutcome,
 };
 
 /// Everything the interface serves.
@@ -654,6 +654,20 @@ impl McpService {
         self.static_servers
             .list_tools_caching(&server, self.dynamic.store())
             .await
+            .map_err(|error| Self::failed(&error))
+    }
+
+    /// `(request)` — scrub credentials from metadata returned by a static server.
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "the TinyBus interface requires async service methods even for local processing"
+    )]
+    async fn static_scrub_tools(
+        &self,
+        request: ScrubStaticToolsRequest,
+    ) -> tinybus::Result<Vec<tinymcp_bus::McpRemoteTool>> {
+        let scrubber = SecretScrubber::for_server(&self.static_servers, &request.server);
+        crate::processing::scrub_static_tools(&request, &scrubber)
             .map_err(|error| Self::failed(&error))
     }
 

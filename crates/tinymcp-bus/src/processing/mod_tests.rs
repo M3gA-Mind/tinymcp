@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Processing payload wire forms are independent of the implementation.
 use super::*;
+use crate::McpRemoteTool;
 use serde_json::json;
 #[test]
 fn processing_requests_pin_enum_tags_and_optional_render_defaults() {
@@ -47,5 +48,33 @@ fn processing_requests_pin_enum_tags_and_optional_render_defaults() {
     assert_eq!(
         serde_json::to_value(display).unwrap(),
         json!({"description":null,"title":null})
+    );
+
+    let scrub = ScrubStaticToolsRequest {
+        server: "weather".into(),
+        tools: vec![McpRemoteTool {
+            name: "forecast".into(),
+            title: Some("Forecast".into()),
+            description: Some("Read the forecast".into()),
+            input_schema: json!({"type":"object"}),
+            meta: None,
+        }],
+    };
+    let wire = serde_json::to_value(&scrub).unwrap();
+    assert_eq!(
+        wire,
+        json!({
+            "server":"weather",
+            "tools":[{
+                "name":"forecast",
+                "title":"Forecast",
+                "description":"Read the forecast",
+                "inputSchema":{"type":"object"}
+            }]
+        })
+    );
+    assert_eq!(
+        serde_json::from_value::<ScrubStaticToolsRequest>(wire).unwrap(),
+        scrub
     );
 }
