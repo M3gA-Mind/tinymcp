@@ -30,21 +30,41 @@ class PackageTests(unittest.TestCase):
                     package.addfile(info, io.BytesIO(data))
 
             observed = root / "observed"
+            setpriv_args = root / "setpriv-args"
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            setpriv = bin_dir / "setpriv"
+            setpriv.write_text(
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$SET_PRIV_ARGS\"\n"
+                "while [ \"$1\" != -- ]; do shift; done\nshift\nexec \"$@\"\n"
+            )
+            setpriv.chmod(0o755)
             runner = root / "verify-module-fixture"
             runner.write_text(
                 "#!/bin/sh\nprintf '%s\\n' \"$(id -u)\" > \"$OBSERVED_UID\"\n"
                 "test -f \"$1\"\n"
             )
             runner.chmod(0o755)
-            env = dict(os.environ, OBSERVED_UID=str(observed))
+            uid = os.getuid() + 1
+            gid = os.getgid() + 1
+            env = dict(
+                os.environ,
+                OBSERVED_UID=str(observed),
+                SET_PRIV_ARGS=str(setpriv_args),
+                PATH=str(bin_dir) + os.pathsep + os.environ["PATH"],
+            )
             verifier = subprocess.run(
-                [str(ROOT / "scripts/run-as-host-user.sh"), str(os.getuid()),
-                 str(os.getgid()), str(ROOT / "scripts/verify-module.sh"),
+                [str(ROOT / "scripts/run-as-host-user.sh"), str(uid), str(gid),
+                 str(ROOT / "scripts/verify-module.sh"),
                  "--archive", str(archive), "--verifier-bin", str(runner)],
                 cwd=ROOT, env=env, text=True, capture_output=True, check=False,
             )
             self.assertEqual(verifier.returncode, 0, verifier.stderr)
             self.assertEqual(observed.read_text().strip(), str(os.getuid()))
+            self.assertEqual(
+                setpriv_args.read_text().splitlines()[:4],
+                [f"--reuid={uid}", f"--regid={gid}", "--clear-groups", "--"],
+            )
 
     def test_archive_accepts_dotted_release_host_key_and_attests_library(self):
         """Package a dotted native host key and verify bytes plus attestation."""
