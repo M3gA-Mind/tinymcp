@@ -70,7 +70,7 @@ fn future_server_callback_kinds_and_operation_states_are_ignored() {
         ServerOperationState::Callback {
             callback: ServerCallback {
                 id: "opaque".into(),
-                call: ServerHostCall::Unknown,
+                call: ServerHostCall::Unsupported,
             }
         }
     );
@@ -150,7 +150,7 @@ fn callback_debug_never_contains_headers_arguments_or_resource_names() {
             } => {
                 json!({"kind":"get_prompt","source_type":source_type,"headers":headers,"name":name,"arguments":arguments})
             }
-            ServerHostCall::Unknown => json!({"kind":"unknown"}),
+            ServerHostCall::Unsupported => json!({"kind":"unsupported"}),
         };
         assert_eq!(serde_json::to_value(&call).unwrap(), expected);
         assert_eq!(
@@ -291,4 +291,35 @@ fn shared_server_declarations_headers_context_and_errors_pin_wire_forms() {
         );
         assert_eq!(error.to_string(), error.message());
     }
+}
+
+#[test]
+fn newer_host_calls_and_operation_states_decode_as_fallbacks() {
+    let call = json!({"kind": "future_host_call", "payload": {"id": "opaque"}});
+    assert_eq!(
+        serde_json::from_value::<ServerHostCall>(call).unwrap(),
+        ServerHostCall::Unsupported
+    );
+
+    let state = json!({"state": "future_state", "details": {"retry": true}});
+    assert_eq!(
+        serde_json::from_value::<ServerOperationState>(state).unwrap(),
+        ServerOperationState::Unknown
+    );
+}
+
+#[test]
+fn malformed_known_server_variants_are_still_rejected() {
+    assert!(
+        serde_json::from_value::<ServerHostCall>(json!({
+            "kind": "read_resource"
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<ServerOperationState>(json!({
+            "state": "failed"
+        }))
+        .is_err()
+    );
 }

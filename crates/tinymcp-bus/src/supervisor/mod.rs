@@ -1,6 +1,6 @@
 //! Supervisor observation vocabulary. Reconnect behavior lives in the module.
 use crate::InstalledServer;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use serde_json::Value;
 use std::time::Duration;
 
@@ -40,7 +40,7 @@ pub enum ProbeOutcome {
         /// The window that elapsed without an answer.
         after: Duration,
     },
-    /// An outcome added by a newer compatible contract version.
+    /// A newer module reported a probe outcome this host does not know.
     Unknown,
 }
 
@@ -52,31 +52,30 @@ enum KnownProbeOutcome {
     TimedOut { after: Duration },
 }
 
+impl From<KnownProbeOutcome> for ProbeOutcome {
+    fn from(outcome: KnownProbeOutcome) -> Self {
+        match outcome {
+            KnownProbeOutcome::Alive { elapsed } => Self::Alive { elapsed },
+            KnownProbeOutcome::Missing => Self::Missing,
+            KnownProbeOutcome::Broken { error, elapsed } => Self::Broken { error, elapsed },
+            KnownProbeOutcome::TimedOut { after } => Self::TimedOut { after },
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for ProbeOutcome {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         let value = Value::deserialize(deserializer)?;
-        let known = match &value {
-            Value::String(name) => name == "Missing",
-            Value::Object(fields) if fields.len() == 1 => fields
-                .keys()
-                .next()
-                .is_some_and(|name| matches!(name.as_str(), "Alive" | "Broken" | "TimedOut")),
-            _ => false,
-        };
-        if !known {
+        let tag = external_tag(&value).map_err(D::Error::custom)?;
+        if !matches!(tag, "Alive" | "Missing" | "Broken" | "TimedOut") {
             return Ok(Self::Unknown);
         }
-        match serde_json::from_value::<KnownProbeOutcome>(value)
-            .map_err(<D::Error as serde::de::Error>::custom)?
-        {
-            KnownProbeOutcome::Alive { elapsed } => Ok(Self::Alive { elapsed }),
-            KnownProbeOutcome::Missing => Ok(Self::Missing),
-            KnownProbeOutcome::Broken { error, elapsed } => Ok(Self::Broken { error, elapsed }),
-            KnownProbeOutcome::TimedOut { after } => Ok(Self::TimedOut { after }),
-        }
+        serde_json::from_value::<KnownProbeOutcome>(value)
+            .map(Into::into)
+            .map_err(D::Error::custom)
     }
 }
 
@@ -206,7 +205,7 @@ pub enum SupervisorEvent {
         /// What the attempt reported, already rendered.
         error: String,
     },
-    /// An observation added by a newer compatible contract version.
+    /// A newer module reported an event this host does not know.
     Unknown,
 }
 
@@ -244,82 +243,95 @@ enum KnownSupervisorEvent {
     },
 }
 
-impl<'de> Deserialize<'de> for SupervisorEvent {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = Value::deserialize(deserializer)?;
-        let known = value.as_object().is_some_and(|fields| {
-            fields.len() == 1
-                && fields.keys().next().is_some_and(|name| {
-                    matches!(
-                        name.as_str(),
-                        "ProbeAnswered"
-                            | "ProbeTimedOut"
-                            | "TransportDropped"
-                            | "Reconnected"
-                            | "ReconnectFailed"
-                            | "Parked"
-                    )
-                })
-        });
-        if !known {
-            return Ok(Self::Unknown);
-        }
-        match serde_json::from_value::<KnownSupervisorEvent>(value)
-            .map_err(<D::Error as serde::de::Error>::custom)?
-        {
+impl From<KnownSupervisorEvent> for SupervisorEvent {
+    fn from(event: KnownSupervisorEvent) -> Self {
+        match event {
             KnownSupervisorEvent::ProbeAnswered { server, elapsed } => {
-                Ok(Self::ProbeAnswered { server, elapsed })
+                Self::ProbeAnswered { server, elapsed }
             }
             KnownSupervisorEvent::ProbeTimedOut {
                 server,
                 after,
                 consecutive,
                 teardown_after,
-            } => Ok(Self::ProbeTimedOut {
+            } => Self::ProbeTimedOut {
                 server,
                 after,
                 consecutive,
                 teardown_after,
-            }),
+            },
             KnownSupervisorEvent::TransportDropped {
                 server,
                 outcome,
                 consecutive_timeouts,
-            } => Ok(Self::TransportDropped {
+            } => Self::TransportDropped {
                 server,
                 outcome,
                 consecutive_timeouts,
-            }),
+            },
             KnownSupervisorEvent::Reconnected {
                 server,
                 tools,
                 after_failures,
-            } => Ok(Self::Reconnected {
+            } => Self::Reconnected {
                 server,
                 tools,
                 after_failures,
-            }),
+            },
             KnownSupervisorEvent::ReconnectFailed {
                 server,
                 error,
                 failures,
                 retry_in,
-            } => Ok(Self::ReconnectFailed {
+            } => Self::ReconnectFailed {
                 server,
                 error,
                 failures,
                 retry_in,
-            }),
-            KnownSupervisorEvent::Parked { server, error } => Ok(Self::Parked { server, error }),
+            },
+            KnownSupervisorEvent::Parked { server, error } => Self::Parked { server, error },
         }
     }
 }
 
+impl<'de> Deserialize<'de> for SupervisorEvent {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        let tag = external_tag(&value).map_err(D::Error::custom)?;
+        if !matches!(
+            tag,
+            "ProbeAnswered"
+                | "ProbeTimedOut"
+                | "TransportDropped"
+                | "Reconnected"
+                | "ReconnectFailed"
+                | "Parked"
+        ) {
+            return Ok(Self::Unknown);
+        }
+        serde_json::from_value::<KnownSupervisorEvent>(value)
+            .map(Into::into)
+            .map_err(D::Error::custom)
+    }
+}
+
+fn external_tag(value: &Value) -> Result<&str, &'static str> {
+    match value {
+        Value::String(tag) => Ok(tag),
+        Value::Object(fields) if fields.len() == 1 => fields
+            .keys()
+            .next()
+            .map(String::as_str)
+            .ok_or("external enum has no variant"),
+        _ => Err("invalid external enum representation"),
+    }
+}
+
 impl SupervisorEvent {
-    /// The server this event is about, if this version knows the event kind.
+    /// The server this event is about, or `None` for an unknown future event.
     #[must_use]
     pub fn server(&self) -> Option<&ServerRef> {
         match self {

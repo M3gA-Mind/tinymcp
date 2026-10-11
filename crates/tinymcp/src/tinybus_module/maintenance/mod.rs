@@ -29,6 +29,7 @@
 mod events;
 mod types;
 
+pub(in crate::tinybus_module) use events::MAX_DRAIN;
 pub(super) use types::Maintenance;
 
 #[cfg(test)]

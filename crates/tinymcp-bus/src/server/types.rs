@@ -20,7 +20,6 @@ pub struct ServerSessionConfig {
 /// A validated operation awaiting host policy and execution.
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-#[non_exhaustive]
 pub enum ServerHostCall {
     /// List the tools the host permits this client to see.
     ListTools {
@@ -67,9 +66,9 @@ pub enum ServerHostCall {
         /// String-valued MCP prompt arguments.
         arguments: Map<String, Value>,
     },
-    /// A callback kind added by a newer compatible contract version.
+    /// A newer host requested an operation this module does not support.
     #[serde(other)]
-    Unknown,
+    Unsupported,
 }
 
 /// A host's result after applying its own policy and domain operations.
@@ -110,7 +109,6 @@ pub struct ServerCallback {
 /// The current observable state of a submitted input line.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "state", rename_all = "snake_case")]
-#[non_exhaustive]
 pub enum ServerOperationState {
     /// Processing input, or waiting for a previously drained callback reply.
     Pending,
@@ -131,7 +129,7 @@ pub enum ServerOperationState {
         /// Stable module-owned failure description.
         message: String,
     },
-    /// An operation state added by a newer compatible contract version.
+    /// A newer module reported an operation state this host does not know.
     #[serde(other)]
     Unknown,
 }
@@ -144,7 +142,7 @@ impl std::fmt::Debug for ServerHostCall {
             Self::ReadResource { .. } => "ReadResource",
             Self::ListPrompts { .. } => "ListPrompts",
             Self::GetPrompt { .. } => "GetPrompt",
-            Self::Unknown => "Unknown",
+            Self::Unsupported => "Unsupported",
         };
         f.debug_struct(kind).finish_non_exhaustive()
     }

@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use super::config::ModuleConfig;
 use super::directories::DirectoryOpener;
-use super::maintenance::Maintenance;
+use super::maintenance::{MAX_DRAIN, Maintenance};
 use crate::audit::AuditStore;
 use crate::config_servers::McpServerRegistry;
 use crate::error::Result;
@@ -561,7 +561,7 @@ impl McpService {
         limit: usize,
     ) -> tinybus::Result<tinymcp_bus::SupervisorBatch> {
         std::future::ready(()).await;
-        if !(1..=256).contains(&limit) {
+        if !(1..=MAX_DRAIN).contains(&limit) {
             return Err(tinybus::Error::failed("invalid supervisor drain limit"));
         }
         match &self.maintenance {
