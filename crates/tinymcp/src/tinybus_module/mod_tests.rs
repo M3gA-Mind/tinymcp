@@ -2095,21 +2095,20 @@ async fn server_members_preserve_positional_arguments_callbacks_and_lifecycle() 
                 // a server operation is awaiting their reply. Exercise a nested
                 // module call here so validation cannot depend on a lock held by
                 // the in-flight server operation.
-                let validation: tinymcp_bus::ServerArgumentsValidation =
-                    serde_json::from_value(
-                        call(
-                            &service,
-                            names::methods::VALIDATE_SERVER_ARGUMENTS,
-                            json!([{
-                                "arguments": {"query": "nested"},
-                                "allowed": ["query"],
-                                "rules": [{"kind":"required_non_empty_string", "key":"query"}]
-                            }]),
-                        )
-                        .await
-                        .unwrap(),
+                let validation: tinymcp_bus::ServerArgumentsValidation = serde_json::from_value(
+                    call(
+                        &service,
+                        names::methods::VALIDATE_SERVER_ARGUMENTS,
+                        json!([{
+                            "arguments": {"query": "nested"},
+                            "allowed": ["query"],
+                            "rules": [{"kind":"required_non_empty_string", "key":"query"}]
+                        }]),
                     )
-                    .unwrap();
+                    .await
+                    .unwrap(),
+                )
+                .unwrap();
                 assert_eq!(
                     validation,
                     tinymcp_bus::ServerArgumentsValidation::Valid(
