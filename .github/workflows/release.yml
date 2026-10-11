@@ -177,7 +177,7 @@ jobs:
             cat > "$body_file" <<EOF
           This PR prepares TinyMCP ${RELEASE_TAG} by updating the shared workspace version and lockfile.
 
-          The release workflow has dispatched the full CI workflow against this branch. After the required checks pass and this PR is merged, dispatch **Release** with `bump: current` to tag the merged version and build/publish the 16 native module archives. The `current` path only pushes the tag; it never pushes a commit to protected `main`.
+          The release workflow has dispatched the full CI workflow against this branch. After the required checks pass and this PR is merged, dispatch **Release** with bump set to current to tag the merged version and build/publish the 16 native module archives. The current path only pushes the tag; it never pushes a commit to protected main.
           EOF
             pr_url="$(gh pr create --repo "$GITHUB_REPOSITORY" --base main \
               --head "$release_branch" --title "Prepare release ${RELEASE_TAG}" \
@@ -209,13 +209,6 @@ jobs:
           set -euo pipefail
           git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
           git push origin "$RELEASE_TAG"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock
-          git commit -m "Release ${RELEASE_TAG}"
-          git tag -a "${RELEASE_TAG}" -m "Release ${RELEASE_TAG}"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
-          git push origin "${RELEASE_TAG}"
 
   native-bundles:
     name: Rust module bundle (${{ matrix.id }})
