@@ -689,6 +689,42 @@ fn oversized_text_json_and_markdown_results_are_elided() {
     );
 }
 
+#[test]
+fn bounded_bus_rendering_preserves_error_and_host_only_fields() {
+    let oversized = "x".repeat(super::MAX_LLM_BLOCK_BYTES + 1);
+    let result = super::result::bound_mcp_tool_result(McpToolResult {
+        content: vec![
+            McpToolContent::Text {
+                text: oversized.clone(),
+            },
+            McpToolContent::Json {
+                data: json!({"payload": oversized}),
+            },
+        ],
+        is_error: true,
+        markdown_formatted: Some("m".repeat(super::MAX_LLM_BLOCK_BYTES + 1)),
+        structured_content: Some(json!({"ui": "retained"})),
+        meta: Some(json!({"label": "retained"})),
+        ..McpToolResult::default()
+    });
+
+    let McpToolContent::Text { text } = &result.content[0] else {
+        panic!("text content keeps its type");
+    };
+    assert_eq!(text, &format!("[{} bytes elided]", super::MAX_LLM_BLOCK_BYTES + 1));
+    let McpToolContent::Json { data } = &result.content[1] else {
+        panic!("JSON content keeps its type");
+    };
+    assert!(data.as_str().unwrap().ends_with("bytes elided]"));
+    assert_eq!(
+        result.markdown_formatted.as_deref(),
+        Some(format!("[{} bytes elided]", super::MAX_LLM_BLOCK_BYTES + 1).as_str())
+    );
+    assert!(result.is_error);
+    assert_eq!(result.structured_content, Some(json!({"ui": "retained"})));
+    assert_eq!(result.meta, Some(json!({"label": "retained"})));
+}
+
 // ---------------------------------------------------------------------------
 // Argument normalization
 // ---------------------------------------------------------------------------
