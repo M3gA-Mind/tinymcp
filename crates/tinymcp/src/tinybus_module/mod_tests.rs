@@ -1018,7 +1018,7 @@ async fn static_server_summaries_keep_legacy_fields_and_redact_endpoint_secrets(
 #[tokio::test]
 async fn configured_tool_call_does_not_register_the_one_shot_server() {
     let service = service();
-    let call: tinymcp_bus::ClassifiedStaticToolCall = ok(
+    let call: tinymcp_bus::ClassifiedStaticToolCall = serde_json::from_value(ok(
         &service,
         names::methods::CONFIGURED_TOOL_CALL,
         json!([{
@@ -1032,8 +1032,7 @@ async fn configured_tool_call_does_not_register_the_one_shot_server() {
             "arguments": {"query": "mcp"}
         }]),
     )
-    .await
-    .try_into()
+    .await)
     .expect("classified call reply");
 
     assert!(!call.outcome.ok);
@@ -1062,11 +1061,10 @@ async fn server_argument_validation_normalizes_and_reports_module_errors() {
             },
         ],
     };
-    let valid: tinymcp_bus::ServerArgumentsValidation =
-        ok(&service, names::methods::VALIDATE_SERVER_ARGUMENTS, json!([request]))
-            .await
-            .try_into()
-            .expect("validation reply");
+    let valid: tinymcp_bus::ServerArgumentsValidation = serde_json::from_value(
+        ok(&service, names::methods::VALIDATE_SERVER_ARGUMENTS, json!([request])).await,
+    )
+    .expect("validation reply");
     assert_eq!(
         valid,
         tinymcp_bus::ServerArgumentsValidation::Valid(serde_json::from_value(json!({
@@ -1074,7 +1072,7 @@ async fn server_argument_validation_normalizes_and_reports_module_errors() {
         })).unwrap())
     );
 
-    let invalid: tinymcp_bus::ServerArgumentsValidation = ok(
+    let invalid: tinymcp_bus::ServerArgumentsValidation = serde_json::from_value(ok(
         &service,
         names::methods::VALIDATE_SERVER_ARGUMENTS,
         json!([{
@@ -1083,8 +1081,7 @@ async fn server_argument_validation_normalizes_and_reports_module_errors() {
             "rules": [{"kind":"required_non_empty_string", "key":"query"}]
         }]),
     )
-    .await
-    .try_into()
+    .await)
     .expect("validation reply");
     assert_eq!(
         invalid,
