@@ -16,9 +16,9 @@ use tinybus::Connection;
 use tinymcp_bus::{
     AuthDetection, ConfigApplyReport, ConfigApplyResponse, ConnStatus, ConnectOutcome,
     ConnectedServerOverview, InstallOutcome, InstalledServer, McpTool, McpWriteListQuery,
-    McpWriteRecord, NewMcpWriteRecord,
-    OpenConfiguredRequest, OpenConfiguredResponse, RegistrySearchPage, RegistrySettings,
-    SearchCuration, ServerDetail, ToolCallOutcome, TransitionStatus, UpdateEnvOutcome,
+    McpWriteRecord, NewMcpWriteRecord, OpenConfiguredRequest, OpenConfiguredResponse,
+    RegistrySearchPage, RegistrySettings, SearchCuration, ServerDetail, ToolCallOutcome,
+    TransitionStatus, UpdateEnvOutcome,
 };
 
 /// Everything the interface serves.

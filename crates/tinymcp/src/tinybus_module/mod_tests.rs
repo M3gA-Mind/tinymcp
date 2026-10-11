@@ -70,6 +70,8 @@ fn every_served_member_is_reachable_by_its_contract_constant() {
         names::methods::SETUP_INSTALL_AND_CONNECT,
         names::methods::STATIC_CALL_TOOL,
         names::methods::AUDIT_LIST_WRITES,
+        names::methods::CONFIG_DOCUMENT_GET,
+        names::methods::CONFIG_DOCUMENT_APPLY,
     ] {
         assert!(has(member), "{member} is not served");
     }
@@ -87,6 +89,15 @@ fn the_authorization_members_keep_their_capitalisation() {
             "{name} is not served"
         );
     }
+}
+
+#[test]
+fn applying_a_configuration_document_requires_confidential_delivery() {
+    let member: tinybus::MemberName = names::methods::CONFIG_DOCUMENT_APPLY
+        .try_into()
+        .expect("the member name is valid");
+
+    assert!(service().requires_confidential(&member));
 }
 
 // ---------------------------------------------------------------------------
@@ -862,6 +873,43 @@ async fn a_recorded_write_comes_back_in_the_listing() {
 
     assert_eq!(rows.as_array().map(Vec::len), Some(1));
     assert_eq!(rows[0]["tool_name"], json!("memory_write"));
+}
+
+#[tokio::test]
+async fn configuration_document_members_render_and_apply_without_returning_secrets() {
+    let directory = tempfile::tempdir().unwrap();
+    let service = service_at(directory.path(), "http://127.0.0.1:1");
+
+    let before = ok(&service, names::methods::CONFIG_DOCUMENT_GET, json!([])).await;
+    assert_eq!(before, json!({ "mcpServers": {} }));
+
+    let response = ok(
+        &service,
+        names::methods::CONFIG_DOCUMENT_APPLY,
+        json!([{
+            "mcpServers": {
+                "weather": {
+                    "command": "weather",
+                    "env": { "WEATHER_KEY": "sentinel-secret" }
+                }
+            }
+        }]),
+    )
+    .await;
+
+    assert_eq!(
+        response["document"]["mcpServers"]["weather"]["envKeys"],
+        json!(["WEATHER_KEY"])
+    );
+    assert_eq!(response["report"]["installed"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        response["report"]["connect_queued"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(!response.to_string().contains("sentinel-secret"));
 }
 
 // ---------------------------------------------------------------------------
