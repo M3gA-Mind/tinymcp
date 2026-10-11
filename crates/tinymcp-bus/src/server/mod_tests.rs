@@ -194,7 +194,15 @@ fn server_operation_payloads_keep_explicit_complete_wire_forms() {
     };
     assert_eq!(
         serde_json::to_value(&snapshot).unwrap(),
-        json!({"operation_id":"operation-1","state":{"state":"complete","response":null},"http_response":null})
+        json!({"operation_id":"operation-1","state":{"state":"complete","response":null}})
+    );
+    assert_eq!(
+        serde_json::from_value::<ServerOperationSnapshot>(json!({
+            "operation_id":"operation-1",
+            "state":{"state":"complete","response":null}
+        }))
+        .unwrap(),
+        snapshot
     );
     for (state, expected) in [
         (ServerOperationState::Pending, json!({"state":"pending"})),
@@ -332,6 +340,35 @@ fn http_session_payloads_preserve_wire_shape_and_hide_secrets_from_debug() {
         })
     );
     assert!(!format!("{response:?}").contains("http-session-secret"));
+}
+
+#[test]
+fn http_operation_snapshots_include_response_metadata() {
+    let snapshot = ServerOperationSnapshot {
+        operation_id: "operation-2".into(),
+        state: ServerOperationState::Complete {
+            response: Some("{}".into()),
+        },
+        http_response: Some(ServerHttpResponseMetadata {
+            status_code: 200,
+            headers: BTreeMap::from([(crate::HEADER_SESSION_ID.into(), "wire-session".into())]),
+            content_type: Some("application/json".into()),
+            error_body: None,
+        }),
+    };
+    assert_eq!(
+        serde_json::to_value(snapshot).unwrap(),
+        json!({
+            "operation_id":"operation-2",
+            "state":{"state":"complete","response":"{}"},
+            "http_response":{
+                "status_code":200,
+                "headers":{"Mcp-Session-Id":"wire-session"},
+                "content_type":"application/json",
+                "error_body":null
+            }
+        })
+    );
 }
 
 #[test]

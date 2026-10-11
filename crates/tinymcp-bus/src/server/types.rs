@@ -168,6 +168,7 @@ pub struct ServerOperationSnapshot {
     /// Current callback or terminal state.
     pub state: ServerOperationState,
     /// HTTP response metadata for this exact operation, when it used HTTP.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub http_response: Option<ServerHttpResponseMetadata>,
 }
 
