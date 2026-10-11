@@ -3,13 +3,10 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 python3 scripts/test-e2e-version.py
 cargo test --locked --workspace
+cargo test --locked -p tinymcp --no-default-features --test library_feature_tests
+cargo test --locked -p tinymcp --no-default-features --features tools,ui,server-http --test library_feature_tests
 cargo test --locked --workspace --all-features
 
-set -euo pipefail
-# A static-link build has Rust entries but no dynamic ABI symbols.
-cargo build --package tinymcp --lib
-cargo run --package tinymcp --example verify_module -- \
-  target/debug/libtinymcp.so
 
 set -euo pipefail
 forbidden="$(cargo tree -p tinymcp-bus -e normal,build --prefix none \

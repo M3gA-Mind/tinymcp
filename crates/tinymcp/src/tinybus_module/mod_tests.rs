@@ -2415,3 +2415,35 @@ async fn metadata_operations_preserve_fault_names_types_and_arity() {
         );
     }
 }
+
+#[tokio::test]
+async fn argument_validation_normalizes_optional_strings_and_required_string_arrays() {
+    let service = service();
+    let request = tinymcp_bus::ValidateServerArgumentsRequest {
+        arguments: json!({"label":"  fixture  ", "items":[" one ", "two"]}),
+        allowed: vec!["label".into(), "items".into()],
+        rules: vec![
+            tinymcp_bus::ServerArgumentRule::OptionalNonEmptyString {
+                key: "label".into(),
+            },
+            tinymcp_bus::ServerArgumentRule::RequiredNonEmptyStringArray {
+                key: "items".into(),
+            },
+        ],
+    };
+    let result: tinymcp_bus::ServerArgumentsValidation = serde_json::from_value(
+        ok(
+            &service,
+            names::methods::VALIDATE_SERVER_ARGUMENTS,
+            json!([request]),
+        )
+        .await,
+    )
+    .unwrap();
+    assert_eq!(
+        result,
+        tinymcp_bus::ServerArgumentsValidation::Valid(
+            serde_json::from_value(json!({"label":"fixture", "items":["one","two"]})).unwrap()
+        )
+    );
+}
