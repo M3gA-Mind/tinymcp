@@ -311,9 +311,8 @@ async fn verify_metadata_operations(
     use serde_json::{Value, json};
     use tinymcp_bus::{
         McpRemoteTool, McpTool, McpToolExposure, McpToolPresentation, McpToolSourceSpec,
-        PrepareAgentToolsRequest, RemoteToolDisplay, ServerArgumentRule,
-        ServerArgumentsValidation, StaticServerSummary, TextTransform,
-        TransformTextRequest, ValidateServerArgumentsRequest,
+        PrepareAgentToolsRequest, RemoteToolDisplay, ServerArgumentRule, ServerArgumentsValidation,
+        StaticServerSummary, TextTransform, TransformTextRequest, ValidateServerArgumentsRequest,
     };
 
     let directory = tempfile::tempdir()?;
@@ -327,8 +326,9 @@ async fn verify_metadata_operations(
         return Err(io::Error::other("an empty directory reported stored state").into());
     }
 
-    let summaries: Vec<StaticServerSummary> =
-        proxy.call(names::methods::STATIC_SERVER_SUMMARIES, ()).await?;
+    let summaries: Vec<StaticServerSummary> = proxy
+        .call(names::methods::STATIC_SERVER_SUMMARIES, ())
+        .await?;
     if !summaries.is_empty() {
         return Err(io::Error::other("a fresh registry reported static server summaries").into());
     }
@@ -345,8 +345,12 @@ async fn verify_metadata_operations(
             },),
         )
         .await?;
-    if validation != ServerArgumentsValidation::Valid(json!({"query":"fixture"}).as_object().unwrap().clone()) {
-        return Err(io::Error::other("module argument validation returned the wrong result").into());
+    if validation
+        != ServerArgumentsValidation::Valid(json!({"query":"fixture"}).as_object().unwrap().clone())
+    {
+        return Err(
+            io::Error::other("module argument validation returned the wrong result").into(),
+        );
     }
 
     let configured = proxy
