@@ -89,6 +89,8 @@ fn every_served_member_is_reachable_by_its_contract_constant() {
         names::methods::SETUP_INSTALL_AND_CONNECT,
         names::methods::STATIC_CALL_TOOL,
         names::methods::STATIC_SERVER_SUMMARIES,
+        names::methods::CONFIGURED_TOOL_CALL,
+        names::methods::VALIDATE_SERVER_ARGUMENTS,
         names::methods::AUDIT_LIST_WRITES,
         names::methods::CONFIG_DOCUMENT_GET,
         names::methods::CONFIG_DOCUMENT_APPLY,
@@ -1011,6 +1013,87 @@ async fn static_server_summaries_keep_legacy_fields_and_redact_endpoint_secrets(
             "leaked {secret}: {serialized}"
         );
     }
+}
+
+#[tokio::test]
+async fn configured_tool_call_does_not_register_the_one_shot_server() {
+    let service = service();
+    let call: tinymcp_bus::ClassifiedStaticToolCall = ok(
+        &service,
+        names::methods::CONFIGURED_TOOL_CALL,
+        json!([{
+            "server": {
+                "name": "docs",
+                "endpoint": "not a URL?token=one-shot-secret",
+                "enabled": true,
+                "timeout_secs": 4
+            },
+            "tool": "search",
+            "arguments": {"query": "mcp"}
+        }]),
+    )
+    .await
+    .try_into()
+    .expect("classified call reply");
+
+    assert!(!call.outcome.ok);
+    assert!(call.error_message.is_some());
+    let error = call.error_message.unwrap();
+    assert!(!error.contains("one-shot-secret"), "{error}");
+    assert_eq!(
+        ok(&service, names::methods::STATIC_LIST, json!([])).await,
+        json!([])
+    );
+}
+
+#[tokio::test]
+async fn server_argument_validation_normalizes_and_reports_module_errors() {
+    let service = service();
+    let request = tinymcp_bus::ValidateServerArgumentsRequest {
+        arguments: json!({"query":"  weather ", "limit":3}),
+        allowed: vec!["query".into(), "limit".into()],
+        rules: vec![
+            tinymcp_bus::ServerArgumentRule::RequiredNonEmptyString {
+                key: "query".into(),
+            },
+            tinymcp_bus::ServerArgumentRule::OptionalPositiveU64 {
+                key: "limit".into(),
+                max: 5,
+            },
+        ],
+    };
+    let valid: tinymcp_bus::ServerArgumentsValidation =
+        ok(&service, names::methods::VALIDATE_SERVER_ARGUMENTS, json!([request]))
+            .await
+            .try_into()
+            .expect("validation reply");
+    assert_eq!(
+        valid,
+        tinymcp_bus::ServerArgumentsValidation::Valid(serde_json::from_value(json!({
+            "query":"weather", "limit":3
+        })).unwrap())
+    );
+
+    let invalid: tinymcp_bus::ServerArgumentsValidation = ok(
+        &service,
+        names::methods::VALIDATE_SERVER_ARGUMENTS,
+        json!([{
+            "arguments": {"query":"  ", "extra":true},
+            "allowed": ["query"],
+            "rules": [{"kind":"required_non_empty_string", "key":"query"}]
+        }]),
+    )
+    .await
+    .try_into()
+    .expect("validation reply");
+    assert_eq!(
+        invalid,
+        tinymcp_bus::ServerArgumentsValidation::Invalid(
+            tinymcp_bus::ToolCallError::InvalidParams(
+                "unexpected argument `extra`".into()
+            )
+        )
+    );
 }
 
 #[tokio::test]

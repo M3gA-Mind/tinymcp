@@ -16,10 +16,12 @@ use crate::registry::{McpRegistry, SecretRef, Store, SupervisorConfig};
 use tinybus::Connection;
 use tinymcp_bus::{
     AuthDetection, ClassifiedStaticToolCall, ConfigApplyReport, ConfigApplyResponse, ConnStatus,
-    ConnectOutcome, ConnectedServerOverview, InstallOutcome, InstalledServer, McpTool,
+    ConfiguredToolCallRequest, ConnectOutcome, ConnectedServerOverview, InstallOutcome,
+    InstalledServer, McpTool,
     McpWriteListQuery, McpWriteRecord, NewMcpWriteRecord, OpenConfiguredRequest,
     OpenConfiguredResponse, RegistrySearchPage, RegistrySettings, ScrubStaticToolsRequest,
-    SearchCuration, ServerDetail, ToolCallOutcome, TransitionStatus, UpdateEnvOutcome,
+    SearchCuration, ServerArgumentRule, ServerArgumentsValidation, ServerDetail,
+    ToolCallOutcome, TransitionStatus, UpdateEnvOutcome, ValidateServerArgumentsRequest,
 };
 
 /// Everything the interface serves.
@@ -652,6 +654,127 @@ impl McpService {
     ) -> tinybus::Result<Vec<tinymcp_bus::StaticServerSummary>> {
         std::future::ready(()).await;
         Ok(self.static_servers.summaries())
+    }
+
+    /// `(request)` — makes one module-owned call outside static discovery.
+    #[tinybus(confidential)]
+    async fn configured_tool_call(
+        &self,
+        request: ConfiguredToolCallRequest,
+    ) -> tinybus::Result<ClassifiedStaticToolCall> {
+        let server = request.server.name.clone();
+        let tool = request.tool;
+        let config = tinymcp_bus::McpClientConfig {
+            servers: vec![request.server],
+            ..tinymcp_bus::McpClientConfig::default()
+        };
+        let registry = match McpServerRegistry::from_config(&config) {
+            Ok(registry) => registry,
+            Err(error) => {
+                let outcome = tinymcp_bus::McpCallOutcome::failed(
+                    &server,
+                    &tool,
+                    tinymcp_bus::McpCallError {
+                        code: error.wire_name().to_owned(),
+                        unauthorized: error.is_unauthorized(),
+                        advertises_oauth: error.advertises_oauth(),
+                    },
+                );
+                return Ok(ClassifiedStaticToolCall {
+                    outcome,
+                    rendered: None,
+                    envelope: None,
+                    error_message: Some("could not configure the remote MCP server".to_owned()),
+                });
+            }
+        };
+        let scrubber = SecretScrubber::for_server(&registry, &server);
+        match registry
+            .call_tool(&server, &tool, request.arguments)
+            .await
+        {
+            Ok(result) => {
+                let mut call = ToolCallOutcome::from(result);
+                scrubber.scrub_tool_call_outcome(&mut call);
+                let outcome = tinymcp_bus::McpCallOutcome::answered(&server, &tool);
+                let envelope = tinymcp_bus::McpResultEnvelope::new(&server, &tool, &call.rendered)
+                    .with_outcome(outcome.clone());
+                Ok(ClassifiedStaticToolCall {
+                    outcome,
+                    rendered: Some(call.rendered),
+                    envelope: Some(envelope),
+                    error_message: None,
+                })
+            }
+            Err(error) => {
+                let outcome = tinymcp_bus::McpCallOutcome::failed(
+                    &server,
+                    &tool,
+                    tinymcp_bus::McpCallError {
+                        code: error.wire_name().to_owned(),
+                        unauthorized: error.is_unauthorized(),
+                        advertises_oauth: error.advertises_oauth(),
+                    },
+                );
+                Ok(ClassifiedStaticToolCall {
+                    outcome,
+                    rendered: None,
+                    envelope: None,
+                    error_message: Some(scrubber.scrub(&format!(
+                        "mcp_call_tool failed: {error}"
+                    ))),
+                })
+            }
+        }
+    }
+
+    /// `(request)` — applies the implementation's generic MCP argument rules.
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "TinyBus service methods share an async interface"
+    )]
+    async fn validate_server_arguments(
+        &self,
+        request: ValidateServerArgumentsRequest,
+    ) -> tinybus::Result<ServerArgumentsValidation> {
+        let result = (|| {
+            let mut arguments = crate::server::args::object_arguments(request.arguments)?;
+            let allowed = request.allowed.iter().map(String::as_str).collect::<Vec<_>>();
+            crate::server::args::reject_unexpected_arguments(&arguments, &allowed)?;
+            for rule in request.rules {
+                match rule {
+                    ServerArgumentRule::RequiredNonEmptyString { key } => {
+                        let value = crate::server::args::required_non_empty_string(
+                            &arguments,
+                            &key,
+                        )?;
+                        arguments.insert(key, Value::String(value));
+                    }
+                    ServerArgumentRule::OptionalNonEmptyString { key } => {
+                        if let Some(value) =
+                            crate::server::args::optional_non_empty_string(&arguments, &key)?
+                        {
+                            arguments.insert(key, Value::String(value));
+                        }
+                    }
+                    ServerArgumentRule::RequiredNonEmptyStringArray { key } => {
+                        let values = crate::server::args::required_non_empty_string_array(
+                            &arguments,
+                            &key,
+                        )?;
+                        arguments.insert(key, Value::from(values));
+                    }
+                    ServerArgumentRule::OptionalPositiveU64 { key, max } => {
+                        crate::server::args::optional_positive_u64(&arguments, &key, max)?;
+                    }
+                }
+            }
+            Ok(arguments)
+        })();
+        Ok(match result {
+            Ok(arguments) => ServerArgumentsValidation::Valid(arguments),
+            Err(error) => ServerArgumentsValidation::Invalid(error),
+        })
     }
 
     /// `(server)`
