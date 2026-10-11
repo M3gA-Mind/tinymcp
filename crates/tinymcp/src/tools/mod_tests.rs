@@ -725,6 +725,35 @@ fn bounded_bus_rendering_preserves_error_and_host_only_fields() {
     assert_eq!(result.meta, Some(json!({"label": "retained"})));
 }
 
+#[test]
+fn bounded_bus_rendering_leaves_small_model_fields_unchanged() {
+    let result = crate::processing::bound_mcp_tool_result(McpToolResult {
+        content: vec![
+            McpToolContent::Text {
+                text: "plain text".into(),
+            },
+            McpToolContent::Json {
+                data: json!({"answer": 42}),
+            },
+        ],
+        markdown_formatted: Some("**plain**".into()),
+        ..McpToolResult::default()
+    });
+
+    assert_eq!(
+        result.content,
+        vec![
+            McpToolContent::Text {
+                text: "plain text".into()
+            },
+            McpToolContent::Json {
+                data: json!({"answer": 42})
+            }
+        ]
+    );
+    assert_eq!(result.markdown_formatted.as_deref(), Some("**plain**"));
+}
+
 // ---------------------------------------------------------------------------
 // Argument normalization
 // ---------------------------------------------------------------------------
