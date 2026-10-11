@@ -169,6 +169,8 @@ pub mod methods {
     /// Opens a data directory as its own object and returns the object path
     /// it is served at.
     pub const OPEN: &str = "Open";
+    /// Opens a data directory with its own static server and client settings.
+    pub const OPEN_CONFIGURED: &str = "OpenConfigured";
 }
 
 /// Every member of [`INTERFACE`], in the order the interface dispatches them.
@@ -229,6 +231,7 @@ pub const METHODS: &[&str] = &[
     methods::RENDER_TOOL_OUTPUT,
     // Directories
     methods::OPEN,
+    methods::OPEN_CONFIGURED,
 ];
 
 #[cfg(test)]

@@ -136,6 +136,7 @@ export_module! {
         "DisplayRemoteTool",
         "RenderToolOutput",
         "Open",
+        "OpenConfigured",
     ],
     signals = [],
     requires = [],

@@ -65,6 +65,22 @@ impl Default for McpClientConfig {
     }
 }
 
+/// A host opening a data directory with its own MCP client configuration.
+///
+/// The data directory is the storage identity; the client configuration is
+/// the static server set, credentials, identity and proxy for that host. Both
+/// cross the bus together so two workspaces opened by one module instance do
+/// not inherit one another's settings. Hosts should send this payload through
+/// `TinyBus`'s confidential-call path because `client` may contain credentials.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct OpenConfiguredRequest {
+    /// Absolute directory that owns this object's persistent state.
+    pub data_dir: String,
+    /// The settings this object uses for static and registry server access.
+    pub client: McpClientConfig,
+}
+
 /// One statically declared MCP server.
 ///
 /// Transport is chosen by what is filled in: a non-empty [`Self::command`]

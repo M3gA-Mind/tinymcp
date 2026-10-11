@@ -381,3 +381,12 @@ lexical helpers are shared through TinyTools without its default features.
 Library DTO algorithms use extension traits; see
 [public API and migration details](docs/specs/pure-vocabulary.md). Host stdio/HTTP
 adapters and release integration remain separate work.
+
+Contract 1.10 adds `OpenConfigured`, which opens one data directory with that
+host's own `McpClientConfig`. `Open(data_dir)` remains unchanged for callers
+using load-time settings. A configured open carries the directory and client
+settings together, so separate workspaces can use distinct static servers,
+credentials, identities and proxies through one loaded module. Reopening the
+same directory with changed settings is refused rather than silently reusing
+an object with stale configuration. Hosts send this payload over TinyBus's
+confidential-call path.

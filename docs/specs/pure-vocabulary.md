@@ -57,6 +57,22 @@ incrementally and stops at its budget before further pretty JSON or join
 allocation. Failures use the established InvalidArgument module error. Host
 approval, dispatch and presentation policy remain explicit host choices.
 
+## Additive contract 1.10 directory configuration
+
+`Open(data_dir)` keeps its existing one-string tuple and load-time client
+settings. `OpenConfigured(request)` adds a one-argument `OpenConfiguredRequest`
+that pairs an absolute data directory with that host's complete
+`McpClientConfig`. The module therefore keeps storage, static servers,
+credentials, client identity, registry settings and proxy isolated per opened
+workspace even when one module instance serves several workspaces.
+
+Opening the same directory with the same settings is idempotent. Reopening it
+with different settings fails without echoing the directory or credentials;
+callers must not silently keep using stale server endpoints or tokens. The
+client settings can contain secrets, so hosts call `OpenConfigured` through the
+confidential TinyBus path. Existing `Open` callers and serialized arguments do
+not change.
+
 ## Remaining work
 
 This slice does not wire OpenHuman adapters, stdio/HTTP listener ownership,

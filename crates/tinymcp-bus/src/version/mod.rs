@@ -17,8 +17,9 @@
 /// resource-too-large error name; 1.6 added the tool UI presentation
 /// vocabulary; 1.7 added serialized supervisor observations and their drain member;
 /// 1.8 adds module-owned server sessions and host callback operations;
-/// 1.9 adds shared server DTOs and bounded metadata processing operations.
-pub const CONTRACT_VERSION: (u32, u32) = (1, 9);
+/// 1.9 adds shared server DTOs and bounded metadata processing operations;
+/// 1.10 adds per-directory client configuration through `OpenConfigured`.
+pub const CONTRACT_VERSION: (u32, u32) = (1, 10);
 
 /// Returns whether a host holding [`CONTRACT_VERSION`] can bind to a module
 /// reporting `module`.
@@ -32,7 +33,7 @@ pub const CONTRACT_VERSION: (u32, u32) = (1, 9);
 /// ```
 /// # use tinymcp_bus::{is_compatible, CONTRACT_VERSION};
 /// assert!(is_compatible(CONTRACT_VERSION));
-/// assert!(is_compatible((1, 9)));
+/// assert!(is_compatible((1, 10)));
 /// assert!(!is_compatible((2, 0)));
 /// ```
 #[must_use]

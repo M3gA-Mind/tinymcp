@@ -16,8 +16,8 @@ use tinybus::Connection;
 use tinymcp_bus::{
     AuthDetection, ConnStatus, ConnectOutcome, ConnectedServerOverview, InstallOutcome,
     InstalledServer, McpTool, McpWriteListQuery, McpWriteRecord, NewMcpWriteRecord,
-    RegistrySearchPage, RegistrySettings, SearchCuration, ServerDetail, ToolCallOutcome,
-    UpdateEnvOutcome,
+    OpenConfiguredRequest, RegistrySearchPage, RegistrySettings, SearchCuration, ServerDetail,
+    ToolCallOutcome, UpdateEnvOutcome,
 };
 
 /// Everything the interface serves.
@@ -684,6 +684,20 @@ impl McpService {
 
         opener
             .open(&data_dir)
+            .await
+            .map_err(|error| Self::failed(&error))
+    }
+
+    /// `(request)` — opens one directory with its own client configuration.
+    async fn open_configured(&self, request: OpenConfiguredRequest) -> tinybus::Result<String> {
+        let Some(opener) = &self.opener else {
+            return Err(Self::failed(&crate::Error::invalid_argument(
+                "only the root object can open data directories",
+            )));
+        };
+
+        opener
+            .open_configured(&request.data_dir, &request.client)
             .await
             .map_err(|error| Self::failed(&error))
     }

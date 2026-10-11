@@ -18,6 +18,11 @@ use crate::tinybus_module::{McpService, ModuleConfig};
 /// See the module note on why an object is never unserved.
 pub(in crate::tinybus_module) const MAX_OPEN_DIRECTORIES: usize = 32;
 
+struct ServedDirectory {
+    object_path: String,
+    client: McpClientConfig,
+}
+
 /// The root object's ability to serve additional directories.
 pub(in crate::tinybus_module) struct DirectoryOpener {
     connection: Connection,
@@ -31,7 +36,7 @@ pub(in crate::tinybus_module) struct DirectoryOpener {
     /// A `tokio` mutex held across the whole open: a lock released between the
     /// lookup and the insert would let two callers through, and that is the
     /// double open the map exists to prevent.
-    served: tokio::sync::Mutex<HashMap<PathBuf, String>>,
+    served: tokio::sync::Mutex<HashMap<PathBuf, ServedDirectory>>,
 }
 
 impl std::fmt::Debug for DirectoryOpener {
@@ -56,7 +61,13 @@ impl DirectoryOpener {
         let mut served = HashMap::new();
         if let Some(dir) = &config.data_dir {
             let absolute = super::super::service::absolute_data_dir(dir)?;
-            served.insert(absolute, OBJECT_PATH.to_string());
+            served.insert(
+                absolute,
+                ServedDirectory {
+                    object_path: OBJECT_PATH.to_string(),
+                    client: config.client.clone(),
+                },
+            );
         }
 
         Ok(Self {
@@ -79,6 +90,26 @@ impl DirectoryOpener {
     /// the service returns. A failed open leaves nothing
     /// recorded, so it is retried rather than answered with a dead path.
     pub(in crate::tinybus_module) async fn open(&self, data_dir: &str) -> Result<String> {
+        self.open_configured(data_dir, &self.client).await
+    }
+
+    /// Serves `data_dir` with the supplied host-specific client settings.
+    ///
+    /// Opening the same directory with the same settings is idempotent. The
+    /// module refuses a second configuration for an already-open directory so
+    /// it cannot silently return an object that uses stale credentials or
+    /// endpoints.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidArgument`] when the path is invalid, the
+    /// directory already uses different settings, or the object limit has been
+    /// reached. Storage, client, and bus-serving errors are returned unchanged.
+    pub(in crate::tinybus_module) async fn open_configured(
+        &self,
+        data_dir: &str,
+        client: &McpClientConfig,
+    ) -> Result<String> {
         let dir = Path::new(data_dir);
         // Neither message echoes the value: it is a user's path.
         if data_dir.is_empty() || !dir.is_absolute() {
@@ -89,7 +120,12 @@ impl DirectoryOpener {
 
         let mut served = self.served.lock().await;
         if let Some(existing) = served.get(dir) {
-            return Ok(existing.clone());
+            if existing.client != *client {
+                return Err(Error::invalid_argument(
+                    "this data directory is already open with different client settings",
+                ));
+            }
+            return Ok(existing.object_path.clone());
         }
 
         if served.len() >= MAX_OPEN_DIRECTORIES {
@@ -100,7 +136,7 @@ impl DirectoryOpener {
 
         let service = McpService::new(&ModuleConfig {
             data_dir: Some(dir.to_path_buf()),
-            client: self.client.clone(),
+            client: client.clone(),
         })?
         .with_maintenance(self.supervisor.clone())
         .await;
@@ -114,7 +150,13 @@ impl DirectoryOpener {
         })?;
         serve_without_blocking_the_reply(&self.connection, object_path, service).await?;
 
-        served.insert(dir.to_path_buf(), path.clone());
+        served.insert(
+            dir.to_path_buf(),
+            ServedDirectory {
+                object_path: path.clone(),
+                client: client.clone(),
+            },
+        );
         Ok(path)
     }
 }

@@ -10,7 +10,9 @@
 use serde_json::{Value, json};
 use tinybus::transport::memory::MemoryBus;
 use tinybus::{Connection, Error as BusError};
-use tinymcp_bus::{DIRECTORY_OBJECT_PREFIX, INTERFACE, OBJECT_PATH, errors};
+use tinymcp_bus::{
+    DIRECTORY_OBJECT_PREFIX, INTERFACE, McpClientConfig, McpServerConfig, OBJECT_PATH, errors,
+};
 
 use super::MAX_OPEN_DIRECTORIES;
 use crate::registry::SupervisorConfig;
@@ -107,6 +109,167 @@ async fn opening_a_directory_returns_a_path_that_answers() {
         .unwrap();
     assert_eq!(installed.len(), 0);
     assert!(crate::Store::path_for(other.path()).exists());
+}
+
+#[tokio::test]
+async fn configured_directories_keep_their_own_mocked_static_servers() {
+    let root_dir = tempfile::tempdir().unwrap();
+    let (alpha_dir, beta_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let alpha_url = mock_static_server("alpha provider").await;
+    let beta_url = mock_static_server("beta provider").await;
+    let connection = serve_root(&config_in(root_dir.path())).await;
+
+    let alpha_path: String = call(
+        &connection,
+        OBJECT_PATH,
+        "OpenConfigured",
+        json!([configured_open(alpha_dir.path(), "alpha", &alpha_url)]),
+    )
+    .await
+    .unwrap();
+    let beta_path: String = call(
+        &connection,
+        OBJECT_PATH,
+        "OpenConfigured",
+        json!([configured_open(beta_dir.path(), "beta", &beta_url)]),
+    )
+    .await
+    .unwrap();
+
+    assert_ne!(alpha_path, beta_path);
+    let alpha_names: Vec<String> = call(&connection, &alpha_path, "StaticList", json!([]))
+        .await
+        .unwrap();
+    let beta_names: Vec<String> = call(&connection, &beta_path, "StaticList", json!([]))
+        .await
+        .unwrap();
+    assert_eq!(alpha_names, ["alpha"]);
+    assert_eq!(beta_names, ["beta"]);
+
+    let alpha_result: Value = call(
+        &connection,
+        &alpha_path,
+        "StaticCallTool",
+        json!(["alpha", "identity", {}]),
+    )
+    .await
+    .unwrap();
+    let beta_result: Value = call(
+        &connection,
+        &beta_path,
+        "StaticCallTool",
+        json!(["beta", "identity", {}]),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        alpha_result["rendered"]["content"][0]["text"],
+        "alpha provider"
+    );
+    assert_eq!(
+        beta_result["rendered"]["content"][0]["text"],
+        "beta provider"
+    );
+    assert!(crate::Store::path_for(alpha_dir.path()).exists());
+    assert!(crate::Store::path_for(beta_dir.path()).exists());
+}
+
+#[tokio::test]
+async fn reopening_one_directory_with_different_client_settings_is_refused() {
+    let root_dir = tempfile::tempdir().unwrap();
+    let data_dir = tempfile::tempdir().unwrap();
+    let connection = serve_root(&config_in(root_dir.path())).await;
+    let first_config = configured_open(data_dir.path(), "alpha", "http://127.0.0.1:1/");
+    let first_path: String = call(
+        &connection,
+        OBJECT_PATH,
+        "OpenConfigured",
+        json!([first_config]),
+    )
+    .await
+    .unwrap();
+    let same_path: String = call(
+        &connection,
+        OBJECT_PATH,
+        "OpenConfigured",
+        json!([configured_open(
+            data_dir.path(),
+            "alpha",
+            "http://127.0.0.1:1/"
+        )]),
+    )
+    .await
+    .unwrap();
+    let error = call::<String>(
+        &connection,
+        OBJECT_PATH,
+        "OpenConfigured",
+        json!([configured_open(
+            data_dir.path(),
+            "beta",
+            "http://127.0.0.1:2/"
+        )]),
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(first_path, same_path);
+    assert_eq!(failure_name(&error), errors::INVALID_ARGUMENT);
+    assert!(!error.to_string().contains("alpha"));
+    let names: Vec<String> = call(&connection, &first_path, "StaticList", json!([]))
+        .await
+        .unwrap();
+    assert_eq!(names, ["alpha"]);
+}
+
+fn configured_open(data_dir: &std::path::Path, name: &str, endpoint: &str) -> Value {
+    json!({
+        "data_dir": data_dir,
+        "client": McpClientConfig {
+            servers: vec![McpServerConfig {
+                name: name.into(),
+                endpoint: endpoint.into(),
+                ..McpServerConfig::default()
+            }],
+            ..McpClientConfig::default()
+        },
+    })
+}
+
+async fn mock_static_server(reply: &'static str) -> String {
+    use axum::Router;
+    use axum::routing::post;
+
+    let app = Router::new().route(
+        "/",
+        post(move |axum::Json(body): axum::Json<Value>| async move {
+            let result = match body["method"].as_str().unwrap_or_default() {
+                "initialize" => json!({
+                    "protocolVersion": tinymcp_bus::LATEST_PROTOCOL_VERSION,
+                    "capabilities": {},
+                    "serverInfo": { "name": reply, "version": "1" },
+                }),
+                "tools/list" => json!({ "tools": [{ "name": "identity" }] }),
+                "tools/call" => json!({
+                    "content": [{ "type": "text", "text": reply }],
+                    "isError": false,
+                }),
+                _ => json!({}),
+            };
+            axum::Json(json!({
+                "jsonrpc": "2.0",
+                "id": body["id"].clone(),
+                "result": result,
+            }))
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    format!("http://{address}/")
 }
 
 #[tokio::test]

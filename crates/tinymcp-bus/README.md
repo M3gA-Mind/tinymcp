@@ -18,6 +18,13 @@ and output are capped at 1 MiB. Rendering applies its cap incrementally, before
 buffering oversized pretty JSON or joined content. Existing member arities and
 wire forms are preserved. Prefer member constants from names::methods.
 
+Contract 1.10 adds the one-argument `OpenConfigured` operation and its
+`OpenConfiguredRequest` payload. It pairs a data directory with that host's
+MCP client settings; `Open` and its original string argument remain unchanged.
+Because those settings may contain credentials, callers send this request using
+TinyBus's confidential-call path. A directory already opened with different
+settings is rejected rather than silently returning a stale object.
+
 Library consumers bring implementation extension traits into scope for moved
 DTO methods. Contract-only hosts call the compiled module. See
 [the relocation specification](../../docs/specs/pure-vocabulary.md) for public
