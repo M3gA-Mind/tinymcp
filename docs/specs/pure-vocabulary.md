@@ -6,8 +6,8 @@ specifications, request headers/context and ToolCallError. Existing protocol,
 persisted registry identifiers, declarations and error wire forms remain pinned
 by golden fixtures. Raw remote metadata stays raw in serialized DTOs.
 
-Generic lexical sanitization moves unchanged to TinyTools at reviewed canonical
-commit fa61666; TinyMCP uses that library with default features disabled. This
+Generic lexical sanitization lives in TinyTools Std at reviewed canonical
+commit 360721b; TinyMCP uses that library with default features disabled. This
 keeps skills and harness metadata independent of MCP loading. The bus has no
 TinyTools, TinyBus, runtime, HTTP or native dependencies, even optionally.
 
@@ -28,7 +28,7 @@ TinyMCP extension traits to keep method syntax:
 | ServerToolSpec / ResourceSpec | ServerToolSpecExt / ResourceSpecExt | protocol JSON projection |
 
 normalize_tool_arguments remains available from TinyMCP. Generic sanitizer
-functions remain available from tinymcp::sanitize and tinytools::sanitize.
+functions remain available from tinymcp::sanitize and tinytools_std::sanitize.
 Contract imports of these algorithms must migrate to owner library APIs or
 module calls. This is a necessary pre-1.0 Rust source API break requiring a minor
 package release; the release workflow owns package versioning. Fixed

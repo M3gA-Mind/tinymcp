@@ -61,7 +61,8 @@ schemars = { version = "1", default-features = false, features = ["derive"] }
 # to one package and `tinytools::ToolResult` stays one type. A second path
 # dependency could not be unified that way. Pin the reviewed canonical TinyTools
 # revision that provides shared lexical helpers; downstream pins migrate separately.
-tinytools = { git = "https://github.com/tinyhumansai/tinytools", rev = "fa61666feb5ea978c77c83bf274aeb4ad54363b3", default-features = false }
+tinytools = { git = "https://github.com/tinyhumansai/tinytools", rev = "360721bc3c7a26221b61f6629f5f0415cfccb568", default-features = false }
+tinytools-std = { git = "https://github.com/tinyhumansai/tinytools", rev = "360721bc3c7a26221b61f6629f5f0415cfccb568", default-features = false }
 # `#[async_trait]` on the tool adapter and the invoker trait, matching how
 # `tinytools::Tool` itself is declared.
 async-trait = "0.1"
