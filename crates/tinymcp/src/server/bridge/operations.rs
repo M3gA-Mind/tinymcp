@@ -168,27 +168,17 @@ fn http_admission_error(
     session_header: Option<&str>,
     protocol_header: Option<&str>,
 ) -> Option<ServerHttpResponseMetadata> {
-    let status_code;
-    let message;
-    match context.requested_session_id.as_deref() {
-        None => {
-            status_code = 400;
-            message = "missing or invalid Mcp-Session-Id header";
-        }
-        Some(_) if !context.known_session => {
-            status_code = 404;
-            message = "unknown or expired MCP session";
-        }
+    let (status_code, message) = match context.requested_session_id.as_deref() {
+        None => (400, "missing or invalid Mcp-Session-Id header"),
+        Some(_) if !context.known_session => (404, "unknown or expired MCP session"),
         Some(session_id) if session_header != Some(session_id) => {
-            status_code = 404;
-            message = "unknown or expired MCP session";
+            (404, "unknown or expired MCP session")
         }
         Some(_) if protocol_header != context.expected_protocol_version.as_deref() => {
-            status_code = 400;
-            message = "missing or invalid MCP-Protocol-Version header";
+            (400, "missing or invalid MCP-Protocol-Version header")
         }
         Some(_) => return None,
-    }
+    };
     Some(ServerHttpResponseMetadata {
         status_code,
         headers: BTreeMap::default(),
