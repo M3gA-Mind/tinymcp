@@ -166,15 +166,29 @@ pub struct ServerInput {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ServerArgumentRule {
     /// Requires a trimmed, non-empty string at `key`.
-    RequiredNonEmptyString { key: String },
+    RequiredNonEmptyString {
+        /// Argument name to check.
+        key: String,
+    },
     /// Accepts a missing or null value; a present value must be a trimmed,
     /// non-empty string.
-    OptionalNonEmptyString { key: String },
+    OptionalNonEmptyString {
+        /// Argument name to check.
+        key: String,
+    },
     /// Requires a string array with at least one non-blank entry.
-    RequiredNonEmptyStringArray { key: String },
+    RequiredNonEmptyStringArray {
+        /// Argument name to check.
+        key: String,
+    },
     /// Accepts a missing or null value; a present value must be an integer in
     /// `1..=max`.
-    OptionalPositiveU64 { key: String, max: u64 },
+    OptionalPositiveU64 {
+        /// Argument name to check.
+        key: String,
+        /// Inclusive upper bound.
+        max: u64,
+    },
 }
 
 /// Generic argument-validation work requested by a host handler.
