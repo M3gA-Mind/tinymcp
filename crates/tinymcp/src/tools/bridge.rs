@@ -461,6 +461,32 @@ pub(super) fn endpoint_without_query(endpoint: &str) -> String {
         .to_string()
 }
 
+/// Builds host-facing summaries without exposing configured credentials.
+pub(crate) fn static_server_summaries(
+    registry: &McpServerRegistry,
+) -> Vec<tinymcp_bus::StaticServerSummary> {
+    registry
+        .list()
+        .into_iter()
+        .map(|server| tinymcp_bus::StaticServerSummary {
+            name: server.name,
+            endpoint: endpoint_without_query(&server.endpoint),
+            description: server.description,
+            timeout_secs: server.timeout_secs,
+            allowed_tools: server.allowed_tools,
+            disallowed_tools: server.disallowed_tools,
+            auth_configured: !matches!(server.auth, McpAuthConfig::None),
+            auth_kind: auth_kind(&server.auth).to_owned(),
+            source: match server.source {
+                McpRegistrySource::Config => "config",
+                McpRegistrySource::Host => "host",
+                _ => "unknown",
+            }
+            .to_owned(),
+        })
+        .collect()
+}
+
 /// A required identifier argument, trimmed and without the markdown a model
 /// wraps it in when it answers in prose (`` `docs` ``, `*docs*`, `` `docs`. ``).
 ///

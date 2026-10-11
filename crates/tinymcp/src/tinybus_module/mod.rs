@@ -130,6 +130,7 @@ export_module! {
         "SetupTestConnection",
         "SetupInstallAndConnect",
         "StaticList",
+        "StaticServerSummaries",
         "StaticListTools",
         "StaticScrubTools",
         "StaticCachedListTools",

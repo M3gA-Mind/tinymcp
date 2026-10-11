@@ -88,6 +88,7 @@ fn every_served_member_is_reachable_by_its_contract_constant() {
         names::methods::OPEN,
         names::methods::SETUP_INSTALL_AND_CONNECT,
         names::methods::STATIC_CALL_TOOL,
+        names::methods::STATIC_SERVER_SUMMARIES,
         names::methods::AUDIT_LIST_WRITES,
         names::methods::CONFIG_DOCUMENT_GET,
         names::methods::CONFIG_DOCUMENT_APPLY,

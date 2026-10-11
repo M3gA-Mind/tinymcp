@@ -646,6 +646,16 @@ impl McpService {
             .collect())
     }
 
+    /// `()` — safe summaries of the statically declared servers.
+    async fn static_server_summaries(
+        &self,
+    ) -> tinybus::Result<Vec<tinymcp_bus::StaticServerSummary>> {
+        std::future::ready(()).await;
+        Ok(crate::tools::bridge::static_server_summaries(
+            &self.static_servers,
+        ))
+    }
+
     /// `(server)`
     async fn static_list_tools(
         &self,
