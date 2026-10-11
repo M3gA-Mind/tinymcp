@@ -207,6 +207,32 @@ pub struct StaticServerSummary {
     pub source: String,
 }
 
+/// One configured MCP tool call that does not enter static server discovery.
+///
+/// Hosts use this for a fixed product integration that should share the
+/// module-owned transport without appearing in the user's configured server
+/// list. Send it through TinyBus confidential delivery because `server` may
+/// contain authentication values.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct ConfiguredToolCallRequest {
+    /// The server's transport and authentication configuration.
+    pub server: McpServerConfig,
+    /// The remote tool to call.
+    pub tool: String,
+    /// The tool's JSON arguments.
+    pub arguments: Value,
+}
+
+impl std::fmt::Debug for ConfiguredToolCallRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ConfiguredToolCallRequest")
+            .field("tool", &self.tool)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Default for McpServerConfig {
     fn default() -> Self {
         Self {

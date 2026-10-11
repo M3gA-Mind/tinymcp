@@ -160,6 +160,43 @@ pub struct ServerInput {
     pub line: String,
 }
 
+/// One generic validation applied to a host tool's argument object.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ServerArgumentRule {
+    /// Requires a trimmed, non-empty string at `key`.
+    RequiredNonEmptyString { key: String },
+    /// Accepts a missing or null value; a present value must be a trimmed,
+    /// non-empty string.
+    OptionalNonEmptyString { key: String },
+    /// Requires a string array with at least one non-blank entry.
+    RequiredNonEmptyStringArray { key: String },
+    /// Accepts a missing or null value; a present value must be an integer in
+    /// `1..=max`.
+    OptionalPositiveU64 { key: String, max: u64 },
+}
+
+/// Generic argument-validation work requested by a host handler.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ValidateServerArgumentsRequest {
+    /// The original tool arguments; `null` is treated as an empty object.
+    pub arguments: Value,
+    /// The exact keys accepted by this host tool.
+    pub allowed: Vec<String>,
+    /// Generic field checks and normalizations, applied in this order.
+    pub rules: Vec<ServerArgumentRule>,
+}
+
+/// The validated argument object or a module-owned invalid-parameters error.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "status", content = "value", rename_all = "snake_case")]
+pub enum ServerArgumentsValidation {
+    /// The object with the requested fields normalized.
+    Valid(Map<String, Value>),
+    /// The module's exact generic validator failure.
+    Invalid(ToolCallError),
+}
+
 /// Replayable observation of one caller-known operation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ServerOperationSnapshot {

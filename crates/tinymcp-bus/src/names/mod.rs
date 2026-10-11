@@ -140,6 +140,8 @@ pub mod methods {
     pub const STATIC_LIST: &str = "StaticList";
     /// Returns safe summaries of statically configured servers.
     pub const STATIC_SERVER_SUMMARIES: &str = "StaticServerSummaries";
+    /// Calls one configured integration without adding it to static discovery.
+    pub const CONFIGURED_TOOL_CALL: &str = "ConfiguredToolCall";
     /// Lists the tools one statically declared server advertises.
     pub const STATIC_LIST_TOOLS: &str = "StaticListTools";
     /// Scrubs configured credentials from remote metadata for static tools.
@@ -184,6 +186,8 @@ pub mod methods {
     pub const SERVER_SESSION_METADATA: &str = "ServerSessionMetadata";
     /// Applies module-owned HTTP GET or DELETE session admission and cleanup.
     pub const SERVER_HTTP_SESSION: &str = "ServerHttpSession";
+    /// Applies the module's generic server argument validators.
+    pub const VALIDATE_SERVER_ARGUMENTS: &str = "ValidateServerArguments";
 
     /// Module-owned `TransformText` metadata operation.
     pub const TRANSFORM_TEXT: &str = "TransformText";
@@ -254,6 +258,7 @@ pub const METHODS: &[&str] = &[
     // Static servers
     methods::STATIC_LIST,
     methods::STATIC_SERVER_SUMMARIES,
+    methods::CONFIGURED_TOOL_CALL,
     methods::STATIC_LIST_TOOLS,
     methods::STATIC_SCRUB_TOOLS,
     methods::STATIC_CACHED_LIST_TOOLS,
@@ -274,6 +279,7 @@ pub const METHODS: &[&str] = &[
     methods::SERVER_SHUTDOWN,
     methods::SERVER_SESSION_METADATA,
     methods::SERVER_HTTP_SESSION,
+    methods::VALIDATE_SERVER_ARGUMENTS,
     methods::TRANSFORM_TEXT,
     methods::NORMALIZE_TOOL_ARGUMENTS,
     methods::DISPLAY_REMOTE_TOOL,

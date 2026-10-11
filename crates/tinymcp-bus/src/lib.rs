@@ -84,7 +84,8 @@ pub use audit::{
 };
 pub use auth::{AuthDetection, AuthKind};
 pub use config::{
-    HttpHeader, McpAuthConfig, McpClientConfig, McpClientIdentityConfig, McpProxyConfig,
+    ConfiguredToolCallRequest, HttpHeader, McpAuthConfig, McpClientConfig,
+    McpClientIdentityConfig, McpProxyConfig,
     McpRegistryAuthConfig, McpServerConfig, OpenConfiguredRequest, OpenConfiguredResponse,
     StaticServerSummary, TransitionStatus,
 };
