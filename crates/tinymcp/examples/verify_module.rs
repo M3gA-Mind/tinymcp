@@ -311,7 +311,7 @@ async fn verify_metadata_operations(
     use serde_json::{Value, json};
     use tinymcp_bus::{
         McpRemoteTool, McpTool, McpToolExposure, McpToolPresentation, McpToolSourceSpec,
-        PrepareAgentToolsRequest, RemoteToolDisplay, TextTransform, TransformTextRequest,
+        PrepareAgentToolsRequest, RemoteToolDisplay,
     };
 
     let directory = tempfile::tempdir()?;
@@ -370,19 +370,7 @@ async fn verify_metadata_operations(
     if text != "hello" {
         return Err(io::Error::other("metadata lexical projection mismatch").into());
     }
-    let identifier: String = proxy
-        .call(
-            names::methods::TRANSFORM_TEXT,
-            (TransformTextRequest {
-                operation: TextTransform::NormalizeIdentifier,
-                text: "**search!**".into(),
-                max_bytes: tinymcp_bus::MAX_PROCESSING_BYTES,
-            },),
-        )
-        .await?;
-    if identifier != "search!" {
-        return Err(io::Error::other("module identifier normalization mismatch").into());
-    }
+    verify_identifier_normalization(proxy).await?;
     let arguments: Value = proxy
         .call(
             names::methods::NORMALIZE_TOOL_ARGUMENTS,
@@ -420,6 +408,28 @@ async fn verify_metadata_operations(
     if !matches!(refusal, Err(tinybus::Error::MethodFailed {name,..}) if name == tinymcp_bus::errors::INVALID_ARGUMENT)
     {
         return Err(io::Error::other("metadata refusal taxonomy mismatch").into());
+    }
+    Ok(())
+}
+
+/// Exercises the additive identifier transform through the compiled module.
+async fn verify_identifier_normalization(
+    proxy: &tinybus::Proxy,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use tinymcp_bus::{TextTransform, TransformTextRequest};
+
+    let identifier: String = proxy
+        .call(
+            names::methods::TRANSFORM_TEXT,
+            (TransformTextRequest {
+                operation: TextTransform::NormalizeIdentifier,
+                text: "**search!**".into(),
+                max_bytes: tinymcp_bus::MAX_PROCESSING_BYTES,
+            },),
+        )
+        .await?;
+    if identifier != "search!" {
+        return Err(io::Error::other("module identifier normalization mismatch").into());
     }
     Ok(())
 }
