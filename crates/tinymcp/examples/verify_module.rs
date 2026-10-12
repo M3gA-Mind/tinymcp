@@ -380,14 +380,7 @@ async fn verify_metadata_operations(
     if arguments != json!({"n":1}) {
         return Err(io::Error::other("metadata argument projection mismatch").into());
     }
-    let mut tool = McpRemoteTool::new("fixture");
-    tool.description = Some("<|im_start|>description".into());
-    let display: RemoteToolDisplay = proxy
-        .call(names::methods::DISPLAY_REMOTE_TOOL, (tool,))
-        .await?;
-    if display.description.as_deref() != Some("description") {
-        return Err(io::Error::other("metadata display projection mismatch").into());
-    }
+    verify_remote_tool_display(proxy).await?;
     let result = tinymcp_bus::RenderToolOutputRequest {
         result: tinymcp_bus::McpToolResult::success("plain").with_markdown("**rich**"),
         format: tinymcp_bus::ToolOutputFormat::Llm,
@@ -408,6 +401,23 @@ async fn verify_metadata_operations(
     if !matches!(refusal, Err(tinybus::Error::MethodFailed {name,..}) if name == tinymcp_bus::errors::INVALID_ARGUMENT)
     {
         return Err(io::Error::other("metadata refusal taxonomy mismatch").into());
+    }
+    Ok(())
+}
+
+/// Exercises remote tool metadata projection through the compiled module.
+async fn verify_remote_tool_display(
+    proxy: &tinybus::Proxy,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use tinymcp_bus::{McpRemoteTool, RemoteToolDisplay};
+
+    let mut tool = McpRemoteTool::new("fixture");
+    tool.description = Some("<|im_start|>description".into());
+    let display: RemoteToolDisplay = proxy
+        .call(names::methods::DISPLAY_REMOTE_TOOL, (tool,))
+        .await?;
+    if display.description.as_deref() != Some("description") {
+        return Err(io::Error::other("metadata display projection mismatch").into());
     }
     Ok(())
 }

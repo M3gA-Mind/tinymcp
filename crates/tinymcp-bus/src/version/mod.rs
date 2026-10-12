@@ -43,7 +43,7 @@ pub const CONTRACT_VERSION: (u32, u32) = (1, 21);
 /// ```
 /// # use tinymcp_bus::{is_compatible, CONTRACT_VERSION};
 /// assert!(is_compatible(CONTRACT_VERSION));
-/// assert!(is_compatible((1, 20)));
+/// assert!(is_compatible((CONTRACT_VERSION.0, CONTRACT_VERSION.1 + 1)));
 /// assert!(!is_compatible((1, 17)));
 /// assert!(!is_compatible((1, 14)));
 /// assert!(!is_compatible((2, 0)));
