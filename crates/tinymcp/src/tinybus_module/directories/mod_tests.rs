@@ -522,7 +522,9 @@ async fn root_transition_status_is_nonblocking_before_tree_writer_registration()
         )
         .await
     });
-    let started = timeout(Duration::from_secs(3), gate.started.acquire())
+    // Keep fixture startup separate from the latency assertion below. Windows
+    // CI can be heavily loaded while the in-process bus and HTTP server start.
+    let started = timeout(Duration::from_secs(15), gate.started.acquire())
         .await
         .expect("the root's old handler enters the provider")
         .unwrap();
