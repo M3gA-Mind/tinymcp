@@ -136,10 +136,8 @@ pub fn transform_text(request: &TransformTextRequest) -> Result<String> {
         TextTransform::TruncateUtf8Safe => {
             crate::sanitize::truncate_utf8_safe(&request.text, request.max_bytes)
         }
-        TextTransform::NormalizeIdentifier => {
-            normalize_identifier_text(&request.text)
-                .ok_or_else(|| Error::invalid_argument("missing identifier"))?
-        }
+        TextTransform::NormalizeIdentifier => normalize_identifier_text(&request.text)
+            .ok_or_else(|| Error::invalid_argument("missing identifier"))?,
         _ => {
             return Err(Error::invalid_argument(
                 "unsupported metadata transformation",
