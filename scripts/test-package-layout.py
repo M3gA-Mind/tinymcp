@@ -39,6 +39,9 @@ class PackageTests(unittest.TestCase):
                 "while [ \"$1\" != -- ]; do shift; done\nshift\nexec \"$@\"\n"
             )
             setpriv.chmod(0o755)
+            uname = bin_dir / "uname"
+            uname.write_text("#!/bin/sh\necho Darwin\n")
+            uname.chmod(0o755)
             runner = root / "verify-module-fixture"
             runner.write_text(
                 "#!/bin/sh\nprintf '%s\\n' \"$(id -u)\" > \"$OBSERVED_UID\"\n"
