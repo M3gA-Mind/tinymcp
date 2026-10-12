@@ -18,19 +18,6 @@ class PackageTests(unittest.TestCase):
         target = ROOT / "target"; target.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=target) as directory:
             root = Path(directory)
-            archive = root / "module.tar.gz"
-            with tarfile.open(archive, "w:gz") as package:
-                import io
-                for name, data in [
-                    ("libtinymcp_module.dylib", b"fixture"),
-                    ("modules.toml", b'"libtinymcp_module.dylib" = "fixture-hash"\n'),
-                ]:
-                    info = tarfile.TarInfo(f"./{name}")
-                    info.size = len(data)
-                    package.addfile(info, io.BytesIO(data))
-
-            observed = root / "observed"
-            setpriv_args = root / "setpriv-args"
             bin_dir = root / "bin"
             bin_dir.mkdir()
             setpriv = bin_dir / "setpriv"
@@ -40,8 +27,6 @@ class PackageTests(unittest.TestCase):
             )
             setpriv.chmod(0o755)
             uname = bin_dir / "uname"
-            uname.write_text("#!/bin/sh\necho Darwin\n")
-            uname.chmod(0o755)
             runner = root / "verify-module-fixture"
             runner.write_text(
                 "#!/bin/sh\nprintf '%s\\n' \"$(id -u)\" > \"$OBSERVED_UID\"\n"
@@ -50,24 +35,42 @@ class PackageTests(unittest.TestCase):
             runner.chmod(0o755)
             uid = os.getuid() + 1
             gid = os.getgid() + 1
-            env = dict(
-                os.environ,
-                OBSERVED_UID=str(observed),
-                SET_PRIV_ARGS=str(setpriv_args),
-                PATH=str(bin_dir) + os.pathsep + os.environ["PATH"],
-            )
-            verifier = subprocess.run(
-                [str(ROOT / "scripts/run-as-host-user.sh"), str(uid), str(gid),
-                 str(ROOT / "scripts/verify-module.sh"),
-                 "--archive", str(archive), "--verifier-bin", str(runner)],
-                cwd=ROOT, env=env, text=True, capture_output=True, check=False,
-            )
-            self.assertEqual(verifier.returncode, 0, verifier.stderr)
-            self.assertEqual(observed.read_text().strip(), str(os.getuid()))
-            self.assertEqual(
-                setpriv_args.read_text().splitlines()[:4],
-                [f"--reuid={uid}", f"--regid={gid}", "--clear-groups", "--"],
-            )
+            import io
+            for system, extension in [("Linux", "so"), ("Darwin", "dylib")]:
+                with self.subTest(system=system):
+                    archive = root / f"module-{system}.tar.gz"
+                    library = f"libtinymcp_module.{extension}"
+                    with tarfile.open(archive, "w:gz") as package:
+                        for name, data in [
+                            (library, b"fixture"),
+                            ("modules.toml", f'"{library}" = "fixture-hash"\n'.encode()),
+                        ]:
+                            info = tarfile.TarInfo(f"./{name}")
+                            info.size = len(data)
+                            package.addfile(info, io.BytesIO(data))
+
+                    observed = root / f"observed-{system}"
+                    setpriv_args = root / f"setpriv-args-{system}"
+                    uname.write_text(f"#!/bin/sh\necho {system}\n")
+                    uname.chmod(0o755)
+                    env = dict(
+                        os.environ,
+                        OBSERVED_UID=str(observed),
+                        SET_PRIV_ARGS=str(setpriv_args),
+                        PATH=str(bin_dir) + os.pathsep + os.environ["PATH"],
+                    )
+                    verifier = subprocess.run(
+                        [str(ROOT / "scripts/run-as-host-user.sh"), str(uid), str(gid),
+                         str(ROOT / "scripts/verify-module.sh"),
+                         "--archive", str(archive), "--verifier-bin", str(runner)],
+                        cwd=ROOT, env=env, text=True, capture_output=True, check=False,
+                    )
+                    self.assertEqual(verifier.returncode, 0, verifier.stderr)
+                    self.assertEqual(observed.read_text().strip(), str(os.getuid()))
+                    self.assertEqual(
+                        setpriv_args.read_text().splitlines()[:4],
+                        [f"--reuid={uid}", f"--regid={gid}", "--clear-groups", "--"],
+                    )
 
     def test_archive_accepts_dotted_release_host_key_and_attests_library(self):
         """Package a dotted native host key and verify bytes plus attestation."""
