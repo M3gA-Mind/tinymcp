@@ -475,15 +475,12 @@ pub(super) fn required_string_arg(args: &Value, key: &str) -> anyhow::Result<Str
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(missing)?;
-    let unpunctuated = value.trim_end_matches(['.', ',', ';', ':', '!']);
-    let fenced = if unpunctuated.ends_with(['`', '*']) {
-        unpunctuated
-    } else {
-        value
-    };
-    let cleaned = fenced.trim_matches(['`', '*']);
-    if cleaned.is_empty() {
-        return Err(missing());
-    }
-    Ok(cleaned.to_string())
+    normalize_identifier_text(value).map_err(|_| missing())
+}
+
+/// Normalizes an identifier that a model may have wrapped in markdown.
+/// Punctuation is removed only when it follows a markdown wrapper.
+pub(crate) fn normalize_identifier_text(value: &str) -> anyhow::Result<String> {
+    crate::processing::normalize_identifier_text(value)
+        .ok_or_else(|| anyhow::anyhow!("missing identifier"))
 }

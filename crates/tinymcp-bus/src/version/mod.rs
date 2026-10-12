@@ -27,8 +27,9 @@
 /// 1.16 vocabulary is the baseline for this addition; 1.17 adds module-owned
 /// scrubbing of credentials from static remote-tool metadata; 1.18 adds safe
 /// static-server summaries, 1.19 adds one-shot configured server calls, and
-/// 1.20 adds module-owned generic server argument validation.
-pub const CONTRACT_VERSION: (u32, u32) = (1, 20);
+/// 1.20 adds module-owned generic server argument validation. 1.21 adds
+/// module-owned MCP identifier normalization to `TransformText`.
+pub const CONTRACT_VERSION: (u32, u32) = (1, 21);
 
 /// Returns whether a host holding [`CONTRACT_VERSION`] can bind to a module
 /// reporting `module`.
@@ -42,7 +43,7 @@ pub const CONTRACT_VERSION: (u32, u32) = (1, 20);
 /// ```
 /// # use tinymcp_bus::{is_compatible, CONTRACT_VERSION};
 /// assert!(is_compatible(CONTRACT_VERSION));
-/// assert!(is_compatible((1, 20)));
+/// assert!(is_compatible((CONTRACT_VERSION.0, CONTRACT_VERSION.1 + 1)));
 /// assert!(!is_compatible((1, 17)));
 /// assert!(!is_compatible((1, 14)));
 /// assert!(!is_compatible((2, 0)));

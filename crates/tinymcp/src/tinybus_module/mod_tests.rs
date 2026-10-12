@@ -2500,6 +2500,15 @@ async fn vocabulary_algorithms_are_available_without_linking_the_implementation(
     assert_eq!(
         ok(
             &service,
+            "TransformText",
+            json!([{"operation":"normalize_identifier", "text":"**search!**", "max_bytes":tinymcp_bus::MAX_PROCESSING_BYTES}])
+        )
+        .await,
+        json!("search!")
+    );
+    assert_eq!(
+        ok(
+            &service,
             "NormalizeToolArguments",
             json!(["```json\n{\"a\":1}\n```"])
         )

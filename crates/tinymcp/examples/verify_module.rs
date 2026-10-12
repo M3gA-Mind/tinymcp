@@ -310,8 +310,8 @@ async fn verify_metadata_operations(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use serde_json::{Value, json};
     use tinymcp_bus::{
-        McpRemoteTool, McpTool, McpToolExposure, McpToolPresentation, McpToolSourceSpec,
-        PrepareAgentToolsRequest, RemoteToolDisplay, TextTransform, TransformTextRequest,
+        McpTool, McpToolExposure, McpToolPresentation, McpToolSourceSpec, PrepareAgentToolsRequest,
+        TextTransform, TransformTextRequest,
     };
 
     let directory = tempfile::tempdir()?;
@@ -370,6 +370,7 @@ async fn verify_metadata_operations(
     if text != "hello" {
         return Err(io::Error::other("metadata lexical projection mismatch").into());
     }
+    verify_identifier_normalization(proxy).await?;
     let arguments: Value = proxy
         .call(
             names::methods::NORMALIZE_TOOL_ARGUMENTS,
@@ -379,14 +380,7 @@ async fn verify_metadata_operations(
     if arguments != json!({"n":1}) {
         return Err(io::Error::other("metadata argument projection mismatch").into());
     }
-    let mut tool = McpRemoteTool::new("fixture");
-    tool.description = Some("<|im_start|>description".into());
-    let display: RemoteToolDisplay = proxy
-        .call(names::methods::DISPLAY_REMOTE_TOOL, (tool,))
-        .await?;
-    if display.description.as_deref() != Some("description") {
-        return Err(io::Error::other("metadata display projection mismatch").into());
-    }
+    verify_remote_tool_display(proxy).await?;
     let result = tinymcp_bus::RenderToolOutputRequest {
         result: tinymcp_bus::McpToolResult::success("plain").with_markdown("**rich**"),
         format: tinymcp_bus::ToolOutputFormat::Llm,
@@ -407,6 +401,45 @@ async fn verify_metadata_operations(
     if !matches!(refusal, Err(tinybus::Error::MethodFailed {name,..}) if name == tinymcp_bus::errors::INVALID_ARGUMENT)
     {
         return Err(io::Error::other("metadata refusal taxonomy mismatch").into());
+    }
+    Ok(())
+}
+
+/// Exercises remote tool metadata projection through the compiled module.
+async fn verify_remote_tool_display(
+    proxy: &tinybus::Proxy,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use tinymcp_bus::{McpRemoteTool, RemoteToolDisplay};
+
+    let mut tool = McpRemoteTool::new("fixture");
+    tool.description = Some("<|im_start|>description".into());
+    let display: RemoteToolDisplay = proxy
+        .call(names::methods::DISPLAY_REMOTE_TOOL, (tool,))
+        .await?;
+    if display.description.as_deref() != Some("description") {
+        return Err(io::Error::other("metadata display projection mismatch").into());
+    }
+    Ok(())
+}
+
+/// Exercises the additive identifier transform through the compiled module.
+async fn verify_identifier_normalization(
+    proxy: &tinybus::Proxy,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use tinymcp_bus::{TextTransform, TransformTextRequest};
+
+    let identifier: String = proxy
+        .call(
+            names::methods::TRANSFORM_TEXT,
+            (TransformTextRequest {
+                operation: TextTransform::NormalizeIdentifier,
+                text: "**search!**".into(),
+                max_bytes: tinymcp_bus::MAX_PROCESSING_BYTES,
+            },),
+        )
+        .await?;
+    if identifier != "search!" {
+        return Err(io::Error::other("module identifier normalization mismatch").into());
     }
     Ok(())
 }

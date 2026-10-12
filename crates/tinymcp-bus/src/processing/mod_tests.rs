@@ -34,6 +34,7 @@ fn processing_requests_pin_enum_tags_and_optional_render_defaults() {
         TextTransform::StripControlChars,
         TextTransform::StripInstructionFences,
         TextTransform::TruncateUtf8Safe,
+        TextTransform::NormalizeIdentifier,
     ] {
         assert_eq!(
             serde_json::from_value::<TextTransform>(serde_json::to_value(operation).unwrap())
@@ -41,6 +42,19 @@ fn processing_requests_pin_enum_tags_and_optional_render_defaults() {
             operation
         );
     }
+    assert_eq!(
+        serde_json::to_value(TransformTextRequest {
+            operation: TextTransform::NormalizeIdentifier,
+            text: "**search!**".into(),
+            max_bytes: MAX_PROCESSING_BYTES,
+        })
+        .unwrap(),
+        json!({
+            "operation": "normalize_identifier",
+            "text": "**search!**",
+            "max_bytes": MAX_PROCESSING_BYTES,
+        })
+    );
     let display = RemoteToolDisplay {
         description: None,
         title: None,

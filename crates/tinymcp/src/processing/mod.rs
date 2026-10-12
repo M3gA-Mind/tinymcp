@@ -136,6 +136,8 @@ pub fn transform_text(request: &TransformTextRequest) -> Result<String> {
         TextTransform::TruncateUtf8Safe => {
             crate::sanitize::truncate_utf8_safe(&request.text, request.max_bytes)
         }
+        TextTransform::NormalizeIdentifier => normalize_identifier_text(&request.text)
+            .ok_or_else(|| Error::invalid_argument("missing identifier"))?,
         _ => {
             return Err(Error::invalid_argument(
                 "unsupported metadata transformation",
@@ -143,6 +145,23 @@ pub fn transform_text(request: &TransformTextRequest) -> Result<String> {
         }
     };
     Ok(text)
+}
+
+/// Normalizes an identifier that a model may have wrapped in markdown.
+/// Punctuation is removed only when it follows a markdown wrapper.
+pub(crate) fn normalize_identifier_text(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let unpunctuated = value.trim_end_matches(['.', ',', ';', ':', '!']);
+    let fenced = if unpunctuated.ends_with(['`', '*']) {
+        unpunctuated
+    } else {
+        value
+    };
+    let cleaned = fenced.trim_matches(['`', '*']);
+    (!cleaned.is_empty()).then(|| cleaned.to_owned())
 }
 
 /// Reads tolerant model arguments in the implementation, without host copies.
