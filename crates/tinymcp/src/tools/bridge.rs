@@ -29,7 +29,7 @@ use crate::{McpRemoteToolExt, McpToolResultExt};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tinymcp_bus::{McpAuthConfig, McpCallError, McpCallOutcome, McpResultEnvelope};
 use tinytools::{PermissionLevel, Tool, ToolCallOptions, ToolResult};
 
@@ -481,19 +481,6 @@ pub(super) fn required_string_arg(args: &Value, key: &str) -> anyhow::Result<Str
 /// Normalizes an identifier that a model may have wrapped in markdown.
 /// Punctuation is removed only when it follows a markdown wrapper.
 pub(crate) fn normalize_identifier_text(value: &str) -> anyhow::Result<String> {
-    let value = value.trim();
-    if value.is_empty() {
-        anyhow::bail!("missing identifier");
-    }
-    let unpunctuated = value.trim_end_matches(['.', ',', ';', ':', '!']);
-    let fenced = if unpunctuated.ends_with(['`', '*']) {
-        unpunctuated
-    } else {
-        value
-    };
-    let cleaned = fenced.trim_matches(['`', '*']);
-    if cleaned.is_empty() {
-        anyhow::bail!("missing identifier");
-    }
-    Ok(cleaned.to_owned())
+    crate::processing::normalize_identifier_text(value)
+        .ok_or_else(|| anyhow::anyhow!("missing identifier"))
 }
