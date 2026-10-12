@@ -311,7 +311,7 @@ async fn verify_metadata_operations(
     use serde_json::{Value, json};
     use tinymcp_bus::{
         McpRemoteTool, McpTool, McpToolExposure, McpToolPresentation, McpToolSourceSpec,
-        PrepareAgentToolsRequest, RemoteToolDisplay,
+        PrepareAgentToolsRequest, RemoteToolDisplay, TextTransform, TransformTextRequest,
     };
 
     let directory = tempfile::tempdir()?;
