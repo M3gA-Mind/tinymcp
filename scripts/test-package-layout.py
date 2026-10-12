@@ -22,8 +22,8 @@ class PackageTests(unittest.TestCase):
             with tarfile.open(archive, "w:gz") as package:
                 import io
                 for name, data in [
-                    ("libtinymcp_module.so", b"fixture"),
-                    ("modules.toml", b'"libtinymcp_module.so" = "fixture-hash"\n'),
+                    ("libtinymcp_module.dylib", b"fixture"),
+                    ("modules.toml", b'"libtinymcp_module.dylib" = "fixture-hash"\n'),
                 ]:
                     info = tarfile.TarInfo(f"./{name}")
                     info.size = len(data)
