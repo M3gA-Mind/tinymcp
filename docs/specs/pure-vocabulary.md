@@ -107,6 +107,13 @@ existing response and refreshes the cache after a successful listing. Both
 reads use the current definition fingerprint and reapply its allow/deny rules,
 so edits cannot expose metadata from an older endpoint or relaxed policy.
 
+## Additive contract 1.21 identifier normalization
+
+`TransformText` adds `NormalizeIdentifier`, which delegates to the generic MCP
+bridge's existing model-markdown rule. It removes surrounding markdown
+wrappers, but preserves plain punctuation unless sentence punctuation follows
+one of those wrappers.
+
 ## Remaining work
 
 This slice does not wire OpenHuman adapters, stdio/HTTP listener ownership,

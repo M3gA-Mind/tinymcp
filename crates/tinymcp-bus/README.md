@@ -43,6 +43,10 @@ confidential-call path. Its response includes the re-rendered document, which
 contains credential names but never credential values, and the ordered change
 report.
 
+Contract 1.21 adds identifier normalization to `TransformText`. The module
+uses the generic MCP bridge's existing rules, preserving plain punctuation and
+removing sentence punctuation only when it follows a markdown wrapper.
+
 Library consumers bring implementation extension traits into scope for moved
 DTO methods. Contract-only hosts call the compiled module. See
 [the relocation specification](../../docs/specs/pure-vocabulary.md) for public

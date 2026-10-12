@@ -18,6 +18,8 @@ pub enum TextTransform {
     StripInstructionFences,
     /// Truncate at a UTF-8 boundary with the established ellipsis suffix.
     TruncateUtf8Safe,
+    /// Normalize an MCP identifier using the bridge's model-markdown rules.
+    NormalizeIdentifier,
 }
 
 /// One bounded lexical transformation.

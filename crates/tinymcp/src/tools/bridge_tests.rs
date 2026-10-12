@@ -520,12 +520,15 @@ fn identifiers_lose_the_markdown_a_model_wraps_them_in() {
     assert_eq!(parsed("`docs`."), "docs");
     assert_eq!(parsed("  **docs**:  "), "docs");
     assert_eq!(parsed("***docs***!"), "docs");
+    assert_eq!(parsed("**search!**"), "search!");
+    assert_eq!(parsed("**search**!"), "search");
     assert_eq!(parsed("my_docs-v2"), "my_docs-v2");
     assert_eq!(parsed("get_data_"), "get_data_");
     assert_eq!(parsed("__init"), "__init");
     assert_eq!(parsed("__init__"), "__init__");
     assert_eq!(parsed("_docs_"), "_docs_");
     assert_eq!(parsed("docs."), "docs.");
+    assert_eq!(parsed("search!"), "search!");
     assert_eq!(parsed("v1.2"), "v1.2");
     assert_eq!(parsed("`get_data_`"), "get_data_");
     let error = required_string_arg(&json!({ "server": "```" }), "server").unwrap_err();

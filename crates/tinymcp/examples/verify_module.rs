@@ -370,6 +370,19 @@ async fn verify_metadata_operations(
     if text != "hello" {
         return Err(io::Error::other("metadata lexical projection mismatch").into());
     }
+    let identifier: String = proxy
+        .call(
+            names::methods::TRANSFORM_TEXT,
+            (TransformTextRequest {
+                operation: TextTransform::NormalizeIdentifier,
+                text: "**search!**".into(),
+                max_bytes: tinymcp_bus::MAX_PROCESSING_BYTES,
+            },),
+        )
+        .await?;
+    if identifier != "search!" {
+        return Err(io::Error::other("module identifier normalization mismatch").into());
+    }
     let arguments: Value = proxy
         .call(
             names::methods::NORMALIZE_TOOL_ARGUMENTS,

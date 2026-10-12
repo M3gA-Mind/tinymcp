@@ -67,6 +67,28 @@ fn lexical_operations_preserve_controls_fences_and_utf8_caps() {
 }
 
 #[test]
+fn identifier_normalization_only_removes_punctuation_after_markdown_wrappers() {
+    for (text, expected) in [
+        ("docs.", "docs."),
+        ("search!", "search!"),
+        ("**search!**", "search!"),
+        ("**search**!", "search"),
+        ("`docs`. ", "docs"),
+    ] {
+        assert_eq!(
+            transform_text(&TransformTextRequest {
+                operation: TextTransform::NormalizeIdentifier,
+                text: text.into(),
+                max_bytes: MAX_PROCESSING_BYTES,
+            })
+            .unwrap(),
+            expected,
+            "input: {text}"
+        );
+    }
+}
+
+#[test]
 fn normalized_arguments_and_remote_display_remain_module_owned() {
     assert_eq!(normalize_arguments(None).unwrap(), Map::new());
     assert_eq!(

@@ -136,6 +136,10 @@ pub fn transform_text(request: &TransformTextRequest) -> Result<String> {
         TextTransform::TruncateUtf8Safe => {
             crate::sanitize::truncate_utf8_safe(&request.text, request.max_bytes)
         }
+        TextTransform::NormalizeIdentifier => {
+            crate::tools::bridge::normalize_identifier_text(&request.text)
+                .map_err(|error| Error::invalid_argument(error.to_string()))?
+        }
         _ => {
             return Err(Error::invalid_argument(
                 "unsupported metadata transformation",
