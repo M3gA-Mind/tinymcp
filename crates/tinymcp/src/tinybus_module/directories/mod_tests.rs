@@ -857,6 +857,8 @@ async fn close_returns_a_transition_that_can_be_awaited_until_the_object_is_remo
 
 #[tokio::test]
 async fn closing_releases_capacity_and_never_reuses_a_stale_object_path() {
+    use tokio::time::{Duration, timeout};
+
     let root_dir = tempfile::tempdir().unwrap();
     let parent = tempfile::tempdir().unwrap();
     let connection = serve_root(&config_in(root_dir.path())).await;
@@ -875,15 +877,33 @@ async fn closing_releases_capacity_and_never_reuses_a_stale_object_path() {
         let _: Vec<Value> = call(&connection, &path, "InstalledList", json!([]))
             .await
             .unwrap();
-        let transition: Option<String> = call(
-            &connection,
-            OBJECT_PATH,
-            "Close",
-            json!([dir.to_str().unwrap()]),
-        )
+        // Legacy Open returns the object path before its background serve
+        // transition releases the lifecycle gate. Retry only that documented
+        // transient conflict; the bounded wait still catches a stuck open.
+        let transition = timeout(Duration::from_secs(5), async {
+            loop {
+                match call::<Option<String>>(
+                    &connection,
+                    OBJECT_PATH,
+                    "Close",
+                    json!([dir.to_str().unwrap()]),
+                )
+                .await
+                {
+                    Ok(Some(transition)) => break transition,
+                    Ok(None) => panic!("the opened directory is closed"),
+                    Err(BusError::MethodFailed { name, message })
+                        if name == errors::INVALID_ARGUMENT
+                            && message.contains("lifecycle transition is pending") =>
+                    {
+                        tokio::task::yield_now().await;
+                    }
+                    Err(error) => panic!("could not close the opened directory: {error}"),
+                }
+            }
+        })
         .await
-        .unwrap();
-        let transition = transition.expect("the opened directory is closed");
+        .expect("the open transition releases its lifecycle gate");
         wait_transition(&connection, &transition).await;
         paths.push(path);
     }
