@@ -310,8 +310,8 @@ async fn verify_metadata_operations(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use serde_json::{Value, json};
     use tinymcp_bus::{
-        McpRemoteTool, McpTool, McpToolExposure, McpToolPresentation, McpToolSourceSpec,
-        PrepareAgentToolsRequest, RemoteToolDisplay, TextTransform, TransformTextRequest,
+        McpTool, McpToolExposure, McpToolPresentation, McpToolSourceSpec, PrepareAgentToolsRequest,
+        TextTransform, TransformTextRequest,
     };
 
     let directory = tempfile::tempdir()?;
