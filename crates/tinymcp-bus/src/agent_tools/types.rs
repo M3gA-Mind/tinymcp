@@ -82,13 +82,16 @@ pub struct AgentToolSpec {
 }
 
 /// How an advertised MCP tool enters the model catalogue.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum McpToolExposure {
     /// Include the tool in the regular model tool list.
     Direct,
-    /// Discover the tool through tool search.
+    /// Discover the tool through tool search. The default: it costs nothing in
+    /// the prompt until a model looks for the tool.
+    #[default]
     Deferred,
 }
 
