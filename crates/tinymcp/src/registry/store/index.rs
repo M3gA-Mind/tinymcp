@@ -1,15 +1,15 @@
 //! The local copy of an upstream catalog, for searching without asking it.
 //!
-//! Two tables. `mcp_registry_index` holds one row per server: the upstream's
-//! own record, plus a lowercased label and description to match a query
-//! against. `mcp_registry_index_state` holds one row per catalog: which base URL
+//! Two collections. `mcp_registry_index` holds one document per server: the
+//! upstream's own record, plus a lowercased label and description to match a
+//! query against, and the words (with their prefixes) the port's text search
+//! indexes. `mcp_registry_index_state` holds one row per catalog: which base URL
 //! the rows came from, where an unfinished sync stopped, and when the last sync
 //! finished.
 //!
 //! # A sync is resumable
 //!
-//! Each page is written together with the cursor for the next one, in one
-//! transaction. A sync that stops part way — a timeout, a restart — leaves the
+//! Each page's rows are written, then the cursor for the next one. A sync that stops part way — a timeout, a restart — leaves the
 //! rows it already wrote and a cursor to resume from. Rows from an earlier sync
 //! stay until a sync finishes, at which point any server it did not see again
 //! is removed.
