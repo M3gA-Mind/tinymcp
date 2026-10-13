@@ -3014,3 +3014,32 @@ async fn a_module_with_a_data_directory_cannot_come_up_without_host_storage() {
 
     assert!(error.to_string().contains("host storage"), "{error}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_module_without_a_data_directory_runs_without_host_storage() {
+    use tinybus::{broker::Broker, transport::memory::MemoryBus};
+
+    let bus = MemoryBus::new();
+    Broker::new().spawn(bus.clone());
+    let connection = tinybus::Connection::connect(bus.connect().await.unwrap())
+        .await
+        .unwrap();
+
+    let provider = super::host_storage_for(connection.clone(), &ModuleConfig::default())
+        .await
+        .unwrap();
+    assert!(
+        provider.is_none(),
+        "no host storage means the memory default"
+    );
+
+    let config = ModuleConfig {
+        data_dir: Some(std::env::temp_dir()),
+        ..ModuleConfig::default()
+    };
+    let error = super::host_storage_for(connection, &config)
+        .await
+        .err()
+        .unwrap();
+    assert!(error.to_string().contains("host storage"), "{error}");
+}

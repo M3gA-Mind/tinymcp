@@ -58,19 +58,36 @@ pub(super) async fn setup(connection: Connection, config: ModuleConfig) -> TinyB
     // was, so a host with no root directory still needs host storage. There the
     // storage is best-effort: a root with nothing to persist keeps working
     // without it, and the failure is logged rather than failing the load.
-    if !crate::storage::provider_installed() {
-        match bus_provider(connection.clone()).await {
-            Ok(provider) => crate::storage::install_provider(provider),
-            Err(error) if config.data_dir.is_none() => {
-                tracing::warn!(
-                    %error,
-                    "tinymcp: host storage unavailable; directory operations stay in memory"
-                );
-            }
-            Err(error) => return Err(error),
-        }
+    let provider = if crate::storage::provider_installed() {
+        None
+    } else {
+        host_storage_for(connection.clone(), &config).await?
+    };
+    if let Some(provider) = provider {
+        crate::storage::install_provider(provider);
     }
     setup_over_installed_storage(connection, config).await
+}
+
+/// The host-storage provider to install for `config`, if one can be had.
+///
+/// `None` means the host has no storage to give a root that persists nothing,
+/// so directory operations stay on the in-memory default.
+pub(super) async fn host_storage_for(
+    connection: Connection,
+    config: &ModuleConfig,
+) -> TinyBusResult<Option<Arc<dyn crate::storage::StorageProvider>>> {
+    match bus_provider(connection).await {
+        Ok(provider) => Ok(Some(provider)),
+        Err(error) if config.data_dir.is_none() => {
+            tracing::warn!(
+                %error,
+                "tinymcp: host storage unavailable; directory operations stay in memory"
+            );
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 /// The provider that reaches the host's storage over `connection`.
