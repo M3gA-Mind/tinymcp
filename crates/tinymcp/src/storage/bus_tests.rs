@@ -109,7 +109,7 @@ async fn connecting_without_a_host_is_an_error_not_a_silent_memory_store() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_default_connect_reaches_documents_and_wires_the_host_secret_store() {
+async fn the_default_connect_routes_secrets_to_the_attested_host_store_only() {
     let backend = MemoryStorage::new();
     let (bus, _host) = host(&backend, "module-tinymcp").await;
     let connection = Connection::connect(bus.connect().await.unwrap())
@@ -118,9 +118,10 @@ async fn the_default_connect_reaches_documents_and_wires_the_host_secret_store()
     let provider = BusProvider::connect(connection).await.unwrap();
     let ports = provider.ports_for(&std::env::temp_dir().join("c")).unwrap();
     ports.prepare().unwrap();
-    let store = Store::open(ports).unwrap();
-    store.insert_server(&a_server("srv-1")).unwrap();
-    assert_eq!(store.list_servers().unwrap().len(), 1);
+    // An in-process broker cannot attest the caller, so the confidential
+    // secret route is refused rather than silently served.
+    let refused = Store::open(ports).err().expect("secrets need attestation");
+    assert!(refused.to_string().contains("NotAttested"), "{refused}");
 }
 
 #[tokio::test(flavor = "multi_thread")]
