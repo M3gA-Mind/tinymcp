@@ -72,7 +72,12 @@ impl DocumentStore for FailingDocuments {
         down()
     }
 
-    async fn search(&self, _collection: &str, _text: &str, _limit: usize) -> Result<Vec<SearchHit>> {
+    async fn search(
+        &self,
+        _collection: &str,
+        _text: &str,
+        _limit: usize,
+    ) -> Result<Vec<SearchHit>> {
         down()
     }
 

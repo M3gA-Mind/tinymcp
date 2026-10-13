@@ -32,11 +32,7 @@ fn names(hits: &[IndexHit]) -> Vec<&str> {
 
 /// Moves every timestamp of the index back by a day.
 fn age(store: &Store) {
-    store.age_collection(
-        crate::storage::REGISTRY_INDEX,
-        &["synced_at"],
-        86_400_000,
-    );
+    store.age_collection(crate::storage::REGISTRY_INDEX, &["synced_at"], 86_400_000);
     store.age_collection(
         crate::storage::REGISTRY_INDEX_STATE,
         &["synced_at"],

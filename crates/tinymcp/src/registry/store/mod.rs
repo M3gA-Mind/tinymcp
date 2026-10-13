@@ -41,8 +41,8 @@ mod testing;
 mod tool_cache;
 mod types;
 
-pub(crate) use tool_cache::{fingerprint, hex_digest};
 pub use tool_cache::{CachedTools, installed_fingerprint, static_cache_key};
+pub(crate) use tool_cache::{fingerprint, hex_digest};
 pub use types::Store;
 pub(crate) use types::now_ms;
 

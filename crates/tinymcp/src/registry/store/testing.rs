@@ -9,7 +9,12 @@ impl Store {
     /// Subtracts `age_ms` from the numeric `fields` of every document in
     /// `collection`, so a test can make cached entries look old without
     /// waiting.
-    pub(crate) fn age_collection(&self, collection: &'static str, fields: &'static [&'static str], age_ms: i64) {
+    pub(crate) fn age_collection(
+        &self,
+        collection: &'static str,
+        fields: &'static [&'static str],
+        age_ms: i64,
+    ) {
         self.ports
             .run("ageing a collection", move |ports| async move {
                 for row in ports.documents.query_all(collection, &Query::all()).await? {

@@ -75,7 +75,7 @@ impl McpService {
         // No data directory means nothing to persist, which is the right shape
         // for a host that only wants its statically declared servers.
         let ports = match config.data_dir.as_deref() {
-            Some(dir) => provider.ports_for(dir)?,
+            Some(dir) => provider.ports_for(&absolute_data_dir(dir)?)?,
             None => crate::storage::StoragePorts::memory()?,
         };
         let (store, audit) = (Store::open(ports.clone())?, AuditStore::open(ports)?);

@@ -292,6 +292,41 @@ fn a_service_with_no_data_directory_persists_nothing() {
     assert_eq!(service().dynamic().installed_list().unwrap().len(), 0);
 }
 
+/// A provider that has no storage for any directory.
+#[derive(Debug)]
+struct RefusingProvider;
+
+impl crate::storage::StorageProvider for RefusingProvider {
+    fn ports_for(
+        &self,
+        _data_dir: &std::path::Path,
+    ) -> crate::Result<crate::storage::StoragePorts> {
+        Err(crate::Error::store(
+            "opening storage",
+            tinystoragedrivers_core::StorageError::unavailable("no storage here"),
+        ))
+    }
+}
+
+#[test]
+fn a_service_whose_provider_has_no_storage_fails_to_build() {
+    let error = McpService::with_provider(
+        &ModuleConfig {
+            data_dir: Some(std::path::PathBuf::from("/srv/mcp")),
+            client: McpClientConfig::default(),
+        },
+        &RefusingProvider,
+    )
+    .expect_err("there is nowhere to keep state");
+    assert!(matches!(error, crate::Error::Store { .. }), "{error}");
+}
+
+#[test]
+fn a_service_without_a_data_directory_never_asks_the_provider() {
+    McpService::with_provider(&ModuleConfig::default(), &RefusingProvider)
+        .expect("an in-memory service needs no provider");
+}
+
 #[test]
 fn a_service_with_a_data_directory_creates_its_stores() {
     let directory = tempfile::tempdir().unwrap();
@@ -1794,8 +1829,8 @@ async fn a_module_that_cannot_open_its_store_fails_to_come_up() {
     let error = super::setup(
         connection,
         ModuleConfig {
-            // The storage provider only serves absolute directories.
-            data_dir: Some(std::path::PathBuf::from("not/absolute")),
+            // An empty directory names nothing a provider could serve.
+            data_dir: Some(std::path::PathBuf::new()),
             client: McpClientConfig::default(),
         },
     )

@@ -51,7 +51,10 @@ pub fn grant() -> StorageGrant {
             .collect(),
         searchable: vec![REGISTRY_INDEX.to_string()],
         streams: vec![AUDIT_STREAM.to_string()],
-        secrets: vec![format!("{ENV_SECRET_PREFIX}*"), CACHE_KEY_SECRET.to_string()],
+        secrets: vec![
+            format!("{ENV_SECRET_PREFIX}*"),
+            CACHE_KEY_SECRET.to_string(),
+        ],
     }
 }
 

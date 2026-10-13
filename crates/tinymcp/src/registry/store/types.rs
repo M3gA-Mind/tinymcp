@@ -184,13 +184,14 @@ impl Store {
     pub fn insert_server(&self, server: &InstalledServer) -> Result<()> {
         let doc = serde_json::to_value(ServerDoc::encode(server, false))?;
         let id = server.server_id.clone();
-        self.ports.run("inserting a server", move |ports| async move {
-            ports
-                .documents
-                .put(SERVERS, &id, doc, Precondition::Absent)
-                .await
-                .map(|_| ())
-        })
+        self.ports
+            .run("inserting a server", move |ports| async move {
+                ports
+                    .documents
+                    .put(SERVERS, &id, doc, Precondition::Absent)
+                    .await
+                    .map(|_| ())
+            })
     }
 
     /// Inserts a server only if no row already carries its qualified name.
@@ -395,43 +396,44 @@ impl Store {
     /// Returns [`Error::Store`] when the delete fails.
     pub fn delete_server(&self, server_id: &str) -> Result<bool> {
         let id = server_id.to_string();
-        self.ports.run("deleting a server", move |ports| async move {
-            let documents = ports.documents;
-            let existing = documents.get(SERVERS, &id).await?;
-            let removed = documents.delete(SERVERS, &id, Precondition::None).await?;
-            // The tool cache is keyed by the same identifier but carries no
-            // link to the server (static servers share the collection), so it
-            // goes by hand. An uninstalled server must not keep surfacing
-            // tools.
-            documents
-                .delete(TOOL_CACHE, &hex_digest(id.as_bytes()), Precondition::None)
-                .await?;
-            ports.secrets.delete(&env_secret_name(&id)).await?;
-            if let Some(name) = existing
-                .as_ref()
-                .and_then(|row| row.doc.get("qualified_name"))
-                .and_then(Value::as_str)
-            {
-                let claim_id = hex_digest(name.as_bytes());
-                // Only the claim this install holds; another install of the
-                // same name may have taken it over.
-                if let Some(claim) = documents.get(SERVER_NAMES, &claim_id).await? {
-                    if claim.doc.get("server_id").and_then(Value::as_str) == Some(id.as_str()) {
-                        documents
-                            .delete(SERVER_NAMES, &claim_id, claim.unchanged())
-                            .await
-                            .or_else(|error| {
-                                if error.kind() == ErrorKind::Conflict {
-                                    Ok(false)
-                                } else {
-                                    Err(error)
-                                }
-                            })?;
+        self.ports
+            .run("deleting a server", move |ports| async move {
+                let documents = ports.documents;
+                let existing = documents.get(SERVERS, &id).await?;
+                let removed = documents.delete(SERVERS, &id, Precondition::None).await?;
+                // The tool cache is keyed by the same identifier but carries no
+                // link to the server (static servers share the collection), so it
+                // goes by hand. An uninstalled server must not keep surfacing
+                // tools.
+                documents
+                    .delete(TOOL_CACHE, &hex_digest(id.as_bytes()), Precondition::None)
+                    .await?;
+                ports.secrets.delete(&env_secret_name(&id)).await?;
+                if let Some(name) = existing
+                    .as_ref()
+                    .and_then(|row| row.doc.get("qualified_name"))
+                    .and_then(Value::as_str)
+                {
+                    let claim_id = hex_digest(name.as_bytes());
+                    // Only the claim this install holds; another install of the
+                    // same name may have taken it over.
+                    if let Some(claim) = documents.get(SERVER_NAMES, &claim_id).await? {
+                        if claim.doc.get("server_id").and_then(Value::as_str) == Some(id.as_str()) {
+                            documents
+                                .delete(SERVER_NAMES, &claim_id, claim.unchanged())
+                                .await
+                                .or_else(|error| {
+                                    if error.kind() == ErrorKind::Conflict {
+                                        Ok(false)
+                                    } else {
+                                        Err(error)
+                                    }
+                                })?;
+                        }
                     }
                 }
-            }
-            Ok(removed)
-        })
+                Ok(removed)
+            })
     }
 
     /// Replaces a server's recorded environment variable *names*.
@@ -444,9 +446,13 @@ impl Store {
     /// Returns [`Error::Store`] when the update fails.
     pub fn update_env_keys(&self, server_id: &str, env_keys: &[String]) -> Result<()> {
         let env_keys = env_keys.to_vec();
-        self.update_server("updating a server's environment keys", server_id, move |doc| {
-            doc.env_keys.clone_from(&env_keys);
-        })
+        self.update_server(
+            "updating a server's environment keys",
+            server_id,
+            move |doc| {
+                doc.env_keys.clone_from(&env_keys);
+            },
+        )
     }
 
     /// Replaces a server's stored configuration blob. `None` clears it.
@@ -499,8 +505,10 @@ impl Store {
                 let Some(found) = ports.documents.get(SERVERS, &id).await? else {
                     return Ok(());
                 };
-                let mut doc: ServerDoc = serde_json::from_value(found.doc.clone())
-                    .map_err(|error| tinystoragedrivers_core::StorageError::serialization(error.to_string()))?;
+                let mut doc: ServerDoc =
+                    serde_json::from_value(found.doc.clone()).map_err(|error| {
+                        tinystoragedrivers_core::StorageError::serialization(error.to_string())
+                    })?;
                 change(&mut doc);
                 let value = serde_json::to_value(doc).map_err(|error| {
                     tinystoragedrivers_core::StorageError::serialization(error.to_string())
@@ -663,7 +671,6 @@ impl Store {
                     .map(|_| ())
             })
     }
-
 }
 
 fn decode_server(doc: Value) -> Result<InstalledServer> {
@@ -685,7 +692,10 @@ fn load_cache_fingerprint_key(ports: &StoragePorts) -> Result<[u8; CACHE_FINGERP
         if let Some(bytes) = ports.secrets.get(CACHE_KEY_SECRET).await? {
             return Ok(bytes.to_vec());
         }
-        ports.secrets.set(CACHE_KEY_SECRET, candidate.as_bytes()).await?;
+        ports
+            .secrets
+            .set(CACHE_KEY_SECRET, candidate.as_bytes())
+            .await?;
         // Another opener may have written between the read and the write;
         // whatever is stored now is the key.
         Ok(ports

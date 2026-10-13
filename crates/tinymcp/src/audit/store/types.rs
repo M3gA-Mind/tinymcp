@@ -127,7 +127,10 @@ impl AuditStore {
                 let mut matched: Vec<(u64, AuditEntry)> = Vec::new();
                 let mut from = 0u64;
                 while from < end {
-                    let batch = ports.streams.read_window(AUDIT_STREAM, from, WINDOW).await?;
+                    let batch = ports
+                        .streams
+                        .read_window(AUDIT_STREAM, from, WINDOW)
+                        .await?;
                     let Some(last) = batch.last().map(|entry| entry.offset) else {
                         break;
                     };

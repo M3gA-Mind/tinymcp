@@ -843,13 +843,29 @@ fn a_secret_that_is_not_a_credential_map_fails_the_load() {
 #[test]
 fn deleting_a_server_releases_its_qualified_name() {
     let store = store();
-    assert!(store.insert_server_if_absent(&stdio_server("srv-1")).unwrap());
-    assert!(store.get_raw(SERVER_NAMES, &super::hex_digest(b"@test/server")).is_some());
+    assert!(
+        store
+            .insert_server_if_absent(&stdio_server("srv-1"))
+            .unwrap()
+    );
+    assert!(
+        store
+            .get_raw(SERVER_NAMES, &super::hex_digest(b"@test/server"))
+            .is_some()
+    );
 
     store.delete_server("srv-1").unwrap();
 
-    assert!(store.get_raw(SERVER_NAMES, &super::hex_digest(b"@test/server")).is_none());
-    assert!(store.insert_server_if_absent(&stdio_server("srv-2")).unwrap());
+    assert!(
+        store
+            .get_raw(SERVER_NAMES, &super::hex_digest(b"@test/server"))
+            .is_none()
+    );
+    assert!(
+        store
+            .insert_server_if_absent(&stdio_server("srv-2"))
+            .unwrap()
+    );
 }
 
 #[test]
@@ -862,7 +878,11 @@ fn a_claim_whose_server_is_gone_is_taken_over() {
         &super::hex_digest(b"@test/server"),
         json!({"qualified_name": "@test/server", "server_id": "ghost"}),
     );
-    assert!(store.insert_server_if_absent(&stdio_server("srv-1")).unwrap());
+    assert!(
+        store
+            .insert_server_if_absent(&stdio_server("srv-1"))
+            .unwrap()
+    );
     assert_eq!(store.list_servers().unwrap().len(), 1);
 }
 
@@ -925,7 +945,9 @@ fn concurrent_updates_to_one_server_all_land() {
                 match index {
                     0 => store.update_enabled("srv-1", false).unwrap(),
                     1 => store.touch_last_connected("srv-1").unwrap(),
-                    _ => store.update_config("srv-1", Some(&json!({"k": 1}))).unwrap(),
+                    _ => store
+                        .update_config("srv-1", Some(&json!({"k": 1})))
+                        .unwrap(),
                 }
             })
         })

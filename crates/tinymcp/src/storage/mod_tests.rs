@@ -25,7 +25,12 @@ fn the_grant_names_every_collection_the_specs_declare() {
     let granted = grant();
     let declared: Vec<String> = specs.into_iter().map(|spec| spec.name).collect();
     assert_eq!(granted.collections, declared);
-    assert!(granted.searchable.iter().all(|name| declared.contains(name)));
+    assert!(
+        granted
+            .searchable
+            .iter()
+            .all(|name| declared.contains(name))
+    );
     assert_eq!(granted.streams, [AUDIT_STREAM]);
     assert!(granted.secrets.contains(&format!("{ENV_SECRET_PREFIX}*")));
     assert!(granted.secrets.contains(&CACHE_KEY_SECRET.to_string()));
@@ -101,7 +106,13 @@ fn the_memory_provider_keeps_directories_apart() {
         .unwrap()
         .record(&a_write())
         .unwrap();
-    assert!(!provider.ports_for(Path::new("/data/b")).unwrap().has_state().unwrap());
+    assert!(
+        !provider
+            .ports_for(Path::new("/data/b"))
+            .unwrap()
+            .has_state()
+            .unwrap()
+    );
 }
 
 #[test]
@@ -109,7 +120,10 @@ fn a_shared_backend_gives_each_scope_its_own_records() {
     let backend = MemoryStorage::new();
     let alice = StoragePorts::memory_scoped(&backend, "alice").unwrap();
     let bob = StoragePorts::memory_scoped(&backend, "bob").unwrap();
-    AuditStore::open(alice.clone()).unwrap().record(&a_write()).unwrap();
+    AuditStore::open(alice.clone())
+        .unwrap()
+        .record(&a_write())
+        .unwrap();
     assert!(alice.has_state().unwrap());
     assert!(!bob.has_state().unwrap());
 }
@@ -126,7 +140,8 @@ fn an_installed_provider_replaces_the_default() {
     // build through the process-wide one.
     let slot = super::provider::ProviderSlot::new();
     let first = slot.current();
-    let replacement: std::sync::Arc<dyn StorageProvider> = std::sync::Arc::new(MemoryProvider::new());
+    let replacement: std::sync::Arc<dyn StorageProvider> =
+        std::sync::Arc::new(MemoryProvider::new());
     slot.install(std::sync::Arc::clone(&replacement));
     assert!(std::sync::Arc::ptr_eq(&slot.current(), &replacement));
     assert!(!std::sync::Arc::ptr_eq(&slot.current(), &first));
@@ -134,7 +149,9 @@ fn an_installed_provider_replaces_the_default() {
 
 #[test]
 fn the_process_wide_provider_answers_for_a_directory() {
-    let ports = installed_provider().ports_for(Path::new("/tinymcp-test/process-wide")).unwrap();
+    let ports = installed_provider()
+        .ports_for(Path::new("/tinymcp-test/process-wide"))
+        .unwrap();
     assert!(!ports.has_state().unwrap());
 }
 

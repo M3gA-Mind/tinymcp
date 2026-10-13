@@ -25,7 +25,9 @@ pub struct StoragePorts {
 
 impl std::fmt::Debug for StoragePorts {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.debug_struct("StoragePorts").finish_non_exhaustive()
+        formatter
+            .debug_struct("StoragePorts")
+            .finish_non_exhaustive()
     }
 }
 

@@ -16,9 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tinystoragedrivers_core::{
-    Capability, DocumentStore, Filter, Precondition, Query, WriteOp,
-};
+use tinystoragedrivers_core::{Capability, DocumentStore, Filter, Precondition, Query, WriteOp};
 
 use super::tool_cache::hex_digest;
 use super::types::{Store, now_ms};
@@ -186,7 +184,9 @@ impl Store {
                     .map_err(|error| {
                         tinystoragedrivers_core::StorageError::serialization(error.to_string())
                     })?;
-                let same_catalog = previous.as_ref().is_some_and(|state| state.base_url == base_url);
+                let same_catalog = previous
+                    .as_ref()
+                    .is_some_and(|state| state.base_url == base_url);
                 if !same_catalog {
                     documents
                         .delete_where(REGISTRY_INDEX, &Filter::eq("source", source.clone()))
@@ -198,7 +198,9 @@ impl Store {
                     cursor: None,
                     pages: 0,
                     started_at: Some(now),
-                    synced_at: previous.and_then(|state| state.synced_at).filter(|_| same_catalog),
+                    synced_at: previous
+                        .and_then(|state| state.synced_at)
+                        .filter(|_| same_catalog),
                 };
                 let value = serde_json::to_value(state).map_err(|error| {
                     tinystoragedrivers_core::StorageError::serialization(error.to_string())
@@ -259,9 +261,10 @@ impl Store {
                 let Some(found) = documents.get(REGISTRY_INDEX_STATE, &id).await? else {
                     return Ok(());
                 };
-                let mut state: StateDoc = serde_json::from_value(found.doc.clone()).map_err(|error| {
-                    tinystoragedrivers_core::StorageError::serialization(error.to_string())
-                })?;
+                let mut state: StateDoc =
+                    serde_json::from_value(found.doc.clone()).map_err(|error| {
+                        tinystoragedrivers_core::StorageError::serialization(error.to_string())
+                    })?;
                 state.cursor = next_cursor;
                 state.pages += 1;
                 let value = serde_json::to_value(state).map_err(|error| {
@@ -289,9 +292,10 @@ impl Store {
                 let Some(found) = documents.get(REGISTRY_INDEX_STATE, &id).await? else {
                     return Ok(());
                 };
-                let mut state: StateDoc = serde_json::from_value(found.doc.clone()).map_err(|error| {
-                    tinystoragedrivers_core::StorageError::serialization(error.to_string())
-                })?;
+                let mut state: StateDoc =
+                    serde_json::from_value(found.doc.clone()).map_err(|error| {
+                        tinystoragedrivers_core::StorageError::serialization(error.to_string())
+                    })?;
                 if let Some(started_at) = state.started_at {
                     documents
                         .delete_where(

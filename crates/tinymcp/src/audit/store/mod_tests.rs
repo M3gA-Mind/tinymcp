@@ -8,9 +8,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use super::types::AuditStore;
-use crate::storage::StoragePorts;
 use crate::Error;
 use crate::McpWriteListQueryExt;
+use crate::storage::StoragePorts;
 use serde_json::json;
 use tinymcp_bus::{
     DEFAULT_LIST_LIMIT, ERROR_MESSAGE_MAX_BYTES, MAX_LIST_LIMIT, McpWriteListQuery,
@@ -623,6 +623,9 @@ fn listing_reads_more_than_one_window_of_the_stream() {
             ..all()
         })
         .unwrap();
-    assert_eq!(rows.len(), 600.min(usize::try_from(MAX_LIST_LIMIT).unwrap()));
+    assert_eq!(
+        rows.len(),
+        600.min(usize::try_from(MAX_LIST_LIMIT).unwrap())
+    );
     assert_eq!(rows[0].timestamp_ms, 599);
 }

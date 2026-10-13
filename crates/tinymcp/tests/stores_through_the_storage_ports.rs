@@ -75,7 +75,13 @@ fn the_audit_log_and_the_servers_share_ports_but_not_records() {
         .unwrap();
 
     assert_eq!(store.list_servers().unwrap().len(), 1);
-    assert_eq!(audit.list(&tinymcp::McpWriteListQuery::default()).unwrap().len(), 1);
+    assert_eq!(
+        audit
+            .list(&tinymcp::McpWriteListQuery::default())
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[test]
