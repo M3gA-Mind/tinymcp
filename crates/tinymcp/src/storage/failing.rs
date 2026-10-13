@@ -12,8 +12,7 @@ use tinystoragedrivers_core::{
 use super::StoragePorts;
 
 /// Declares collections successfully; every other call is a backend failure.
-#[derive(Debug)]
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub(crate) struct FailingDocuments {
     /// Fail with `NotFound` (a collection never declared) instead of an outage.
     pub(crate) missing: bool,

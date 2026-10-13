@@ -70,8 +70,7 @@ pub fn collection_specs() -> Vec<CollectionSpec> {
         CollectionSpec::new(SERVER_NAMES),
         CollectionSpec::new(REGISTRY_CACHE).index(IndexSpec::new("cache_key", ["cache_key"])),
         CollectionSpec::new(TOOL_CACHE),
-        CollectionSpec::new(REGISTRY_INDEX)
-            .index(IndexSpec::new("source", ["source"])),
+        CollectionSpec::new(REGISTRY_INDEX).index(IndexSpec::new("source", ["source"])),
         CollectionSpec::new(REGISTRY_INDEX_STATE),
     ]
 }

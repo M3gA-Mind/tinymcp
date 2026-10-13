@@ -57,7 +57,10 @@ impl StorageProvider for MemoryProvider {
         if let Some(ports) = opened.get(&key) {
             return Ok(ports.clone());
         }
-        let scope = format!("dir-{}", crate::registry::store::hex_digest(&path_bytes(&key)));
+        let scope = format!(
+            "dir-{}",
+            crate::registry::store::hex_digest(&path_bytes(&key))
+        );
         let ports = StoragePorts::memory_scoped(&self.backend, &scope)?;
         opened.insert(key, ports.clone());
         Ok(ports)

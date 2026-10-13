@@ -71,8 +71,6 @@ impl StoragePorts {
 
     /// The `scope` of a shared in-memory backend.
     ///
-    /// # Errors
-    ///
     /// Each call attaches a fresh secret store: keep and clone the returned
     /// ports (as `MemoryProvider` does) rather than reopening a scope, or the
     /// credentials and cache key written through the first open are not seen.
