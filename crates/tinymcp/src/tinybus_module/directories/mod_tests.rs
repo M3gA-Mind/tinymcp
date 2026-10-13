@@ -43,7 +43,14 @@ async fn serve_root(config: &ModuleConfig) -> TestBus {
     let broker_task = broker.spawn(bus.clone());
     // The linked module's data directories sit on the in-memory provider: an
     // in-process bus has no attested storage host to give it secrets.
-    crate::storage::install_provider(std::sync::Arc::new(crate::storage::MemoryProvider::new()));
+    // Installed once: the slot is process-wide, so replacing it per test would
+    // swap the store out from under tests running in parallel.
+    static INSTALL_ONCE: std::sync::Once = std::sync::Once::new();
+    INSTALL_ONCE.call_once(|| {
+        crate::storage::install_provider(std::sync::Arc::new(
+            crate::storage::MemoryProvider::new(),
+        ));
+    });
     let host = tinybus::module::ModuleHost::new(broker.clone());
     let module = test_linked_module().unwrap();
     let info = host

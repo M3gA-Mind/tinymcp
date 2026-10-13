@@ -52,8 +52,23 @@ pub(super) async fn setup(connection: Connection, config: ModuleConfig) -> TinyB
     // its own process and installed a provider has already chosen. Failing
     // here fails the load, like any other missing dependency: falling back to
     // memory would quietly lose every install at the next restart.
-    if config.data_dir.is_some() && !crate::storage::provider_installed() {
-        crate::storage::install_provider(bus_provider(connection.clone()).await?);
+    //
+    // Directory operations (`Open`, `OpenConfigured`, `HasStoredState`) build
+    // services over the installed provider whatever the load-time `data_dir`
+    // was, so a host with no root directory still needs host storage. There the
+    // storage is best-effort: a root with nothing to persist keeps working
+    // without it, and the failure is logged rather than failing the load.
+    if !crate::storage::provider_installed() {
+        match bus_provider(connection.clone()).await {
+            Ok(provider) => crate::storage::install_provider(provider),
+            Err(error) if config.data_dir.is_none() => {
+                tracing::warn!(
+                    %error,
+                    "tinymcp: host storage unavailable; directory operations stay in memory"
+                );
+            }
+            Err(error) => return Err(error),
+        }
     }
     setup_over_installed_storage(connection, config).await
 }
