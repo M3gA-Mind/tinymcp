@@ -730,8 +730,8 @@ fn a_record_from_before_the_transport_field_loads_as_a_subprocess_install() {
     let loaded = store.get_server("legacy-1").unwrap();
 
     assert_eq!(loaded.transport, Transport::Stdio);
-    assert!(loaded.args.is_empty());
-    assert!(loaded.env_keys.is_empty());
+    assert_eq!(loaded.args, Vec::<String>::new());
+    assert_eq!(loaded.env_keys, Vec::<String>::new());
 }
 
 #[test]
@@ -928,7 +928,7 @@ fn updating_a_server_that_is_not_installed_changes_nothing() {
     store.touch_last_connected("nobody").unwrap();
     store.update_config("nobody", Some(&json!({}))).unwrap();
     store.update_env_keys("nobody", &["K".to_string()]).unwrap();
-    assert!(store.list_servers().unwrap().is_empty());
+    assert_eq!(store.list_servers().unwrap().len(), 0);
 }
 
 #[test]
