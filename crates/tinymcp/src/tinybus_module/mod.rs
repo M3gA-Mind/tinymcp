@@ -48,18 +48,26 @@ use crate::registry::SupervisorConfig;
 /// is down delays nothing. See [`maintenance`].
 pub(super) async fn setup(connection: Connection, config: ModuleConfig) -> TinyBusResult<()> {
     // A module that keeps state reaches the host's storage over the bus; the
-    // host binds the scope and the grant. Failing here fails the load, like
-    // any other missing dependency: falling back to memory would quietly lose
-    // every install at the next restart.
-    if config.data_dir.is_some() {
-        let provider = crate::storage::BusProvider::connect(connection.clone())
-            .await
-            .map_err(|error| {
-                tinybus::Error::failed(format!("tinymcp could not reach host storage: {error}"))
-            })?;
-        crate::storage::install_provider(Arc::new(provider));
+    // host binds the scope and the grant. A host that linked the module into
+    // its own process and installed a provider has already chosen. Failing
+    // here fails the load, like any other missing dependency: falling back to
+    // memory would quietly lose every install at the next restart.
+    if config.data_dir.is_some() && !crate::storage::provider_installed() {
+        crate::storage::install_provider(bus_provider(connection.clone()).await?);
     }
     setup_over_installed_storage(connection, config).await
+}
+
+/// The provider that reaches the host's storage over `connection`.
+pub(super) async fn bus_provider(
+    connection: Connection,
+) -> TinyBusResult<Arc<dyn crate::storage::StorageProvider>> {
+    let provider = crate::storage::BusProvider::connect(connection)
+        .await
+        .map_err(|error| {
+            tinybus::Error::failed(format!("tinymcp could not reach host storage: {error}"))
+        })?;
+    Ok(Arc::new(provider))
 }
 
 /// [`setup`] over whatever storage provider is installed already.

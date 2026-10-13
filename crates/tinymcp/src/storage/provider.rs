@@ -69,22 +69,30 @@ impl StorageProvider for MemoryProvider {
 
 /// The slot holding the provider services are built with.
 #[derive(Debug)]
-pub(crate) struct ProviderSlot(Mutex<Arc<dyn StorageProvider>>);
+pub(crate) struct ProviderSlot {
+    provider: Mutex<Arc<dyn StorageProvider>>,
+    explicit: std::sync::atomic::AtomicBool,
+}
 
 impl ProviderSlot {
     /// A slot holding a fresh in-memory provider.
     pub(crate) fn new() -> Self {
-        Self(Mutex::new(Arc::new(MemoryProvider::new())))
+        Self {
+            provider: Mutex::new(Arc::new(MemoryProvider::new())),
+            explicit: std::sync::atomic::AtomicBool::new(false),
+        }
     }
 
     /// Replaces the provider.
     pub(crate) fn install(&self, provider: Arc<dyn StorageProvider>) {
-        *self.0.lock() = provider;
+        *self.provider.lock() = provider;
+        self.explicit
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// The current provider.
     pub(crate) fn current(&self) -> Arc<dyn StorageProvider> {
-        Arc::clone(&self.0.lock())
+        Arc::clone(&self.provider.lock())
     }
 }
 
@@ -98,6 +106,12 @@ fn slot() -> &'static ProviderSlot {
 /// A host calls this once at startup, before building a service.
 pub fn install_provider(provider: Arc<dyn StorageProvider>) {
     slot().install(provider);
+}
+
+/// Whether a host installed a provider, as opposed to the in-memory default.
+#[must_use]
+pub fn provider_installed() -> bool {
+    slot().explicit.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 /// The provider services are built with: the installed one, or the

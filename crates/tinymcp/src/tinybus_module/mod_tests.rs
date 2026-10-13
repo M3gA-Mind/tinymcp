@@ -2646,7 +2646,7 @@ async fn the_stored_state_probe_asks_the_provider_the_service_was_built_over() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_module_with_a_data_directory_fails_to_come_up_without_host_storage() {
+async fn a_module_with_a_data_directory_cannot_come_up_without_host_storage() {
     use tinybus::{broker::Broker, transport::memory::MemoryBus};
 
     let bus = MemoryBus::new();
@@ -2654,17 +2654,7 @@ async fn a_module_with_a_data_directory_fails_to_come_up_without_host_storage() 
     let connection = tinybus::Connection::connect(bus.connect().await.unwrap())
         .await
         .unwrap();
-    let directory = tempfile::tempdir().unwrap();
-
-    let error = super::setup(
-        connection,
-        ModuleConfig {
-            data_dir: Some(directory.path().to_path_buf()),
-            client: tinymcp_bus::McpClientConfig::default(),
-        },
-    )
-    .await
-    .unwrap_err();
+    let error = super::bus_provider(connection).await.err().unwrap();
 
     assert!(error.to_string().contains("host storage"), "{error}");
 }

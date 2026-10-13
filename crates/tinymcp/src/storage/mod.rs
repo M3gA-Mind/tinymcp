@@ -47,7 +47,9 @@ pub(crate) use grant::{
     REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE, SERVER_NAMES, SERVERS, TOOL_CACHE,
 };
 pub use ports::StoragePorts;
-pub use provider::{MemoryProvider, StorageProvider, install_provider, installed_provider};
+pub use provider::{
+    MemoryProvider, StorageProvider, install_provider, installed_provider, provider_installed,
+};
 
 #[cfg(all(test, feature = "module"))]
 pub(crate) mod test_host;
