@@ -204,6 +204,7 @@ impl ConfiguredLifecycle {
                 self.state = State::StartingOpen { config, previous };
                 Poll::Continue
             }
+            #[allow(unreachable_patterns)]
             _ => Poll::Fault(Fault::Module),
         }
     }
@@ -250,6 +251,7 @@ impl ConfiguredLifecycle {
                 self.state = State::StartingClose(object);
                 Poll::Continue
             }
+            #[allow(unreachable_patterns)]
             _ => Poll::Fault(Fault::Module),
         }
     }
