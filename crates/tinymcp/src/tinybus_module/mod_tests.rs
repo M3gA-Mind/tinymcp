@@ -185,7 +185,7 @@ async fn prepare_bridge_tools_returns_the_owner_declarations() {
 }
 
 #[tokio::test]
-async fn stored_state_probe_does_not_open_or_create_a_workspace_store() {
+async fn the_stored_state_probe_reports_installs_without_creating_any() {
     let requested = tempfile::tempdir().unwrap();
     let service = service();
 
@@ -199,8 +199,13 @@ async fn stored_state_probe_does_not_open_or_create_a_workspace_store() {
         json!(false)
     );
 
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(&path, b"fixture").unwrap();
+    let ports = crate::storage::installed_provider()
+        .ports_for(requested.path())
+        .unwrap();
+    crate::Store::open(ports)
+        .unwrap()
+        .insert_server(&remote_install("srv-1", "http://127.0.0.1:1/"))
+        .unwrap();
     assert_eq!(
         ok(
             &service,
