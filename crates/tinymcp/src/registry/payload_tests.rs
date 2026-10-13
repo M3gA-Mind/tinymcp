@@ -224,6 +224,32 @@ fn a_tool_needs_only_its_name() {
 }
 
 #[test]
+fn a_tool_carries_its_meta_under_the_protocol_key() {
+    let tool: McpTool = serde_json::from_value(json!({
+        "name": "forecast",
+        "_meta": { "ui": { "resourceUri": "ui://weather/card.html" } }
+    }))
+    .unwrap();
+
+    assert_eq!(
+        tool.meta,
+        Some(json!({ "ui": { "resourceUri": "ui://weather/card.html" } }))
+    );
+    let encoded = serde_json::to_value(&tool).unwrap();
+    assert_eq!(
+        encoded["_meta"]["ui"]["resourceUri"],
+        "ui://weather/card.html"
+    );
+    assert_eq!(serde_json::from_value::<McpTool>(encoded).unwrap(), tool);
+}
+
+#[test]
+fn a_tool_without_meta_serializes_without_the_key() {
+    let encoded = serde_json::to_value(McpTool::new("ping")).unwrap();
+    assert!(encoded.get("_meta").is_none(), "{encoded}");
+}
+
+#[test]
 fn an_overview_round_trips_with_its_tools() {
     let overview = ConnectedServerOverview {
         server_id: "uuid-1".into(),

@@ -32,8 +32,10 @@
 /// shared configured-client lifecycle vocabulary (`client_lifecycle`): the
 /// open/close receipt state machine and the admission/retirement table. 1.23 adds pure registry-answer helpers
 /// (`require_identifier`, `ServerDetail::server_json`, `explain_not_connected`) that
-/// hosts previously copied; no member was added or removed.
-pub const CONTRACT_VERSION: (u32, u32) = (1, 23);
+/// hosts previously copied; no member was added or removed. 1.24 adds tool
+/// `_meta` on `McpTool` and the `ReadResource` and `StaticReadResource`
+/// members.
+pub const CONTRACT_VERSION: (u32, u32) = (1, 24);
 
 /// Returns whether a host holding [`CONTRACT_VERSION`] can bind to a module
 /// reporting `module`.

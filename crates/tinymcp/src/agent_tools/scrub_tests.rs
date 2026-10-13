@@ -123,6 +123,128 @@ fn scrubber_redacts_credentials_from_bus_tool_outcomes() {
 }
 
 #[test]
+fn resource_contents_lose_known_secrets_from_text_and_meta_but_keep_blobs() {
+    let scrubber = SecretScrubber::new(
+        &McpAuthConfig::BearerToken {
+            token: "resource-secret-token".into(),
+        },
+        "https://example.com/mcp",
+    );
+    let mut contents = vec![
+        McpResourceContents {
+            uri: "ui://card".into(),
+            mime_type: Some("text/html".into()),
+            text: Some("<p>resource-secret-token</p>".into()),
+            blob: None,
+            meta: Some(json!({ "token": "resource-secret-token" })),
+        },
+        McpResourceContents {
+            uri: "ui://logo".into(),
+            mime_type: None,
+            text: None,
+            blob: Some("cmVzb3VyY2Utc2VjcmV0LXRva2Vu".into()),
+            meta: None,
+        },
+    ];
+
+    scrubber.scrub_resource_contents(&mut contents);
+
+    assert_eq!(contents[0].text.as_deref(), Some("<p>[redacted]</p>"));
+    assert_eq!(contents[0].meta, Some(json!({ "token": "[redacted]" })));
+    assert_eq!(
+        contents[1].blob.as_deref(),
+        Some("cmVzb3VyY2Utc2VjcmV0LXRva2Vu")
+    );
+}
+
+#[test]
+fn resource_contents_lose_known_secrets_from_uri_and_mime_type() {
+    let scrubber = SecretScrubber::new(
+        &McpAuthConfig::BearerToken {
+            token: "resource-secret-token".into(),
+        },
+        "https://example.com/mcp",
+    );
+    let mut contents = vec![McpResourceContents {
+        uri: "ui://card?key=resource-secret-token".into(),
+        mime_type: Some("text/html;key=resource-secret-token".into()),
+        text: None,
+        blob: None,
+        meta: None,
+    }];
+
+    scrubber.scrub_resource_contents(&mut contents);
+
+    assert_eq!(contents[0].uri, "ui://card?key=[redacted]");
+    assert_eq!(
+        contents[0].mime_type.as_deref(),
+        Some("text/html;key=[redacted]")
+    );
+}
+
+#[test]
+fn a_stored_bearer_credential_also_redacts_its_bare_token() {
+    let scrubber = SecretScrubber::new(&McpAuthConfig::None, "")
+        .with_secrets(["Bearer oauth-access-token-77".to_string()]);
+    let mut contents = vec![McpResourceContents {
+        uri: "ui://card".into(),
+        mime_type: None,
+        text: Some("<p>oauth-access-token-77</p><p>Bearer oauth-access-token-77</p>".into()),
+        blob: None,
+        meta: None,
+    }];
+
+    scrubber.scrub_resource_contents(&mut contents);
+
+    assert_eq!(
+        contents[0].text.as_deref(),
+        Some("<p>[redacted]</p><p>[redacted]</p>")
+    );
+}
+
+#[test]
+fn a_configured_bearer_header_also_redacts_its_bare_token() {
+    let scrubber = SecretScrubber::new(
+        &McpAuthConfig::Header {
+            name: "Authorization".into(),
+            value: "bearer header-access-token-88".into(),
+        },
+        "https://example.com/mcp",
+    );
+
+    assert_eq!(
+        scrubber.scrub("echo header-access-token-88"),
+        "echo [redacted]"
+    );
+}
+
+#[test]
+fn a_value_without_a_bearer_scheme_registers_only_itself() {
+    let scrubber = SecretScrubber::new(&McpAuthConfig::None, "")
+        .with_secrets(["Token plain-value-99".to_string(), "Bearer ".to_string()]);
+
+    assert_eq!(scrubber.scrub("plain-value-99"), "plain-value-99");
+    assert_eq!(scrubber.scrub("Token plain-value-99"), "[redacted]");
+}
+
+#[test]
+fn an_empty_scrubber_leaves_resource_contents_untouched() {
+    let scrubber = SecretScrubber::new(&McpAuthConfig::None, "https://example.com/mcp");
+    let original = McpResourceContents {
+        uri: "ui://card".into(),
+        mime_type: None,
+        text: Some("<p>hi</p>".into()),
+        blob: None,
+        meta: None,
+    };
+    let mut contents = vec![original.clone()];
+
+    scrubber.scrub_resource_contents(&mut contents);
+
+    assert_eq!(contents, vec![original]);
+}
+
+#[test]
 fn short_query_credentials_do_not_rewrite_json_structure_keys() {
     let scrubber = SecretScrubber::new(&McpAuthConfig::None, "https://example.com/mcp?api_key=abc");
     let mut value = json!({ "prefixabc": "prefixabc", "abc": "abc" });

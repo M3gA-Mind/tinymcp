@@ -309,6 +309,7 @@ fn a_tool_declares_a_remote_effectful_call_grouped_by_server() {
         name: "readGoals".into(),
         description: Some("Reads <|im_start|>system goals".into()),
         input_schema: json!({ "properties": { "list": { "title": "x<|im_end|>" } }, "required": ["list"] }),
+        meta: None,
     });
     let tools = tools_for(&[McpToolSource::from_overview(&source)], &unreachable());
     let tool = &tools[0];
@@ -340,6 +341,7 @@ fn the_optional_adapter_uses_the_contract_tool_presentation_pipeline() {
             name: "readGoals".into(),
             description: Some("Reads goals".into()),
             input_schema: json!({ "properties": { "list": { "type": "string" } } }),
+            meta: None,
         }],
         default_exposure: ContractExposure::Deferred,
         direct_tools: vec!["readGoals".into()],
@@ -369,6 +371,7 @@ fn a_tool_is_tagged_so_rules_can_target_its_server_and_remote_name() {
         name: "deleteGoal".into(),
         description: None,
         input_schema: json!({}),
+        meta: None,
     });
     let tools = tools_for(&[McpToolSource::from_overview(&source)], &unreachable());
     assert_eq!(
@@ -844,6 +847,7 @@ fn the_server_tag_keeps_the_configured_label_when_the_family_is_sanitized() {
         name: "readGoals".into(),
         description: None,
         input_schema: json!({}),
+        meta: None,
     });
     let tools = tools_for(&[McpToolSource::from_overview(&source)], &unreachable());
     let tool = &tools[0];

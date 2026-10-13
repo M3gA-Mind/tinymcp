@@ -176,16 +176,24 @@ pub struct McpTool {
     /// The JSON Schema describing the tool's arguments.
     #[serde(default)]
     pub input_schema: Value,
+    /// The tool's `_meta` object, verbatim, as the server listed it.
+    ///
+    /// Carries extension data such as an MCP Apps `ui` resource reference.
+    /// Untrusted remote data; never place it in a model's context.
+    #[serde(default, rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Value>,
 }
 
 impl McpTool {
-    /// Builds a tool from its name, with no description and a null schema.
+    /// Builds a tool from its name, with no description, a null schema, and
+    /// no `_meta`.
     #[must_use]
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             description: None,
             input_schema: Value::Null,
+            meta: None,
         }
     }
 }

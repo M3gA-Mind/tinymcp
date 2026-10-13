@@ -39,6 +39,18 @@ pub(crate) fn parse_read_result(uri: &str, result: &Value) -> Result<Vec<McpReso
         .ok_or_else(|| Error::malformed("resources/read reply has no `contents` member"))?;
     let contents: Vec<McpResourceContents> = serde_json::from_value(contents.clone())
         .map_err(|error| Error::malformed(format!("resources/read contents: {error}")))?;
+    enforce_resource_cap(uri, &contents)?;
+    Ok(contents)
+}
+
+/// Refuses `contents` for `uri` when together they exceed
+/// [`MAX_RESOURCE_BYTES`].
+///
+/// # Errors
+///
+/// [`Error::ResourceTooLarge`] when the text and blob bytes together exceed
+/// the cap.
+pub(crate) fn enforce_resource_cap(uri: &str, contents: &[McpResourceContents]) -> Result<()> {
     let bytes: usize = contents.iter().map(McpResourceContents::byte_len).sum();
     if bytes > MAX_RESOURCE_BYTES {
         return Err(Error::ResourceTooLarge {
@@ -47,7 +59,7 @@ pub(crate) fn parse_read_result(uri: &str, result: &Value) -> Result<Vec<McpReso
             limit: MAX_RESOURCE_BYTES,
         });
     }
-    Ok(contents)
+    Ok(())
 }
 
 /// The params of a `resources/list` request for `cursor`.
