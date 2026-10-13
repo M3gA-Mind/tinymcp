@@ -288,12 +288,12 @@ impl Store {
                 if let Err(error) = documents.put(SERVERS, &id, doc, Precondition::Absent).await {
                     // Release only a claim that is still ours, at the version
                     // we read, so a racing installer's takeover survives.
-                    if let Ok(held) = documents.get(SERVER_NAMES, &claim_id).await {
-                        if let Some(own) = owns_claim(held) {
-                            let _ = documents
-                                .delete(SERVER_NAMES, &claim_id, own.unchanged())
-                                .await;
-                        }
+                    if let Ok(held) = documents.get(SERVER_NAMES, &claim_id).await
+                        && let Some(own) = owns_claim(held)
+                    {
+                        let _ = documents
+                            .delete(SERVER_NAMES, &claim_id, own.unchanged())
+                            .await;
                     }
                     return Err(error);
                 }
