@@ -13,10 +13,20 @@ use super::StoragePorts;
 
 /// Declares collections successfully; every other call is a backend failure.
 #[derive(Debug)]
-pub(crate) struct FailingDocuments;
+#[derive(Default)]
+pub(crate) struct FailingDocuments {
+    /// Fail with `NotFound` (a collection never declared) instead of an outage.
+    pub(crate) missing: bool,
+}
 
-fn down<T>() -> Result<T> {
-    Err(StorageError::unavailable("the storage backend is down"))
+impl FailingDocuments {
+    fn down<T>(&self) -> Result<T> {
+        Err(if self.missing {
+            StorageError::not_found("no such collection")
+        } else {
+            StorageError::unavailable("the storage backend is down")
+        })
+    }
 }
 
 #[async_trait]
@@ -30,7 +40,7 @@ impl DocumentStore for FailingDocuments {
     }
 
     async fn get(&self, _collection: &str, _id: &str) -> Result<Option<Versioned<Value>>> {
-        down()
+        self.down()
     }
 
     async fn put(
@@ -40,7 +50,7 @@ impl DocumentStore for FailingDocuments {
         _doc: Value,
         _precondition: Precondition,
     ) -> Result<Version> {
-        down()
+        self.down()
     }
 
     async fn delete(
@@ -49,19 +59,19 @@ impl DocumentStore for FailingDocuments {
         _id: &str,
         _precondition: Precondition,
     ) -> Result<bool> {
-        down()
+        self.down()
     }
 
     async fn query(&self, _collection: &str, _query: &Query) -> Result<Page<Versioned<Value>>> {
-        down()
+        self.down()
     }
 
     async fn count(&self, _collection: &str, _filter: &Filter) -> Result<u64> {
-        down()
+        self.down()
     }
 
     async fn delete_where(&self, _collection: &str, _filter: &Filter) -> Result<u64> {
-        down()
+        self.down()
     }
 
     async fn claim(
@@ -71,7 +81,7 @@ impl DocumentStore for FailingDocuments {
         _sort: &[Sort],
         _patch: &Value,
     ) -> Result<Option<Versioned<Value>>> {
-        down()
+        self.down()
     }
 
     async fn search(
@@ -80,11 +90,11 @@ impl DocumentStore for FailingDocuments {
         _text: &str,
         _limit: usize,
     ) -> Result<Vec<SearchHit>> {
-        down()
+        self.down()
     }
 
     async fn drop_collection(&self, _collection: &str) -> Result<()> {
-        down()
+        self.down()
     }
 }
 
@@ -92,9 +102,18 @@ impl StoragePorts {
     /// Ports whose documents fail after opening, over otherwise working
     /// streams and secrets.
     pub(crate) fn with_failing_documents() -> Self {
+        Self::with_documents(FailingDocuments::default())
+    }
+
+    /// Ports whose collections were never declared: counts answer `NotFound`.
+    pub(crate) fn with_undeclared_collections() -> Self {
+        Self::with_documents(FailingDocuments { missing: true })
+    }
+
+    fn with_documents(documents: FailingDocuments) -> Self {
         let working = Self::memory().expect("memory ports");
         Self::new(
-            std::sync::Arc::new(FailingDocuments),
+            std::sync::Arc::new(FailingDocuments::default()),
             working.streams,
             working.secrets,
         )

@@ -876,7 +876,7 @@ fn a_claim_whose_server_is_gone_is_taken_over() {
     store.put_raw(
         SERVER_NAMES,
         &super::hex_digest(b"@test/server"),
-        json!({"qualified_name": "@test/server", "server_id": "ghost"}),
+        json!({"qualified_name": "@test/server", "server_id": "ghost", "claimed_at": 1}),
     );
     assert!(
         store
@@ -884,6 +884,27 @@ fn a_claim_whose_server_is_gone_is_taken_over() {
             .unwrap()
     );
     assert_eq!(store.list_servers().unwrap().len(), 1);
+}
+
+#[test]
+fn a_fresh_claim_without_its_server_is_in_flight_not_stale() {
+    // Another installer may be between its claim and its server write.
+    let store = store();
+    store.put_raw(
+        SERVER_NAMES,
+        &super::hex_digest(b"@test/server"),
+        json!({
+            "qualified_name": "@test/server",
+            "server_id": "in-flight",
+            "claimed_at": super::now_ms(),
+        }),
+    );
+    assert!(
+        !store
+            .insert_server_if_absent(&stdio_server("srv-1"))
+            .unwrap()
+    );
+    assert_eq!(store.list_servers().unwrap().len(), 0);
 }
 
 #[test]

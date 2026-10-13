@@ -184,7 +184,7 @@ async fn failing_documents_refuse_every_call_except_declaring_collections() {
     use super::failing::FailingDocuments;
     use tinystoragedrivers_core::{DocumentStore, Precondition, Query};
 
-    let documents = FailingDocuments;
+    let documents = FailingDocuments::default();
     assert!(
         !documents
             .capabilities()
@@ -224,4 +224,30 @@ async fn failing_documents_refuse_every_call_except_declaring_collections() {
 fn a_failing_documents_port_is_an_error_not_an_empty_directory() {
     let ports = StoragePorts::with_failing_documents();
     assert!(matches!(ports.has_state(), Err(crate::Error::Store { .. })));
+}
+
+#[test]
+fn an_undeclared_collection_counts_as_no_state() {
+    let ports = StoragePorts::with_undeclared_collections();
+    assert!(!ports.has_state().unwrap());
+}
+
+#[test]
+fn directories_whose_names_differ_only_in_bytes_keep_separate_state() {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStringExt;
+        let provider = MemoryProvider::new();
+        let mut a = b"/data/".to_vec();
+        a.push(0xff);
+        let mut b = b"/data/".to_vec();
+        b.push(0xfe);
+        let a = PathBuf::from(std::ffi::OsString::from_vec(a));
+        let b = PathBuf::from(std::ffi::OsString::from_vec(b));
+        AuditStore::open(provider.ports_for(&a).unwrap())
+            .unwrap()
+            .record(&a_write())
+            .unwrap();
+        assert!(!provider.ports_for(&b).unwrap().has_state().unwrap());
+    }
 }

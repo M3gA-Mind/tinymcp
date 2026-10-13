@@ -73,6 +73,12 @@ impl StoragePorts {
     ///
     /// # Errors
     ///
+    /// Each call attaches a fresh secret store: keep and clone the returned
+    /// ports (as `MemoryProvider` does) rather than reopening a scope, or the
+    /// credentials and cache key written through the first open are not seen.
+    ///
+    /// # Errors
+    ///
     /// Returns [`Error::Store`] when the scope is invalid.
     pub fn memory_scoped(backend: &MemoryStorage, scope: &str) -> Result<Self> {
         let scope = Scope::new(scope).map_err(|source| Error::store("opening a scope", source))?;
