@@ -1,6 +1,8 @@
 //! A documents port that opens fine and then fails every read and write, for
 //! tests of how callers behave when storage goes away.
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use serde_json::Value;
 use tinystoragedrivers_core::{
     Capabilities, CollectionSpec, DocumentStore, Filter, Page, Precondition, Query, Result,

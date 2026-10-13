@@ -1,5 +1,7 @@
 //! Test-only helpers that reach past the store's API into its documents.
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use serde_json::Value;
 use tinystoragedrivers_core::{DocumentStoreExt as _, Precondition, Query};
 

@@ -1,5 +1,7 @@
 //! Tests for the storage ports, the grant and the providers.
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use super::*;
 use std::path::Path;
 use tinystoragedrivers_core::{Filter, MemoryStorage};
