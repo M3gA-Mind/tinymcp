@@ -138,7 +138,8 @@ macro_rules! export_module {
         }
         #[cfg(all(feature = "static-link", not(test)))]
         pub use linked_exports::{
-            TINYBUS_MODULE_ABI_V1, tinybus_module_init_v1, tinybus_module_manifest_v1,
+            TINYBUS_MODULE_ABI_V1, linked_module, tinybus_module_init_v1,
+            tinybus_module_manifest_v1,
         };
         #[cfg(test)]
         pub(crate) use linked_exports::linked_module as test_linked_module;
