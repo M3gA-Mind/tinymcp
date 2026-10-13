@@ -107,3 +107,34 @@ async fn connecting_without_a_host_is_an_error_not_a_silent_memory_store() {
         .unwrap();
     assert!(BusProvider::connect(lonely).await.is_err());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_default_connect_reaches_documents_and_wires_the_host_secret_store() {
+    let backend = MemoryStorage::new();
+    let (bus, _host) = host(&backend, "module-tinymcp").await;
+    let connection = Connection::connect(bus.connect().await.unwrap())
+        .await
+        .unwrap();
+    let provider = BusProvider::connect(connection).await.unwrap();
+    let ports = provider.ports_for(&std::env::temp_dir().join("c")).unwrap();
+    ports.prepare().unwrap();
+    let store = Store::open(ports).unwrap();
+    store.insert_server(&a_server("srv-1")).unwrap();
+    assert_eq!(store.list_servers().unwrap().len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_provider_over_ready_ports_hands_out_clones_of_them() {
+    let backend = MemoryStorage::new();
+    let (bus, _host) = host(&backend, "module-tinymcp").await;
+    let secrets = Arc::new(MemorySecrets::new());
+    let ports = module(&bus, &secrets)
+        .await
+        .ports_for(&std::env::temp_dir().join("d"))
+        .unwrap();
+    let provider = BusProvider::from_ports(ports);
+    let again = provider.ports_for(&std::env::temp_dir().join("e")).unwrap();
+    again.prepare().unwrap();
+    assert!(!again.has_state().unwrap());
+    assert!(format!("{provider:?}").contains("BusProvider"));
+}
