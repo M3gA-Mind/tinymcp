@@ -34,7 +34,10 @@ fn same_config_is_reused_and_a_changed_config_reopens() {
     let mut m = ConfiguredLifecycle::new();
     let a = config("a");
     assert_eq!(open(&mut m, &a).object_path, "/obj/t");
-    assert_eq!(m.open_step(&a), Step::Ready(m.open_object().unwrap().clone()));
+    assert_eq!(
+        m.open_step(&a),
+        Step::Ready(m.open_object().unwrap().clone())
+    );
     let b = config("b");
     assert_eq!(m.open_step(&b), Step::CallOpen(b.clone()));
     m.open_replied(Ok(receipt("u")));

@@ -10,7 +10,7 @@ use std::{
 
 use super::*;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct Client {
     retiring: AtomicBool,
 }
