@@ -58,6 +58,15 @@ Contract 1.23 adds pure helpers hosts used to copy: `require_identifier`,
 `required_env_keys`) and `explain_not_connected` (how a `NotConnected` answer
 reads against the installs). No member was added or removed.
 
+Contract 1.24 carries each tool's `_meta` on `McpTool`, so `ListTools`,
+`ConnectedOverview` and `CachedOverview` report an installed server's MCP Apps
+`ui` resource reference as `StaticListTools` already did. It also adds
+`ReadResource(server_id, uri)` for installed servers and
+`StaticReadResource(server, uri)` for host-declared ones. Both return the
+`resources/read` contents verbatim, refuse anything above `MAX_RESOURCE_BYTES`
+with `ResourceTooLarge`, and redact the server's known credentials from the
+contents' text and `_meta`.
+
 Library consumers bring implementation extension traits into scope for moved
 DTO methods. Contract-only hosts call the compiled module. See
 [the relocation specification](../../docs/specs/pure-vocabulary.md) for public
