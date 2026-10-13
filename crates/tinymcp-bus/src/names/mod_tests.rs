@@ -87,6 +87,7 @@ fn the_method_table_holds_every_declared_member() {
             methods::OAUTH_COMPLETE,
             methods::LIST_TOOLS,
             methods::TOOL_CALL,
+            methods::READ_RESOURCE,
             methods::CONFIG_ASSIST,
             methods::SETUP_SEARCH,
             methods::SETUP_GET,
@@ -102,6 +103,7 @@ fn the_method_table_holds_every_declared_member() {
             methods::STATIC_SCRUB_TOOLS,
             methods::STATIC_CACHED_LIST_TOOLS,
             methods::STATIC_CALL_TOOL,
+            methods::STATIC_READ_RESOURCE,
             methods::PREPARE_BRIDGE_TOOLS,
             methods::STATIC_CALL_TOOL_CLASSIFIED,
             methods::AUDIT_RECORD_WRITE,
@@ -158,6 +160,7 @@ fn the_static_members_are_named_as_a_family() {
         methods::STATIC_SCRUB_TOOLS,
         methods::STATIC_CACHED_LIST_TOOLS,
         methods::STATIC_CALL_TOOL,
+        methods::STATIC_READ_RESOURCE,
         methods::STATIC_CALL_TOOL_CLASSIFIED,
     ] {
         assert!(
@@ -194,6 +197,8 @@ fn the_members_added_for_hosts_dropping_the_path_dependency_are_pinned() {
     assert_eq!(methods::OPEN_CONFIGURED, "OpenConfigured");
     assert_eq!(methods::CLOSE, "Close");
     assert_eq!(methods::TRANSITION_STATUS, "TransitionStatus");
+    assert_eq!(methods::READ_RESOURCE, "ReadResource");
+    assert_eq!(methods::STATIC_READ_RESOURCE, "StaticReadResource");
 }
 
 #[test]

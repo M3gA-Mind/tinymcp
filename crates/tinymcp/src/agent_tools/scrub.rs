@@ -11,7 +11,7 @@
 use base64::Engine as _;
 use serde_json::Value;
 use tinymcp_bus::McpAuthConfig;
-use tinymcp_bus::{McpToolContent, ToolCallOutcome};
+use tinymcp_bus::{McpResourceContents, McpToolContent, ToolCallOutcome};
 #[cfg(feature = "tools")]
 use tinytools::{ToolContent, ToolResult};
 
@@ -131,6 +131,12 @@ impl SecretScrubber {
         strict.extend(encoded_strict);
         raw.extend(strict.iter().cloned());
 
+        let bare_tokens: Vec<String> = raw
+            .iter()
+            .filter_map(|value| bearer_token(value).map(str::to_string))
+            .collect();
+        raw.extend(bare_tokens);
+
         let mut secrets: Vec<String> = Vec::new();
         for value in raw {
             let value = value.trim();
@@ -155,6 +161,10 @@ impl SecretScrubber {
     /// when short; blank values are skipped.
     #[must_use]
     pub fn with_secrets(mut self, secrets: impl IntoIterator<Item = String>) -> Self {
+        let secrets = secrets.into_iter().flat_map(|secret| {
+            let bare = bearer_token(&secret).map(str::to_string);
+            std::iter::once(secret).chain(bare)
+        });
         for secret in secrets {
             let secret = secret.trim();
             if secret.is_empty() {
@@ -247,6 +257,28 @@ impl SecretScrubber {
         }
     }
 
+    /// Resource contents with known secrets replaced in their URI, MIME type,
+    /// text, and `_meta`.
+    ///
+    /// A base64 blob is left as the server sent it.
+    pub fn scrub_resource_contents(&self, contents: &mut [McpResourceContents]) {
+        if self.secrets.is_empty() {
+            return;
+        }
+        for part in contents {
+            part.uri = self.scrub(&part.uri);
+            if let Some(mime_type) = part.mime_type.as_mut() {
+                *mime_type = self.scrub(mime_type);
+            }
+            if let Some(text) = part.text.as_mut() {
+                *text = self.scrub(text);
+            }
+            if let Some(meta) = part.meta.as_mut() {
+                self.scrub_value(meta);
+            }
+        }
+    }
+
     /// A bus tool outcome with known secrets replaced in all text and JSON fields.
     pub fn scrub_tool_call_outcome(&self, outcome: &mut ToolCallOutcome) {
         if self.secrets.is_empty() {
@@ -326,6 +358,15 @@ impl SecretScrubber {
         }
         result
     }
+}
+
+/// The token of a `Bearer <token>` credential, so it is redacted when echoed
+/// on its own.
+fn bearer_token(value: &str) -> Option<&str> {
+    let value = value.trim();
+    let (scheme, token) = value.split_once(' ')?;
+    let token = token.trim();
+    (scheme.eq_ignore_ascii_case("bearer") && !token.is_empty()).then_some(token)
 }
 
 /// Longest first, so a secret that contains another is replaced whole.

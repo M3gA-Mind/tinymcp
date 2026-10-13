@@ -124,6 +124,10 @@ pub mod methods {
     pub const LIST_TOOLS: &str = "ListTools";
     /// Calls a tool on a connected server.
     pub const TOOL_CALL: &str = "ToolCall";
+    /// Reads one resource of a connected server, verbatim.
+    ///
+    /// Contents above `MAX_RESOURCE_BYTES` are refused, never truncated.
+    pub const READ_RESOURCE: &str = "ReadResource";
     /// Prepares the context a host needs to help a user configure a server.
     ///
     /// The module gathers what it knows; running a model over it is host
@@ -166,6 +170,10 @@ pub mod methods {
     pub const STATIC_CACHED_LIST_TOOLS: &str = "StaticCachedListTools";
     /// Calls a tool on a statically declared server.
     pub const STATIC_CALL_TOOL: &str = "StaticCallTool";
+    /// Reads one resource of a statically declared server, verbatim.
+    ///
+    /// Contents above `MAX_RESOURCE_BYTES` are refused, never truncated.
+    pub const STATIC_READ_RESOURCE: &str = "StaticReadResource";
     /// Returns the fixed generic MCP bridge tool declarations.
     pub const PREPARE_BRIDGE_TOOLS: &str = "PrepareBridgeTools";
     /// Calls a static server tool with classified outcome and bounded rendering.
@@ -266,6 +274,7 @@ pub const METHODS: &[&str] = &[
     // Registry: tools
     methods::LIST_TOOLS,
     methods::TOOL_CALL,
+    methods::READ_RESOURCE,
     methods::CONFIG_ASSIST,
     // Setup
     methods::SETUP_SEARCH,
@@ -283,6 +292,7 @@ pub const METHODS: &[&str] = &[
     methods::STATIC_SCRUB_TOOLS,
     methods::STATIC_CACHED_LIST_TOOLS,
     methods::STATIC_CALL_TOOL,
+    methods::STATIC_READ_RESOURCE,
     methods::PREPARE_BRIDGE_TOOLS,
     methods::STATIC_CALL_TOOL_CLASSIFIED,
     // Audit

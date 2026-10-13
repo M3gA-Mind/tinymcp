@@ -788,6 +788,7 @@ fn remote_to_cached(tool: &McpRemoteTool) -> tinymcp_bus::McpTool {
         name: tool.name.clone(),
         description: tool.description.clone(),
         input_schema: tool.input_schema.clone(),
+        meta: tool.meta.clone(),
     }
 }
 
