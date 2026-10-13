@@ -219,3 +219,9 @@ async fn failing_documents_refuse_every_call_except_declaring_collections() {
     assert!(documents.search("c", "text", 1).await.is_err());
     assert!(documents.drop_collection("c").await.is_err());
 }
+
+#[test]
+fn a_failing_documents_port_is_an_error_not_an_empty_directory() {
+    let ports = StoragePorts::with_failing_documents();
+    assert!(matches!(ports.has_state(), Err(crate::Error::Store { .. })));
+}

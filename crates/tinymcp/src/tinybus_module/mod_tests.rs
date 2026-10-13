@@ -2619,3 +2619,28 @@ async fn argument_validation_normalizes_optional_strings_and_required_string_arr
         )
     );
 }
+
+#[tokio::test]
+async fn the_stored_state_probe_asks_the_provider_the_service_was_built_over() {
+    let requested = tempfile::tempdir().unwrap();
+    let provider = std::sync::Arc::new(crate::storage::MemoryProvider::new());
+    let bound: std::sync::Arc<dyn crate::storage::StorageProvider> = provider.clone();
+    let service = McpService::with_provider(&ModuleConfig::default(), bound).unwrap();
+    crate::Store::open(
+        crate::storage::StorageProvider::ports_for(provider.as_ref(), requested.path()).unwrap(),
+    )
+    .unwrap()
+    .insert_server(&remote_install("srv-1", "http://127.0.0.1:1/"))
+    .unwrap();
+
+    // The process-wide provider knows nothing of this directory.
+    assert_eq!(
+        ok(
+            &service,
+            names::methods::HAS_STORED_STATE,
+            json!([requested.path().to_string_lossy()]),
+        )
+        .await,
+        json!(true)
+    );
+}

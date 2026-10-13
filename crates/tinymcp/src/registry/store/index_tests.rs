@@ -273,3 +273,17 @@ fn a_sync_state_that_cannot_be_read_fails_the_page_and_the_finish() {
     );
     assert!(store.finish_index_sync(SOURCE).is_err());
 }
+
+#[test]
+fn a_term_inside_a_word_still_finds_its_row() {
+    // The text index carries word prefixes only; `ack` is not a prefix of
+    // `slack`, yet the documented contract is substring matching.
+    let store = store();
+    store.begin_index_sync(SOURCE, BASE).unwrap();
+    store
+        .store_index_page(SOURCE, &[row("a/slack", "a/slack slack", "")], None)
+        .unwrap();
+
+    let hits = store.search_index(SOURCE, &terms(&["ack"])).unwrap();
+    assert_eq!(names(&hits), ["a/slack"]);
+}
