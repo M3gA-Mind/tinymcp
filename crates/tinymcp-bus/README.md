@@ -47,6 +47,12 @@ Contract 1.21 adds identifier normalization to `TransformText`. The module
 uses the generic MCP bridge's existing rules, preserving plain punctuation and
 removing sentence punctuation only when it follows a markdown wrapper.
 
+Contract 1.22 adds `client_lifecycle`: the pure, I/O-free receipt state machine
+(`ConfiguredLifecycle`) and the admission/retirement table (`ClientTable`) a
+host drives around `OpenConfigured`, `Close` and `TransitionStatus`. The host
+supplies the configuration it wants served and performs each bus call a `Step`
+names; caching, retirement and acknowledged cleanup live here.
+
 Library consumers bring implementation extension traits into scope for moved
 DTO methods. Contract-only hosts call the compiled module. See
 [the relocation specification](../../docs/specs/pure-vocabulary.md) for public
