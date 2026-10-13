@@ -105,11 +105,11 @@ pub use server::{
 };
 #[cfg(feature = "server-http")]
 pub use server::{HttpServerConfig, run_http, run_http_reporting};
-#[cfg(feature = "module")]
-pub use tinybus_module::{McpService, ModuleConfig};
 /// The module as a host links it (`static-link`), beside others in one executable.
 #[cfg(all(feature = "static-link", not(test)))]
 pub use tinybus_module::linked_module;
+#[cfg(feature = "module")]
+pub use tinybus_module::{McpService, ModuleConfig};
 pub use transport::http::{McpHttpClient, McpHttpClientBuilder};
 pub use transport::stdio::McpStdioClient;
 pub use transport::{redact_endpoint, render_tool_result};
