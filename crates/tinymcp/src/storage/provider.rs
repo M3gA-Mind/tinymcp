@@ -56,22 +56,42 @@ impl StorageProvider for MemoryProvider {
     }
 }
 
-static INSTALLED: OnceLock<Mutex<Arc<dyn StorageProvider>>> = OnceLock::new();
+/// The slot holding the provider services are built with.
+#[derive(Debug)]
+pub(crate) struct ProviderSlot(Mutex<Arc<dyn StorageProvider>>);
 
-fn slot() -> &'static Mutex<Arc<dyn StorageProvider>> {
-    INSTALLED.get_or_init(|| Mutex::new(Arc::new(MemoryProvider::new())))
+impl ProviderSlot {
+    /// A slot holding a fresh in-memory provider.
+    pub(crate) fn new() -> Self {
+        Self(Mutex::new(Arc::new(MemoryProvider::new())))
+    }
+
+    /// Replaces the provider.
+    pub(crate) fn install(&self, provider: Arc<dyn StorageProvider>) {
+        *self.0.lock() = provider;
+    }
+
+    /// The current provider.
+    pub(crate) fn current(&self) -> Arc<dyn StorageProvider> {
+        Arc::clone(&self.0.lock())
+    }
+}
+
+fn slot() -> &'static ProviderSlot {
+    static INSTALLED: OnceLock<ProviderSlot> = OnceLock::new();
+    INSTALLED.get_or_init(ProviderSlot::new)
 }
 
 /// Makes `provider` the process's storage, for every service built afterwards.
 ///
 /// A host calls this once at startup, before building a service.
 pub fn install_provider(provider: Arc<dyn StorageProvider>) {
-    *slot().lock() = provider;
+    slot().install(provider);
 }
 
 /// The provider services are built with: the installed one, or the
 /// process-wide in-memory provider.
 #[must_use]
 pub fn installed_provider() -> Arc<dyn StorageProvider> {
-    Arc::clone(&slot().lock())
+    slot().current()
 }

@@ -442,7 +442,12 @@ async fn an_installed_server_is_callable_by_name_and_cached_for_the_next_boot() 
 
     // First process: install and connect, which caches the listing.
     {
-        let registry = dynamic_registry(Store::open(directory.path()).unwrap());
+        let registry = dynamic_registry(Store::open(
+            crate::storage::installed_provider()
+                .ports_for(directory.path())
+                .unwrap(),
+        )
+        .unwrap());
         registry
             .store()
             .insert_server(&installed("s1", &url))
@@ -485,7 +490,12 @@ async fn an_installed_server_is_callable_by_name_and_cached_for_the_next_boot() 
     }
 
     // Second process: nothing is connected, but the tools are offered.
-    let registry = dynamic_registry(Store::open(directory.path()).unwrap());
+    let registry = dynamic_registry(Store::open(
+            crate::storage::installed_provider()
+                .ports_for(directory.path())
+                .unwrap(),
+        )
+        .unwrap());
     let overview = registry.cached_overview().await.unwrap();
     assert_eq!(overview.len(), 1);
     assert_eq!(overview[0].tools.len(), 2);

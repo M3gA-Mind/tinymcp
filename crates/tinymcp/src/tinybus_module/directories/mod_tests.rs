@@ -224,7 +224,6 @@ async fn opening_a_directory_returns_a_path_that_answers() {
         .await
         .unwrap();
     assert_eq!(installed.len(), 0);
-    assert!(crate::Store::path_for(other.path()).exists());
 }
 
 #[tokio::test]
@@ -281,8 +280,6 @@ async fn configured_directories_keep_their_own_mocked_static_servers() {
         beta_result["rendered"]["content"][0]["text"],
         "beta provider"
     );
-    assert!(crate::Store::path_for(alpha_dir.path()).exists());
-    assert!(crate::Store::path_for(beta_dir.path()).exists());
 }
 
 #[tokio::test]

@@ -102,29 +102,6 @@ fn every_served_member_is_reachable_by_its_contract_constant() {
 }
 
 #[tokio::test]
-#[cfg(unix)]
-async fn stored_state_probe_does_not_follow_a_database_symlink() {
-    let directory = tempfile::tempdir().unwrap();
-    let outside = tempfile::tempdir().unwrap();
-    let linked = directory.path().join("mcp_clients");
-    std::fs::create_dir_all(&linked).unwrap();
-    let target = crate::Store::path_for(outside.path());
-    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
-    std::fs::write(&target, b"fixture").unwrap();
-    std::os::unix::fs::symlink(&target, linked.join("mcp_clients.db")).unwrap();
-
-    assert_eq!(
-        ok(
-            &service(),
-            names::methods::HAS_STORED_STATE,
-            json!([directory.path().to_string_lossy()]),
-        )
-        .await,
-        json!(false)
-    );
-}
-
-#[tokio::test]
 async fn prepare_agent_tools_preserves_names_schemas_tags_and_exposure() {
     let source = json!({
         "server_id": "id-1",
@@ -210,7 +187,6 @@ async fn prepare_bridge_tools_returns_the_owner_declarations() {
 #[tokio::test]
 async fn stored_state_probe_does_not_open_or_create_a_workspace_store() {
     let requested = tempfile::tempdir().unwrap();
-    let path = crate::Store::path_for(requested.path());
     let service = service();
 
     assert_eq!(
@@ -222,7 +198,6 @@ async fn stored_state_probe_does_not_open_or_create_a_workspace_store() {
         .await,
         json!(false)
     );
-    assert!(!path.exists());
 
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, b"fixture").unwrap();
@@ -322,8 +297,18 @@ fn a_service_with_a_data_directory_creates_its_stores() {
     })
     .expect("the service builds");
 
-    assert!(crate::Store::path_for(directory.path()).exists());
-    assert!(crate::AuditStore::path_for(directory.path()).exists());
+    // The service's stores write through the provider's ports for the
+    // directory, so what it records is what a state probe then finds.
+    let ports = crate::storage::installed_provider()
+        .ports_for(directory.path())
+        .unwrap();
+    assert!(!ports.has_state().unwrap());
+    _service
+        .dynamic()
+        .store()
+        .insert_server(&remote_install("srv-1", "http://127.0.0.1:1/"))
+        .unwrap();
+    assert!(ports.has_state().unwrap());
 }
 
 #[test]
@@ -2206,7 +2191,12 @@ async fn a_module_comes_up_without_waiting_for_a_server_that_never_answers() {
     });
 
     let directory = tempfile::tempdir().unwrap();
-    let store = crate::Store::open(directory.path()).unwrap();
+    let store = crate::Store::open(
+        crate::storage::installed_provider()
+            .ports_for(directory.path())
+            .unwrap(),
+    )
+    .unwrap();
     store
         .insert_server(&remote_install("srv-slow", &url))
         .unwrap();

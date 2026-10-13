@@ -121,12 +121,21 @@ fn an_invalid_scope_is_refused() {
 }
 
 #[test]
-fn an_installed_provider_is_the_one_services_are_built_with() {
-    let before = installed_provider();
-    let provider: std::sync::Arc<dyn StorageProvider> = std::sync::Arc::new(MemoryProvider::new());
-    install_provider(std::sync::Arc::clone(&provider));
-    assert!(std::sync::Arc::ptr_eq(&installed_provider(), &provider));
-    install_provider(before);
+fn an_installed_provider_replaces_the_default() {
+    // A private slot, so this test cannot reroute the services other tests
+    // build through the process-wide one.
+    let slot = super::provider::ProviderSlot::new();
+    let first = slot.current();
+    let replacement: std::sync::Arc<dyn StorageProvider> = std::sync::Arc::new(MemoryProvider::new());
+    slot.install(std::sync::Arc::clone(&replacement));
+    assert!(std::sync::Arc::ptr_eq(&slot.current(), &replacement));
+    assert!(!std::sync::Arc::ptr_eq(&slot.current(), &first));
+}
+
+#[test]
+fn the_process_wide_provider_answers_for_a_directory() {
+    let ports = installed_provider().ports_for(Path::new("/tinymcp-test/process-wide")).unwrap();
+    assert!(!ports.has_state().unwrap());
 }
 
 #[test]
