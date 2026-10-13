@@ -53,6 +53,11 @@ host drives around `OpenConfigured`, `Close` and `TransitionStatus`. The host
 supplies the configuration it wants served and performs each bus call a `Step`
 names; caching, retirement and acknowledged cleanup live here.
 
+Contract 1.23 adds pure helpers hosts used to copy: `require_identifier`,
+`ServerDetail::server_json` (the detail screen's JSON shape with
+`required_env_keys`) and `explain_not_connected` (how a `NotConnected` answer
+reads against the installs). No member was added or removed.
+
 Library consumers bring implementation extension traits into scope for moved
 DTO methods. Contract-only hosts call the compiled module. See
 [the relocation specification](../../docs/specs/pure-vocabulary.md) for public

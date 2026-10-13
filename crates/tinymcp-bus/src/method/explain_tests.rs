@@ -37,7 +37,10 @@ fn a_blank_identifier_is_refused_with_the_field_name() {
 
 #[test]
 fn an_identifier_is_trimmed() {
-    assert_eq!(require_identifier("  srv-1  ", "server_id").unwrap(), "srv-1");
+    assert_eq!(
+        require_identifier("  srv-1  ", "server_id").unwrap(),
+        "srv-1"
+    );
 }
 
 #[test]
