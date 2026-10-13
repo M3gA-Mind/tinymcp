@@ -44,3 +44,7 @@ pub use types::{
 #[cfg(test)]
 #[path = "mod_envelope_tests.rs"]
 mod envelope_test;
+
+#[cfg(test)]
+#[path = "mod_exposure_tests.rs"]
+mod exposure_test;

@@ -59,6 +59,7 @@
 pub mod agent_tools;
 pub mod audit;
 pub mod auth;
+pub mod client_lifecycle;
 pub mod config;
 pub mod config_document;
 pub mod errors;

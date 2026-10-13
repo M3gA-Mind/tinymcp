@@ -28,8 +28,10 @@
 /// scrubbing of credentials from static remote-tool metadata; 1.18 adds safe
 /// static-server summaries, 1.19 adds one-shot configured server calls, and
 /// 1.20 adds module-owned generic server argument validation. 1.21 adds
-/// module-owned MCP identifier normalization to `TransformText`.
-pub const CONTRACT_VERSION: (u32, u32) = (1, 21);
+/// module-owned MCP identifier normalization to `TransformText`. 1.22 adds the
+/// shared configured-client lifecycle vocabulary (`client_lifecycle`): the
+/// open/close receipt state machine and the admission/retirement table.
+pub const CONTRACT_VERSION: (u32, u32) = (1, 22);
 
 /// Returns whether a host holding [`CONTRACT_VERSION`] can bind to a module
 /// reporting `module`.
