@@ -131,6 +131,12 @@ impl SecretScrubber {
         strict.extend(encoded_strict);
         raw.extend(strict.iter().cloned());
 
+        let bare_tokens: Vec<String> = raw
+            .iter()
+            .filter_map(|value| bearer_token(value).map(str::to_string))
+            .collect();
+        raw.extend(bare_tokens);
+
         let mut secrets: Vec<String> = Vec::new();
         for value in raw {
             let value = value.trim();
@@ -155,6 +161,10 @@ impl SecretScrubber {
     /// when short; blank values are skipped.
     #[must_use]
     pub fn with_secrets(mut self, secrets: impl IntoIterator<Item = String>) -> Self {
+        let secrets = secrets.into_iter().flat_map(|secret| {
+            let bare = bearer_token(&secret).map(str::to_string);
+            std::iter::once(secret).chain(bare)
+        });
         for secret in secrets {
             let secret = secret.trim();
             if secret.is_empty() {
@@ -348,6 +358,15 @@ impl SecretScrubber {
         }
         result
     }
+}
+
+/// The token of a `Bearer <token>` credential, so it is redacted when echoed
+/// on its own.
+fn bearer_token(value: &str) -> Option<&str> {
+    let value = value.trim();
+    let (scheme, token) = value.split_once(' ')?;
+    let token = token.trim();
+    (scheme.eq_ignore_ascii_case("bearer") && !token.is_empty()).then_some(token)
 }
 
 /// Longest first, so a secret that contains another is replaced whole.

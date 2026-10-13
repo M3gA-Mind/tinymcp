@@ -183,6 +183,51 @@ fn resource_contents_lose_known_secrets_from_uri_and_mime_type() {
 }
 
 #[test]
+fn a_stored_bearer_credential_also_redacts_its_bare_token() {
+    let scrubber = SecretScrubber::new(&McpAuthConfig::None, "")
+        .with_secrets(["Bearer oauth-access-token-77".to_string()]);
+    let mut contents = vec![McpResourceContents {
+        uri: "ui://card".into(),
+        mime_type: None,
+        text: Some("<p>oauth-access-token-77</p><p>Bearer oauth-access-token-77</p>".into()),
+        blob: None,
+        meta: None,
+    }];
+
+    scrubber.scrub_resource_contents(&mut contents);
+
+    assert_eq!(
+        contents[0].text.as_deref(),
+        Some("<p>[redacted]</p><p>[redacted]</p>")
+    );
+}
+
+#[test]
+fn a_configured_bearer_header_also_redacts_its_bare_token() {
+    let scrubber = SecretScrubber::new(
+        &McpAuthConfig::Header {
+            name: "Authorization".into(),
+            value: "bearer header-access-token-88".into(),
+        },
+        "https://example.com/mcp",
+    );
+
+    assert_eq!(
+        scrubber.scrub("echo header-access-token-88"),
+        "echo [redacted]"
+    );
+}
+
+#[test]
+fn a_value_without_a_bearer_scheme_registers_only_itself() {
+    let scrubber = SecretScrubber::new(&McpAuthConfig::None, "")
+        .with_secrets(["Token plain-value-99".to_string(), "Bearer ".to_string()]);
+
+    assert_eq!(scrubber.scrub("plain-value-99"), "plain-value-99");
+    assert_eq!(scrubber.scrub("Token plain-value-99"), "[redacted]");
+}
+
+#[test]
 fn an_empty_scrubber_leaves_resource_contents_untouched() {
     let scrubber = SecretScrubber::new(&McpAuthConfig::None, "https://example.com/mcp");
     let original = McpResourceContents {

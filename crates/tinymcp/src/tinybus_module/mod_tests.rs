@@ -2084,6 +2084,39 @@ async fn reading_an_installed_servers_resource_returns_its_contents_verbatim() {
 }
 
 #[tokio::test]
+async fn reading_an_installed_servers_resource_redacts_the_bare_stored_bearer_token() {
+    let directory = tempfile::tempdir().unwrap();
+    let url = mock_mcp_app_server().await;
+    let service = service_at(directory.path(), "http://127.0.0.1:1");
+    service
+        .dynamic()
+        .store()
+        .insert_server(&remote_install("srv-1", &url))
+        .unwrap();
+    service
+        .dynamic()
+        .store()
+        .set_env_values(
+            "srv-1",
+            &std::collections::BTreeMap::from([(
+                "Authorization".to_string(),
+                "Bearer mcp-app-resource-secret-55".to_string(),
+            )]),
+        )
+        .unwrap();
+    ok(&service, names::methods::CONNECT, json!(["srv-1"])).await;
+
+    let contents = ok(
+        &service,
+        names::methods::READ_RESOURCE,
+        json!(["srv-1", "ui://weather/secret.html"]),
+    )
+    .await;
+
+    assert_eq!(contents[0]["text"], json!("<p>[redacted]</p>"));
+}
+
+#[tokio::test]
 async fn reading_an_oversized_resource_is_refused_by_name() {
     let directory = tempfile::tempdir().unwrap();
     let url = mock_mcp_app_server().await;
