@@ -162,17 +162,16 @@ impl ConfiguredLifecycle {
         let State::StartingOpen { config, previous } = self.state.clone() else {
             return;
         };
-        self.state = match reply {
-            Ok(receipt) => State::Opening {
+        if let Ok(receipt) = reply {
+            self.state = State::Opening {
                 config,
                 previous,
                 receipt,
-            },
-            Err(()) => {
-                self.retried_terminal = false;
-                previous.map_or(State::Closed, State::Open)
-            }
-        };
+            };
+        } else {
+            self.retried_terminal = false;
+            self.state = previous.map_or(State::Closed, State::Open);
+        }
     }
 
     /// Records a polled status for the open receipt.

@@ -65,7 +65,7 @@ fn retired_and_reserved_directories_are_unavailable() {
     assert_eq!(admit(&table, dir).unwrap_err(), AdmitError::Unavailable);
     let reservation = table.reservation_for(dir);
     assert!(table.cleanup_pending(dir));
-    assert!(table.finish_cleanup(dir, Some(client), reservation));
+    assert!(table.finish_cleanup(dir, Some(&client), &reservation));
     assert!(!table.close_pending(dir));
     assert!(admit(&table, dir).is_ok());
 }
@@ -75,17 +75,17 @@ fn failed_action_keeps_client_and_reservation_for_retry() {
     let table = ClientTable::new();
     let dir = Path::new("/w/a");
     let client = admit(&table, dir).unwrap();
-    table.retire(dir);
+    let _ = table.retire(dir);
     let attempts = Arc::new(AtomicUsize::new(0));
     let seen = Arc::clone(&attempts);
     let reservation = table.reservation_with_action(
         dir,
         Arc::new(move || seen.fetch_add(1, Ordering::SeqCst) > 0),
     );
-    assert!(!table.finish_cleanup(dir, Some(Arc::clone(&client)), Arc::clone(&reservation)));
+    assert!(!table.finish_cleanup(dir, Some(&client), &reservation));
     assert!(table.cleanup_pending(dir));
     assert_eq!(table.snapshot().len(), 1);
-    assert!(table.finish_cleanup(dir, Some(client), reservation));
+    assert!(table.finish_cleanup(dir, Some(&client), &reservation));
     assert!(table.snapshot().is_empty());
     assert!(!table.cleanup_pending(dir));
 }
@@ -97,7 +97,7 @@ fn a_stale_close_cannot_evict_a_replacement_entry() {
     let old = admit(&table, dir).unwrap();
     let reservation = table.reservation_for(dir);
     table.insert(dir.to_path_buf(), Arc::new(Client::default()));
-    assert!(!table.finish_cleanup(dir, Some(old), reservation));
+    assert!(!table.finish_cleanup(dir, Some(&old), &reservation));
     assert_eq!(table.snapshot().len(), 1);
 }
 
@@ -106,7 +106,7 @@ fn the_cleanup_action_may_use_the_table() {
     let table = Arc::new(ClientTable::new());
     let dir = Path::new("/w/a");
     let client = admit(&table, dir).unwrap();
-    table.retire(dir);
+    let _ = table.retire(dir);
     let inner = Arc::clone(&table);
     let reservation = table.reservation_with_action(
         dir,
@@ -115,7 +115,7 @@ fn the_cleanup_action_may_use_the_table() {
             inner.cleanup_pending(Path::new("/w/a"))
         }),
     );
-    assert!(table.finish_cleanup(dir, Some(client), reservation));
+    assert!(table.finish_cleanup(dir, Some(&client), &reservation));
 }
 
 #[test]
@@ -124,14 +124,14 @@ fn orphaned_reservations_are_retried_and_a_first_action_wins() {
     let dir = Path::new("/w/a");
     let runs = Arc::new(AtomicUsize::new(0));
     let first = Arc::clone(&runs);
-    table.reservation_with_action(
+    let _ = table.reservation_with_action(
         dir,
         Arc::new(move || {
             first.fetch_add(1, Ordering::SeqCst);
             true
         }),
     );
-    table.reservation_with_action(dir, Arc::new(|| false));
+    let _ = table.reservation_with_action(dir, Arc::new(|| false));
     table.retry_orphaned();
     assert_eq!(runs.load(Ordering::SeqCst), 1);
     assert!(!table.cleanup_pending(dir));
@@ -142,7 +142,7 @@ fn closed_clients_finish_synchronously_and_open_ones_do_not() {
     let table = ClientTable::new();
     let dir = Path::new("/w/a");
     let client = admit(&table, dir).unwrap();
-    table.retire(dir);
+    let _ = table.retire(dir);
     let reservation = table.reservation_for(dir);
     assert_eq!(
         table.finish_if_closed(dir, &client, &reservation, || false),

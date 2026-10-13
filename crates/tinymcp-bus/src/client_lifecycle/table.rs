@@ -132,7 +132,6 @@ impl<C: Retire> ClientTable<C> {
     }
 
     /// Marks the exact cached client for `dir` retiring and returns it.
-    #[must_use]
     pub fn retire(&self, dir: &Path) -> Option<Arc<C>> {
         let clients = lock(&self.clients);
         let client = clients.get(dir)?;
@@ -141,7 +140,6 @@ impl<C: Retire> ClientTable<C> {
     }
 
     /// The current reservation for `dir`, created if absent.
-    #[must_use]
     pub fn reservation_for(&self, dir: &Path) -> Arc<CleanupReservation> {
         let mut reservations = lock(&self.reservations);
         Arc::clone(
@@ -152,7 +150,6 @@ impl<C: Retire> ClientTable<C> {
     }
 
     /// A reservation for `dir` carrying `action`, kept if one is already set.
-    #[must_use]
     pub fn reservation_with_action(
         &self,
         dir: &Path,
@@ -182,8 +179,7 @@ impl<C: Retire> ClientTable<C> {
         reservation: &Arc<CleanupReservation>,
         is_closed: impl FnOnce() -> bool,
     ) -> Option<bool> {
-        is_closed()
-            .then(|| self.finish_cleanup(dir, Some(Arc::clone(client)), Arc::clone(reservation)))
+        is_closed().then(|| self.finish_cleanup(dir, Some(client), reservation))
     }
 
     /// Runs the reservation's action and drops the client and reservation.
@@ -194,25 +190,23 @@ impl<C: Retire> ClientTable<C> {
     pub fn finish_cleanup(
         &self,
         dir: &Path,
-        client: Option<Arc<C>>,
-        reservation: Arc<CleanupReservation>,
+        client: Option<&Arc<C>>,
+        reservation: &Arc<CleanupReservation>,
     ) -> bool {
         let after_close = lock(&reservation.after_close);
         let is_current = lock(&self.reservations)
             .get(dir)
-            .is_some_and(|stored| Arc::ptr_eq(stored, &reservation));
+            .is_some_and(|stored| Arc::ptr_eq(stored, reservation));
         if !is_current {
             return false;
         }
-        if let Some(client) = client.as_ref() {
-            if !self.owns(dir, client) {
-                return false;
-            }
+        if client.is_some_and(|client| !self.owns(dir, client)) {
+            return false;
         }
         if after_close.as_ref().is_some_and(|action| !action()) {
             return false;
         }
-        if let Some(client) = client.as_ref() {
+        if let Some(client) = client {
             let mut clients = lock(&self.clients);
             if !clients
                 .get(dir)
@@ -225,7 +219,7 @@ impl<C: Retire> ClientTable<C> {
         let mut reservations = lock(&self.reservations);
         if reservations
             .get(dir)
-            .is_some_and(|stored| Arc::ptr_eq(stored, &reservation))
+            .is_some_and(|stored| Arc::ptr_eq(stored, reservation))
         {
             reservations.remove(dir);
             true
@@ -242,7 +236,7 @@ impl<C: Retire> ClientTable<C> {
             .collect();
         for (dir, reservation) in reservations {
             if !lock(&self.clients).contains_key(&dir) {
-                self.finish_cleanup(&dir, None, reservation);
+                self.finish_cleanup(&dir, None, &reservation);
             }
         }
     }
