@@ -331,7 +331,7 @@ fn a_service_without_a_data_directory_never_asks_the_provider() {
 fn a_service_with_a_data_directory_creates_its_stores() {
     let directory = tempfile::tempdir().unwrap();
 
-    let _service = McpService::new(&ModuleConfig {
+    let service = McpService::new(&ModuleConfig {
         data_dir: Some(directory.path().to_path_buf()),
         client: McpClientConfig::default(),
     })
@@ -343,7 +343,7 @@ fn a_service_with_a_data_directory_creates_its_stores() {
         .ports_for(directory.path())
         .unwrap();
     assert!(!ports.has_state().unwrap());
-    _service
+    service
         .dynamic()
         .store()
         .insert_server(&remote_install("srv-1", "http://127.0.0.1:1/"))

@@ -22,10 +22,8 @@ impl Store {
                 for row in ports.documents.query_all(collection, &Query::all()).await? {
                     let mut doc = row.doc.clone();
                     for field in fields {
-                        if let Some(Value::Number(number)) = doc.get(*field).cloned() {
-                            if let Some(value) = number.as_i64() {
-                                doc[*field] = Value::from(value - age_ms);
-                            }
+                        if let Some(value) = doc.get(*field).and_then(Value::as_i64) {
+                            doc[*field] = Value::from(value - age_ms);
                         }
                     }
                     ports

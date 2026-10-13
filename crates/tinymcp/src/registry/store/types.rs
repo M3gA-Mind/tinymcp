@@ -417,19 +417,23 @@ impl Store {
                     let claim_id = hex_digest(name.as_bytes());
                     // Only the claim this install holds; another install of the
                     // same name may have taken it over.
-                    if let Some(claim) = documents.get(SERVER_NAMES, &claim_id).await? {
-                        if claim.doc.get("server_id").and_then(Value::as_str) == Some(id.as_str()) {
-                            documents
-                                .delete(SERVER_NAMES, &claim_id, claim.unchanged())
-                                .await
-                                .or_else(|error| {
-                                    if error.kind() == ErrorKind::Conflict {
-                                        Ok(false)
-                                    } else {
-                                        Err(error)
-                                    }
-                                })?;
-                        }
+                    let claim = documents
+                        .get(SERVER_NAMES, &claim_id)
+                        .await?
+                        .filter(|claim| {
+                            claim.doc.get("server_id").and_then(Value::as_str) == Some(id.as_str())
+                        });
+                    if let Some(claim) = claim {
+                        documents
+                            .delete(SERVER_NAMES, &claim_id, claim.unchanged())
+                            .await
+                            .or_else(|error| {
+                                if error.kind() == ErrorKind::Conflict {
+                                    Ok(false)
+                                } else {
+                                    Err(error)
+                                }
+                            })?;
                     }
                 }
                 Ok(removed)
