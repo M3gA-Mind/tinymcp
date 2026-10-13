@@ -120,7 +120,7 @@ async fn the_default_connect_routes_secrets_to_the_attested_host_store_only() {
     ports.prepare().unwrap();
     // An in-process broker cannot attest the caller, so the confidential
     // secret route is refused rather than silently served.
-    let refused = Store::open(ports).err().expect("secrets need attestation");
+    let refused = Store::open(ports).unwrap_err();
     assert!(refused.to_string().contains("NotAttested"), "{refused}");
 }
 
