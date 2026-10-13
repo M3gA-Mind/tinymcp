@@ -91,8 +91,8 @@ impl AuditStore {
     /// Lists recorded writes, most recent first.
     ///
     /// The query's bounds are applied through its `resolved_*` accessors, so a
-    /// caller cannot ask for an unbounded page. The stream is read from its
-    /// end in windows and stops once the page is full.
+    /// caller cannot ask for an unbounded page. The stream is read in windows and
+    /// filtered as it goes, so only matching records are held.
     ///
     /// # Errors
     ///
@@ -113,38 +113,24 @@ impl AuditStore {
             .run("listing audit records", move |ports| async move {
                 let end = ports.streams.len(AUDIT_STREAM).await?;
                 let mut matched: Vec<(u64, AuditEntry)> = Vec::new();
-                let mut skipped = 0usize;
-                let mut window_end = end;
-                'windows: while window_end > 0 {
-                    let from = window_end.saturating_sub(WINDOW as u64);
-                    let batch = ports
-                        .streams
-                        .read_window(
-                            AUDIT_STREAM,
-                            from,
-                            usize::try_from(window_end - from).unwrap_or(WINDOW),
-                        )
-                        .await?;
-                    for StreamEntry { offset, value } in batch.into_iter().rev() {
+                let mut from = 0u64;
+                while from < end {
+                    let batch = ports.streams.read_window(AUDIT_STREAM, from, WINDOW).await?;
+                    let Some(last) = batch.last().map(|entry| entry.offset) else {
+                        break;
+                    };
+                    for StreamEntry { offset, value } in batch {
                         let entry: AuditEntry = serde_json::from_value(value)
                             .map_err(|error| StorageError::serialization(error.to_string()))?;
                         let keep = since_ms.is_none_or(|since| entry.timestamp_ms >= since)
                             && client.as_deref().is_none_or(|c| entry.client_info == c)
                             && tool.as_deref().is_none_or(|t| entry.tool_name == t)
                             && (!success_only || entry.success);
-                        if !keep {
-                            continue;
-                        }
-                        if skipped < skip {
-                            skipped += 1;
-                            continue;
-                        }
-                        matched.push((offset, entry));
-                        if matched.len() >= wanted {
-                            break 'windows;
+                        if keep {
+                            matched.push((offset, entry));
                         }
                     }
-                    window_end = from;
+                    from = last + 1;
                 }
                 Ok(matched)
             })?;
@@ -171,7 +157,7 @@ impl AuditStore {
                 .cmp(&a.timestamp_ms)
                 .then_with(|| b.id.cmp(&a.id))
         });
-        Ok(records)
+        Ok(records.into_iter().skip(skip).take(wanted).collect())
     }
 }
 
