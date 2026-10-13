@@ -116,6 +116,11 @@ tinystoragedrivers-core = { git = "https://github.com/tinyhumansai/tinystoragedr
 # The `SecretStore` port: server environment values and OAuth bundles are kept
 # there, never in a document. Same tag as the core.
 tinystoragedrivers-secrets = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.7.0" }
+# The module-side storage bus: `connect_storage` over the module's TinyBus
+# connection, giving the same port traits the host serves. Used only by the
+# `module` feature (a cdylib reaches storage through the host, never a file).
+tinystoragedrivers-busproxy = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.7.0" }
+tinystoragedrivers-client = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.7.0" }
 # Locating a user's home directory, to find the version-manager shim
 # directories a desktop launch's stripped PATH leaves out.
 dirs = "7"
@@ -187,3 +192,8 @@ strip = "debuginfo"
 tinybus = { path = "vendor/tinybus/crates/tinybus" }
 tinybus-module = { path = "vendor/tinybus/crates/tinybus-module" }
 tinybus-macros = { path = "vendor/tinybus/crates/tinybus-macros" }
+
+# tinystoragedrivers names tinybus by git rev; point it at the same checkout so
+# the module's `Connection` and the storage transport's are one type.
+[patch."https://github.com/tinyhumansai/tinybus"]
+tinybus = { path = "vendor/tinybus/crates/tinybus" }
