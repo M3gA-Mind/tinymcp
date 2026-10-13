@@ -280,11 +280,32 @@ impl Store {
                     }
                     Err(error) => return Err(error),
                 }
+                let owns_claim = |held: Option<tinystoragedrivers_core::Versioned<Value>>| {
+                    held.filter(|claim| {
+                        claim.doc.get("server_id").and_then(Value::as_str) == Some(id.as_str())
+                    })
+                };
                 if let Err(error) = documents.put(SERVERS, &id, doc, Precondition::Absent).await {
-                    let _ = documents
-                        .delete(SERVER_NAMES, &claim_id, Precondition::None)
-                        .await;
+                    // Release only a claim that is still ours, at the version
+                    // we read, so a racing installer's takeover survives.
+                    if let Ok(held) = documents.get(SERVER_NAMES, &claim_id).await {
+                        if let Some(own) = owns_claim(held) {
+                            let _ = documents
+                                .delete(SERVER_NAMES, &claim_id, own.unchanged())
+                                .await;
+                        }
+                    }
                     return Err(error);
+                }
+                // A racing installer may have judged our claim stale (our
+                // server was not written yet) and taken it over. Re-read it:
+                // if it no longer names us, back out so one name never holds
+                // two installs.
+                let still_ours = owns_claim(documents.get(SERVER_NAMES, &claim_id).await?);
+                if still_ours.is_none() {
+                    tracing::debug!(server_id = %id, "install claim taken over; backing out");
+                    documents.delete(SERVERS, &id, Precondition::None).await?;
+                    return Ok(false);
                 }
                 Ok(true)
             })
