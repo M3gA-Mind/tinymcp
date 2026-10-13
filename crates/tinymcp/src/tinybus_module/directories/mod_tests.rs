@@ -38,6 +38,7 @@ impl std::ops::Deref for TestBus {
 /// Attaches the real linked module on a fresh in-memory bus. This exercises
 /// confidential request delivery through `TinyBus`'s normal attestation gate.
 async fn serve_root(config: &ModuleConfig) -> TestBus {
+    static INSTALL_ONCE: std::sync::Once = std::sync::Once::new();
     let bus = MemoryBus::new();
     let broker = tinybus::broker::Broker::new();
     let broker_task = broker.spawn(bus.clone());
@@ -45,11 +46,10 @@ async fn serve_root(config: &ModuleConfig) -> TestBus {
     // in-process bus has no attested storage host to give it secrets.
     // Installed once: the slot is process-wide, so replacing it per test would
     // swap the store out from under tests running in parallel.
-    static INSTALL_ONCE: std::sync::Once = std::sync::Once::new();
     INSTALL_ONCE.call_once(|| {
-        crate::storage::install_provider(std::sync::Arc::new(
-            crate::storage::MemoryProvider::new(),
-        ));
+        crate::storage::install_provider(
+            std::sync::Arc::new(crate::storage::MemoryProvider::new()),
+        );
     });
     let host = tinybus::module::ModuleHost::new(broker.clone());
     let module = test_linked_module().unwrap();
