@@ -107,13 +107,13 @@ pub fn not_connected_message(install: &ConnStatus, remedy: NotConnectedRemedy<'_
         || "it has to be connected before its tools can be listed".to_string(),
         |connect| format!("connect it first via {connect}"),
     );
-    let mut message = format!(
+    let base = format!(
         "server_id={} is {}; {how}",
         install.server_id,
         install.status.as_str(),
     );
-    if let Some(error) = &install.last_error {
-        message.push_str(&format!(" (last error: {error})"));
+    match &install.last_error {
+        Some(error) => format!("{base} (last error: {error})"),
+        None => base,
     }
-    message
 }

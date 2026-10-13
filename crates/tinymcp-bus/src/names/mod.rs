@@ -30,7 +30,7 @@
 //! `RegistrySearch`, `Install`, `HasStoredState`, `ConfigAssist`, the `Setup*`
 //! family, `StaticCallTool`, `PrepareBridgeTools` and `Open` are deliberately
 //! kept. They serve other hosts of the module (guided setup, one-shot installs,
-//! the unclassified static call, no-create state probes); OpenHuman reaches the
+//! the unclassified static call, no-create state probes); `OpenHuman` reaches the
 //! same behaviour through `RegistrySearchCurated`, `OpenConfigured`,
 //! `ConfigDocumentApply` and the classified variants. A host that does not call a
 //! member carries no duplicate of it, so keeping them costs the contract nothing
