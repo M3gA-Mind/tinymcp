@@ -18,10 +18,10 @@ use tinybus::Connection;
 use tinymcp_bus::{
     AuthDetection, ClassifiedStaticToolCall, ConfigApplyReport, ConfigApplyResponse,
     ConfiguredToolCallRequest, ConnStatus, ConnectOutcome, ConnectedServerOverview, InstallOutcome,
-    InstalledServer, McpTool, McpWriteListQuery, McpWriteRecord, NewMcpWriteRecord,
-    OpenConfiguredRequest, OpenConfiguredResponse, RegistrySearchPage, RegistrySettings,
-    ScrubStaticToolsRequest, SearchCuration, ServerArgumentRule, ServerArgumentsValidation,
-    ServerDetail, ToolCallOutcome, TransitionStatus, UpdateEnvOutcome,
+    InstalledServer, McpResourceContents, McpTool, McpWriteListQuery, McpWriteRecord,
+    NewMcpWriteRecord, OpenConfiguredRequest, OpenConfiguredResponse, RegistrySearchPage,
+    RegistrySettings, ScrubStaticToolsRequest, SearchCuration, ServerArgumentRule,
+    ServerArgumentsValidation, ServerDetail, ToolCallOutcome, TransitionStatus, UpdateEnvOutcome,
     ValidateServerArgumentsRequest,
 };
 
@@ -560,6 +560,30 @@ impl McpService {
         Ok(outcome)
     }
 
+    /// `(server_id, uri)` — one resource's contents, verbatim.
+    ///
+    /// Contents above `MAX_RESOURCE_BYTES` are refused with `ResourceTooLarge`.
+    async fn read_resource(
+        &self,
+        server_id: String,
+        uri: String,
+    ) -> tinybus::Result<Vec<McpResourceContents>> {
+        let secrets = self
+            .dynamic
+            .store()
+            .load_env_values(&server_id)
+            .map_err(|error| Self::failed(&error))?;
+        let scrubber = SecretScrubber::new(&tinymcp_bus::McpAuthConfig::None, "")
+            .with_secrets(secrets.into_values());
+        let mut contents = self
+            .dynamic
+            .read_resource(&server_id, &uri)
+            .await
+            .map_err(|error| Self::failed_scrubbed(&error, &scrubber))?;
+        scrubber.scrub_resource_contents(&mut contents);
+        Ok(contents)
+    }
+
     /// `(qualified_name)`
     ///
     /// Gathers what a model needs to help configure a server. Running the turn
@@ -849,6 +873,24 @@ impl McpService {
         let mut outcome = ToolCallOutcome::from(result);
         scrubber.scrub_tool_call_outcome(&mut outcome);
         Ok(outcome)
+    }
+
+    /// `(server, uri)` — one resource's contents, verbatim.
+    ///
+    /// Contents above `MAX_RESOURCE_BYTES` are refused with `ResourceTooLarge`.
+    async fn static_read_resource(
+        &self,
+        server: String,
+        uri: String,
+    ) -> tinybus::Result<Vec<McpResourceContents>> {
+        let scrubber = SecretScrubber::for_server(&self.static_servers, &server);
+        let mut contents = self
+            .static_servers
+            .read_resource(&server, &uri)
+            .await
+            .map_err(|error| Self::failed_scrubbed(&error, &scrubber))?;
+        scrubber.scrub_resource_contents(&mut contents);
+        Ok(contents)
     }
 
     /// `()` — returns the owner's fixed generic MCP bridge tool declarations.

@@ -96,6 +96,8 @@ fn every_served_member_is_reachable_by_its_contract_constant() {
         names::methods::CONFIG_DOCUMENT_APPLY,
         names::methods::HAS_STORED_STATE,
         names::methods::PREPARE_AGENT_TOOLS,
+        names::methods::READ_RESOURCE,
+        names::methods::STATIC_READ_RESOURCE,
     ] {
         assert!(has(member), "{member} is not served");
     }
@@ -2024,6 +2026,183 @@ async fn listing_an_installed_servers_tools_keeps_each_tools_meta() {
     assert_eq!(cached[0]["tools"][0]["_meta"], card);
 }
 
+/// A service with the app server at `url` installed as `srv-1` and connected.
+async fn service_with_connected_app_server(directory: &std::path::Path, url: &str) -> McpService {
+    let service = service_at(directory, "http://127.0.0.1:1");
+    service
+        .dynamic()
+        .store()
+        .insert_server(&remote_install("srv-1", url))
+        .unwrap();
+    ok(&service, names::methods::CONNECT, json!(["srv-1"])).await;
+    service
+}
+
+/// A service declaring the app server at `url` as the static server `apps`.
+fn service_with_static_app_server(url: &str) -> McpService {
+    McpService::new(&ModuleConfig {
+        data_dir: None,
+        client: McpClientConfig {
+            servers: vec![McpServerConfig {
+                name: "apps".into(),
+                endpoint: url.to_string(),
+                auth: tinymcp_bus::McpAuthConfig::BearerToken {
+                    token: "mcp-app-resource-secret-55".into(),
+                },
+                ..McpServerConfig::default()
+            }],
+            ..McpClientConfig::default()
+        },
+    })
+    .unwrap()
+}
+
+#[tokio::test]
+async fn reading_an_installed_servers_resource_returns_its_contents_verbatim() {
+    let directory = tempfile::tempdir().unwrap();
+    let url = mock_mcp_app_server().await;
+    let service = service_with_connected_app_server(directory.path(), &url).await;
+
+    let contents = ok(
+        &service,
+        names::methods::READ_RESOURCE,
+        json!(["srv-1", "ui://weather/card.html"]),
+    )
+    .await;
+
+    assert_eq!(
+        contents,
+        json!([{
+            "uri": "ui://weather/card.html",
+            "mimeType": "text/html;profile=mcp-app",
+            "text": "<p>sunny</p>",
+            "_meta": { "ui": { "prefersBorder": true } }
+        }])
+    );
+    let decoded: Vec<tinymcp_bus::McpResourceContents> = serde_json::from_value(contents).unwrap();
+    assert_eq!(decoded[0].text.as_deref(), Some("<p>sunny</p>"));
+}
+
+#[tokio::test]
+async fn reading_an_oversized_resource_is_refused_by_name() {
+    let directory = tempfile::tempdir().unwrap();
+    let url = mock_mcp_app_server().await;
+    let service = service_with_connected_app_server(directory.path(), &url).await;
+
+    let error = call(
+        &service,
+        names::methods::READ_RESOURCE,
+        json!(["srv-1", "ui://weather/huge.html"]),
+    )
+    .await
+    .expect_err("contents above the cap are refused");
+
+    assert_eq!(
+        wire_name(&error),
+        tinymcp_bus::errors::RESOURCE_TOO_LARGE,
+        "{error}"
+    );
+}
+
+#[tokio::test]
+async fn reading_an_unknown_resource_reports_the_servers_error() {
+    let directory = tempfile::tempdir().unwrap();
+    let url = mock_mcp_app_server().await;
+    let service = service_with_connected_app_server(directory.path(), &url).await;
+
+    let error = call(
+        &service,
+        names::methods::READ_RESOURCE,
+        json!(["srv-1", "ui://weather/missing.html"]),
+    )
+    .await
+    .expect_err("the server has no such resource");
+
+    assert_eq!(wire_name(&error), tinymcp_bus::errors::RPC, "{error}");
+    assert!(error.to_string().contains("resource not found"), "{error}");
+}
+
+#[tokio::test]
+async fn reading_a_resource_on_a_server_that_is_not_connected_says_so() {
+    let directory = tempfile::tempdir().unwrap();
+    let service = service_at(directory.path(), "http://127.0.0.1:1");
+
+    let not_connected = call(
+        &service,
+        names::methods::READ_RESOURCE,
+        json!(["srv-1", "ui://weather/card.html"]),
+    )
+    .await
+    .expect_err("nothing is connected");
+    let blank = call(
+        &service,
+        names::methods::READ_RESOURCE,
+        json!(["  ", "ui://weather/card.html"]),
+    )
+    .await
+    .expect_err("a blank identifier names nothing");
+
+    assert_eq!(
+        wire_name(&not_connected),
+        tinymcp_bus::errors::NOT_CONNECTED
+    );
+    assert_eq!(wire_name(&blank), tinymcp_bus::errors::UNKNOWN_SERVER);
+}
+
+#[tokio::test]
+async fn reading_a_static_servers_resource_redacts_its_configured_credential() {
+    let url = mock_mcp_app_server().await;
+    let service = service_with_static_app_server(&url);
+
+    let card = ok(
+        &service,
+        names::methods::STATIC_READ_RESOURCE,
+        json!(["apps", "ui://weather/card.html"]),
+    )
+    .await;
+    let secret = ok(
+        &service,
+        names::methods::STATIC_READ_RESOURCE,
+        json!(["apps", "ui://weather/secret.html"]),
+    )
+    .await;
+
+    assert_eq!(card[0]["text"], json!("<p>sunny</p>"));
+    assert_eq!(secret[0]["text"], json!("<p>[redacted]</p>"));
+}
+
+#[tokio::test]
+async fn reading_a_static_servers_resource_enforces_the_cap_and_unknown_names() {
+    let url = mock_mcp_app_server().await;
+    let service = service_with_static_app_server(&url);
+
+    let huge = call(
+        &service,
+        names::methods::STATIC_READ_RESOURCE,
+        json!(["apps", "ui://weather/huge.html"]),
+    )
+    .await
+    .expect_err("contents above the cap are refused");
+    let missing = call(
+        &service,
+        names::methods::STATIC_READ_RESOURCE,
+        json!(["apps", "ui://weather/missing.html"]),
+    )
+    .await
+    .expect_err("the server has no such resource");
+    let undeclared = call(
+        &service,
+        names::methods::STATIC_READ_RESOURCE,
+        json!(["nowhere", "ui://weather/card.html"]),
+    )
+    .await
+    .expect_err("the host never declared it");
+
+    assert_eq!(wire_name(&huge), tinymcp_bus::errors::RESOURCE_TOO_LARGE);
+    assert_eq!(wire_name(&missing), tinymcp_bus::errors::RPC);
+    assert_eq!(wire_name(&undeclared), tinymcp_bus::errors::UNKNOWN_SERVER);
+}
+
 #[tokio::test]
 async fn completing_a_sign_in_with_an_unknown_state_fails_by_name() {
     // The state is what the redirect carried back; one the module never issued
@@ -2213,6 +2392,29 @@ async fn mock_mcp_app_server() -> String {
                     },
                     { "name": "plain" }
                 ] }),
+                "resources/read" => match body["params"]["uri"].as_str().unwrap_or_default() {
+                    "ui://weather/card.html" => json!({ "contents": [{
+                        "uri": "ui://weather/card.html",
+                        "mimeType": "text/html;profile=mcp-app",
+                        "text": "<p>sunny</p>",
+                        "_meta": { "ui": { "prefersBorder": true } }
+                    }] }),
+                    "ui://weather/secret.html" => json!({ "contents": [{
+                        "uri": "ui://weather/secret.html",
+                        "text": "<p>mcp-app-resource-secret-55</p>"
+                    }] }),
+                    "ui://weather/huge.html" => json!({ "contents": [{
+                        "uri": "ui://weather/huge.html",
+                        "text": "x".repeat(tinymcp_bus::MAX_RESOURCE_BYTES + 1)
+                    }] }),
+                    _ => {
+                        return axum::Json(json!({
+                            "jsonrpc": "2.0",
+                            "id": body["id"].clone(),
+                            "error": { "code": -32002, "message": "resource not found" }
+                        }));
+                    }
+                },
                 _ => json!({}),
             };
             axum::Json(json!({ "jsonrpc": "2.0", "id": body["id"].clone(), "result": result }))

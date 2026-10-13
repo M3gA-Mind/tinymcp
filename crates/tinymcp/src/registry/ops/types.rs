@@ -16,9 +16,10 @@ use crate::registry::{
 };
 use tinymcp_bus::{
     AuthDetection, ConnStatus, ConnectOutcome, ConnectedServerOverview, InstallOutcome,
-    InstalledServer, McpClientIdentityConfig, McpProxyConfig, McpRegistryAuthConfig, McpTool,
-    RegistryFreshness, RegistrySearchPage, RegistryServerDetail, RegistrySettings, SearchCuration,
-    ToolCallOutcome, Transport, UpdateEnvOutcome, UpdateEnvStatus,
+    InstalledServer, McpClientIdentityConfig, McpProxyConfig, McpRegistryAuthConfig,
+    McpResourceContents, McpTool, RegistryFreshness, RegistrySearchPage, RegistryServerDetail,
+    RegistrySettings, SearchCuration, ToolCallOutcome, Transport, UpdateEnvOutcome,
+    UpdateEnvStatus,
 };
 
 /// The separator a source-routed name uses.
@@ -745,6 +746,24 @@ impl McpRegistry {
             .await?;
 
         Ok(ToolCallOutcome::from(result))
+    }
+
+    /// Reads one resource of a connected server, verbatim.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::UnknownServer`] when the identifier is blank,
+    /// [`Error::NotConnected`] when the server has no live connection,
+    /// [`Error::ResourceTooLarge`] when the contents exceed
+    /// [`tinymcp_bus::MAX_RESOURCE_BYTES`], plus whatever the transport
+    /// returns.
+    pub async fn read_resource(
+        &self,
+        server_id: &str,
+        uri: &str,
+    ) -> Result<Vec<McpResourceContents>> {
+        let server_id = require_non_empty(server_id, "server_id")?;
+        self.connections.read_resource(server_id, uri).await
     }
 
     /// Gathers what a model would need to help a user configure a server.

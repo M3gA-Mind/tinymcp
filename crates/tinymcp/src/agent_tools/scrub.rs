@@ -11,7 +11,7 @@
 use base64::Engine as _;
 use serde_json::Value;
 use tinymcp_bus::McpAuthConfig;
-use tinymcp_bus::{McpToolContent, ToolCallOutcome};
+use tinymcp_bus::{McpResourceContents, McpToolContent, ToolCallOutcome};
 #[cfg(feature = "tools")]
 use tinytools::{ToolContent, ToolResult};
 
@@ -244,6 +244,23 @@ impl SecretScrubber {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Resource contents with known secrets replaced in their text and `_meta`.
+    ///
+    /// A base64 blob is left as the server sent it.
+    pub fn scrub_resource_contents(&self, contents: &mut [McpResourceContents]) {
+        if self.secrets.is_empty() {
+            return;
+        }
+        for part in contents {
+            if let Some(text) = part.text.as_mut() {
+                *text = self.scrub(text);
+            }
+            if let Some(meta) = part.meta.as_mut() {
+                self.scrub_value(meta);
+            }
         }
     }
 
