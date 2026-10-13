@@ -257,3 +257,19 @@ fn futures_executor_block<F: std::future::Future>(future: F) -> F::Output {
         .unwrap()
         .block_on(future)
 }
+
+#[test]
+fn a_sync_state_that_cannot_be_read_fails_the_page_and_the_finish() {
+    let store = store();
+    store.put_raw(
+        crate::storage::REGISTRY_INDEX_STATE,
+        &hex_digest(SOURCE.as_bytes()),
+        serde_json::json!({"unexpected": true}),
+    );
+    assert!(
+        store
+            .store_index_page(SOURCE, &[row("a/one", "a/one one", "first")], None)
+            .is_err()
+    );
+    assert!(store.finish_index_sync(SOURCE).is_err());
+}
