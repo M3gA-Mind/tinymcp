@@ -26,7 +26,6 @@ use crate::storage::{REGISTRY_INDEX, REGISTRY_INDEX_STATE};
 /// How many index documents one batch writes.
 const BATCH: usize = 100;
 /// The longest prefix of a word the search text carries.
-const MAX_PREFIX: usize = 12;
 /// How many candidates one index search asks the port for.
 
 /// One server, ready to be written to the index.
