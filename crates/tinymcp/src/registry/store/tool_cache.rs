@@ -127,7 +127,7 @@ impl Store {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Store`] when the write fails.
+    /// Returns [`crate::Error::Store`] when the write fails.
     pub fn put_cached_tools(
         &self,
         server_key: &str,
@@ -172,7 +172,7 @@ impl Store {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Store`] when the query fails or the row cannot be
+    /// Returns [`crate::Error::Store`] when the query fails or the row cannot be
     /// decoded.
     pub fn cached_tools(&self, server_key: &str, fingerprint: &str) -> Result<Option<CachedTools>> {
         let fingerprint = self.keyed_cache_fingerprint(fingerprint);
@@ -200,7 +200,7 @@ impl Store {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Store`] when the delete fails.
+    /// Returns [`crate::Error::Store`] when the delete fails.
     pub fn forget_cached_tools(&self, server_key: &str) -> Result<bool> {
         let id = hex_digest(server_key.as_bytes());
         self.ports

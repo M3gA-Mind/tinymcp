@@ -14,12 +14,23 @@
 //! stay until a sync finishes, at which point any server it did not see again
 //! is removed.
 
-use std::fmt::Write as _;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use tinystoragedrivers_core::{
+    Capability, DocumentStore, Filter, Precondition, Query, WriteOp,
+};
 
-use rusqlite::{OptionalExtension as _, params, params_from_iter};
-
+use super::tool_cache::hex_digest;
 use super::types::{Store, now_ms};
-use crate::error::{Error, Result};
+use crate::error::Result;
+use crate::storage::{REGISTRY_INDEX, REGISTRY_INDEX_STATE};
+
+/// How many index documents one batch writes.
+const BATCH: usize = 100;
+/// The longest prefix of a word the search text carries.
+const MAX_PREFIX: usize = 12;
+/// How many candidates one index search asks the port for.
+const SEARCH_CANDIDATES: usize = 5_000;
 
 /// One server, ready to be written to the index.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,31 +80,86 @@ impl IndexState {
     }
 }
 
+/// One index document: the row plus the text the port searches.
+#[derive(Debug, Serialize, Deserialize)]
+struct IndexDoc {
+    source: String,
+    qualified_name: String,
+    label: String,
+    description: String,
+    record_json: String,
+    synced_at: i64,
+    search: String,
+}
+
+/// One catalog's sync state as stored.
+#[derive(Debug, Serialize, Deserialize)]
+struct StateDoc {
+    source: String,
+    base_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cursor: Option<String>,
+    #[serde(default)]
+    pages: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    started_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    synced_at: Option<i64>,
+}
+
+fn index_id(source: &str, qualified_name: &str) -> String {
+    hex_digest(format!("{source}\0{qualified_name}").as_bytes())
+}
+
+/// The text a document is searched by: the words of the label and
+/// description, each with its prefixes, so a partly typed word still matches
+/// whatever tokenizer the backend uses.
+fn search_text(label: &str, description: &str) -> String {
+    let mut words: Vec<String> = Vec::new();
+    for word in label
+        .split(|c: char| !c.is_alphanumeric())
+        .chain(description.split(|c: char| !c.is_alphanumeric()))
+        .filter(|word| !word.is_empty())
+    {
+        let word = word.to_lowercase();
+        let characters: Vec<char> = word.chars().collect();
+        for end in 2..=characters.len().min(MAX_PREFIX) {
+            words.push(characters[..end].iter().collect());
+        }
+        if characters.len() > MAX_PREFIX {
+            words.push(word);
+        }
+    }
+    words.sort();
+    words.dedup();
+    words.join(" ")
+}
+
 impl Store {
     /// Where `source`'s index stands, or `None` when no sync has begun.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Store`] when the query fails.
+    /// Returns [`crate::Error::Store`] when the query fails.
     pub(crate) fn index_state(&self, source: &str) -> Result<Option<IndexState>> {
-        self.connection
-            .lock()
-            .query_row(
-                "SELECT base_url, cursor, pages, started_at, synced_at
-                 FROM mcp_registry_index_state WHERE source = ?1",
-                params![source],
-                |row| {
-                    Ok(IndexState {
-                        base_url: row.get(0)?,
-                        cursor: row.get(1)?,
-                        pages: row.get(2)?,
-                        started_at: row.get(3)?,
-                        synced_at: row.get(4)?,
-                    })
-                },
-            )
-            .optional()
-            .map_err(|source| Error::store("reading the index state", source))
+        let id = hex_digest(source.as_bytes());
+        let found = self
+            .ports
+            .run("reading the index state", move |ports| async move {
+                ports.documents.get(REGISTRY_INDEX_STATE, &id).await
+            })?;
+        found
+            .map(|row| {
+                let state: StateDoc = serde_json::from_value(row.doc)?;
+                Ok(IndexState {
+                    base_url: state.base_url,
+                    cursor: state.cursor,
+                    pages: state.pages,
+                    started_at: state.started_at,
+                    synced_at: state.synced_at,
+                })
+            })
+            .transpose()
     }
 
     /// Starts a sync of `source` from its first page.
@@ -104,58 +170,55 @@ impl Store {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Store`] when a statement fails.
+    /// Returns [`crate::Error::Store`] when a write fails.
     pub(crate) fn begin_index_sync(&self, source: &str, base_url: &str) -> Result<()> {
-        let mut connection = self.connection.lock();
-        let transaction = connection
-            .transaction()
-            .map_err(|source| Error::store("beginning an index sync", source))?;
-
-        let previous_base: Option<String> = transaction
-            .query_row(
-                "SELECT base_url FROM mcp_registry_index_state WHERE source = ?1",
-                params![source],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|source| Error::store("reading the index state", source))?;
-        let same_catalog = previous_base.as_deref() == Some(base_url);
-
-        if !same_catalog {
-            transaction
-                .execute(
-                    "DELETE FROM mcp_registry_index WHERE source = ?1",
-                    params![source],
-                )
-                .map_err(|source| Error::store("clearing the index", source))?;
-        }
-
-        transaction
-            .execute(
-                "INSERT INTO mcp_registry_index_state
-                     (source, base_url, cursor, pages, started_at, synced_at)
-                 VALUES (?1, ?2, NULL, 0, ?3, NULL)
-                 ON CONFLICT(source) DO UPDATE SET
-                     base_url = excluded.base_url,
-                     cursor = NULL,
-                     pages = 0,
-                     started_at = excluded.started_at,
-                     synced_at = CASE WHEN ?4 THEN synced_at ELSE NULL END",
-                params![source, base_url, now_ms(), same_catalog],
-            )
-            .map_err(|source| Error::store("recording an index sync", source))?;
-
-        transaction
-            .commit()
-            .map_err(|source| Error::store("committing an index sync start", source))
+        let source = source.to_string();
+        let base_url = base_url.to_string();
+        let now = now_ms();
+        self.ports
+            .run("beginning an index sync", move |ports| async move {
+                let documents = ports.documents;
+                let id = hex_digest(source.as_bytes());
+                let previous = documents.get(REGISTRY_INDEX_STATE, &id).await?;
+                let previous: Option<StateDoc> = previous
+                    .map(|row| serde_json::from_value(row.doc))
+                    .transpose()
+                    .map_err(|error| {
+                        tinystoragedrivers_core::StorageError::serialization(error.to_string())
+                    })?;
+                let same_catalog = previous.as_ref().is_some_and(|state| state.base_url == base_url);
+                if !same_catalog {
+                    documents
+                        .delete_where(REGISTRY_INDEX, &Filter::eq("source", source.clone()))
+                        .await?;
+                }
+                let state = StateDoc {
+                    source,
+                    base_url,
+                    cursor: None,
+                    pages: 0,
+                    started_at: Some(now),
+                    synced_at: previous.and_then(|state| state.synced_at).filter(|_| same_catalog),
+                };
+                let value = serde_json::to_value(state).map_err(|error| {
+                    tinystoragedrivers_core::StorageError::serialization(error.to_string())
+                })?;
+                documents
+                    .put(REGISTRY_INDEX_STATE, &id, value, Precondition::None)
+                    .await
+                    .map(|_| ())
+            })
     }
 
     /// Writes one synced page of `source` and the cursor for the next.
     ///
+    /// The rows go in batches, then the cursor: a failure part way leaves the
+    /// cursor where it was, so the sync resumes at this page and rewrites
+    /// the same rows.
+    ///
     /// # Errors
     ///
-    /// Returns [`Error::Store`] when a statement fails; nothing from the page
-    /// is written then.
+    /// Returns [`crate::Error::Store`] when a write fails.
     pub(crate) fn store_index_page(
         &self,
         source: &str,
@@ -163,114 +226,213 @@ impl Store {
         next_cursor: Option<&str>,
     ) -> Result<()> {
         let now = now_ms();
-        let mut connection = self.connection.lock();
-        let transaction = connection
-            .transaction()
-            .map_err(|source| Error::store("beginning an index page", source))?;
-
+        let mut ops = Vec::with_capacity(rows.len());
         for row in rows {
-            transaction
-                .execute(
-                    "INSERT OR REPLACE INTO mcp_registry_index
-                         (source, qualified_name, label, description, record_json, synced_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![
-                        source,
-                        row.qualified_name,
-                        row.label,
-                        row.description,
-                        row.record_json,
-                        now
-                    ],
-                )
-                .map_err(|source| Error::store("writing an index row", source))?;
+            let doc = IndexDoc {
+                source: source.to_string(),
+                qualified_name: row.qualified_name.clone(),
+                label: row.label.clone(),
+                description: row.description.clone(),
+                record_json: row.record_json.clone(),
+                synced_at: now,
+                search: search_text(&row.label, &row.description),
+            };
+            ops.push(WriteOp::Put {
+                collection: REGISTRY_INDEX.to_string(),
+                id: index_id(source, &row.qualified_name),
+                doc: serde_json::to_value(doc)?,
+                precondition: Precondition::None,
+            });
         }
-
-        transaction
-            .execute(
-                "UPDATE mcp_registry_index_state SET cursor = ?2, pages = pages + 1
-                 WHERE source = ?1",
-                params![source, next_cursor],
-            )
-            .map_err(|source| Error::store("recording an index page", source))?;
-
-        transaction
-            .commit()
-            .map_err(|source| Error::store("committing an index page", source))
+        let source = source.to_string();
+        let next_cursor = next_cursor.map(ToString::to_string);
+        self.ports
+            .run("writing an index page", move |ports| async move {
+                let documents = ports.documents;
+                let atomic = documents.capabilities().contains(Capability::Transactions);
+                while !ops.is_empty() {
+                    let rest = ops.split_off(ops.len().min(BATCH));
+                    let chunk = std::mem::replace(&mut ops, rest);
+                    write_chunk(documents.as_ref(), chunk, atomic).await?;
+                }
+                let id = hex_digest(source.as_bytes());
+                let Some(found) = documents.get(REGISTRY_INDEX_STATE, &id).await? else {
+                    return Ok(());
+                };
+                let mut state: StateDoc = serde_json::from_value(found.doc.clone()).map_err(|error| {
+                    tinystoragedrivers_core::StorageError::serialization(error.to_string())
+                })?;
+                state.cursor = next_cursor;
+                state.pages += 1;
+                let value = serde_json::to_value(state).map_err(|error| {
+                    tinystoragedrivers_core::StorageError::serialization(error.to_string())
+                })?;
+                documents
+                    .put(REGISTRY_INDEX_STATE, &id, value, found.unchanged())
+                    .await
+                    .map(|_| ())
+            })
     }
 
     /// Finishes the sync of `source`, dropping every server it did not see.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Store`] when a statement fails.
+    /// Returns [`crate::Error::Store`] when a write fails.
     pub(crate) fn finish_index_sync(&self, source: &str) -> Result<()> {
-        let mut connection = self.connection.lock();
-        let transaction = connection
-            .transaction()
-            .map_err(|source| Error::store("finishing an index sync", source))?;
-
-        transaction
-            .execute(
-                "DELETE FROM mcp_registry_index WHERE source = ?1 AND synced_at < (
-                     SELECT started_at FROM mcp_registry_index_state WHERE source = ?1
-                 )",
-                params![source],
-            )
-            .map_err(|source| Error::store("pruning the index", source))?;
-        transaction
-            .execute(
-                "UPDATE mcp_registry_index_state
-                 SET cursor = NULL, pages = 0, started_at = NULL, synced_at = ?2
-                 WHERE source = ?1",
-                params![source, now_ms()],
-            )
-            .map_err(|source| Error::store("recording a finished index sync", source))?;
-
-        transaction
-            .commit()
-            .map_err(|source| Error::store("committing a finished index sync", source))
+        let source = source.to_string();
+        let now = now_ms();
+        self.ports
+            .run("finishing an index sync", move |ports| async move {
+                let documents = ports.documents;
+                let id = hex_digest(source.as_bytes());
+                let Some(found) = documents.get(REGISTRY_INDEX_STATE, &id).await? else {
+                    return Ok(());
+                };
+                let mut state: StateDoc = serde_json::from_value(found.doc.clone()).map_err(|error| {
+                    tinystoragedrivers_core::StorageError::serialization(error.to_string())
+                })?;
+                if let Some(started_at) = state.started_at {
+                    documents
+                        .delete_where(
+                            REGISTRY_INDEX,
+                            &Filter::eq("source", source.clone())
+                                .and(Filter::lt("synced_at", started_at)),
+                        )
+                        .await?;
+                }
+                state.cursor = None;
+                state.pages = 0;
+                state.started_at = None;
+                state.synced_at = Some(now);
+                let value = serde_json::to_value(state).map_err(|error| {
+                    tinystoragedrivers_core::StorageError::serialization(error.to_string())
+                })?;
+                documents
+                    .put(REGISTRY_INDEX_STATE, &id, value, found.unchanged())
+                    .await
+                    .map(|_| ())
+            })
     }
 
     /// Every indexed server of `source` matching each of `terms` in its label
     /// or description.
     ///
-    /// The terms are matched as given, so a caller lowercases them to match
-    /// the stored columns.
+    /// The port's text search finds the candidates (whole words and the
+    /// prefixes of words, ranked); each is then checked against every term as
+    /// a substring of its stored label or description, which is the matching
+    /// rule callers rely on. The terms are matched as given, so a caller
+    /// lowercases them to match the stored text.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Store`] when the query fails.
+    /// Returns [`crate::Error::Store`] when the query fails.
     pub(crate) fn search_index(&self, source: &str, terms: &[String]) -> Result<Vec<IndexHit>> {
-        let mut sql = String::from(
-            "SELECT qualified_name, record_json, label FROM mcp_registry_index WHERE source = ?1",
-        );
-        for position in 2..terms.len() + 2 {
-            // Writing into the buffer cannot fail.
-            let _ = write!(
-                sql,
-                " AND (instr(label, ?{position}) > 0 OR instr(description, ?{position}) > 0)"
-            );
+        let source = source.to_string();
+        let owned_terms = terms.to_vec();
+        let rows = self
+            .ports
+            .run("searching the index", move |ports| async move {
+                let documents = ports.documents;
+                let searchable: Vec<&str> = owned_terms
+                    .iter()
+                    .map(String::as_str)
+                    .filter(|term| term.chars().count() >= 2)
+                    .collect();
+                let mut found: Vec<Value> = Vec::new();
+                if searchable.is_empty() {
+                    // Nothing the text index can hold (no terms, or one letter
+                    // each): read the source's rows.
+                    let page = tinystoragedrivers_core::DocumentStoreExt::query_all(
+                        documents.as_ref(),
+                        REGISTRY_INDEX,
+                        &Query::filter(Filter::eq("source", source.clone())),
+                    )
+                    .await?;
+                    found.extend(page.into_iter().map(|row| row.doc));
+                } else {
+                    let hits = documents
+                        .search(REGISTRY_INDEX, &searchable.join(" "), SEARCH_CANDIDATES)
+                        .await?;
+                    for hit in hits {
+                        if let Some(row) = documents.get(REGISTRY_INDEX, &hit.id).await? {
+                            found.push(row.doc);
+                        }
+                    }
+                }
+                Ok(found)
+            })?;
+
+        let mut hits = Vec::new();
+        for doc in rows {
+            let row: IndexDoc = serde_json::from_value(doc)?;
+            if row.source != source {
+                continue;
+            }
+            let matches = terms.iter().all(|term| {
+                row.label.contains(term.as_str()) || row.description.contains(term.as_str())
+            });
+            if !matches {
+                continue;
+            }
+            hits.push(IndexHit {
+                in_label: terms.iter().all(|term| row.label.contains(term.as_str())),
+                qualified_name: row.qualified_name,
+                record_json: row.record_json,
+            });
         }
-
-        let connection = self.connection.lock();
-        let mut statement = connection
-            .prepare(&sql)
-            .map_err(|source| Error::store("preparing an index search", source))?;
-        let values = std::iter::once(source).chain(terms.iter().map(String::as_str));
-
-        statement
-            .query_map(params_from_iter(values), |row| {
-                let label: String = row.get(2)?;
-                Ok(IndexHit {
-                    qualified_name: row.get(0)?,
-                    in_label: terms.iter().all(|term| label.contains(term.as_str())),
-                    record_json: row.get(1)?,
-                })
-            })
-            .and_then(Iterator::collect)
-            .map_err(|source| Error::store("searching the index", source))
+        Ok(hits)
     }
+
+    /// Ages every index row of `source` by `age_ms`, for tests that need a
+    /// finished sync to look old.
+    #[cfg(test)]
+    pub(crate) fn backdate_index_state(&self, source: &str, age_ms: i64) {
+        let id = hex_digest(source.as_bytes());
+        let found = self
+            .ports
+            .run("reading the index state", move |ports| async move {
+                ports.documents.get(REGISTRY_INDEX_STATE, &id).await
+            })
+            .expect("the state reads")
+            .expect("the state exists");
+        let mut state: StateDoc = serde_json::from_value(found.doc).expect("a state row");
+        state.synced_at = Some(now_ms() - age_ms);
+        let id = hex_digest(source.as_bytes());
+        let doc = serde_json::to_value(state).expect("encodes");
+        self.ports
+            .run("writing the index state", move |ports| async move {
+                ports
+                    .documents
+                    .put(REGISTRY_INDEX_STATE, &id, doc, Precondition::None)
+                    .await
+                    .map(|_| ())
+            })
+            .expect("the state writes");
+    }
+}
+
+/// Writes one chunk of index documents, atomically when the backend can.
+async fn write_chunk(
+    documents: &dyn DocumentStore,
+    chunk: Vec<WriteOp>,
+    atomic: bool,
+) -> tinystoragedrivers_core::Result<()> {
+    if atomic {
+        return documents.atomic_batch(chunk).await.map(|_| ());
+    }
+    for op in chunk {
+        if let WriteOp::Put {
+            collection,
+            id,
+            doc,
+            precondition,
+        } = op
+        {
+            documents.put(&collection, &id, doc, precondition).await?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

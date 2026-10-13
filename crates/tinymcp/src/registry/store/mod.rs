@@ -1,50 +1,45 @@
 //! Persistence for installed servers, their credentials, and the browse cache.
 //!
-//! Six tables in one `SQLite` file, `mcp_clients/mcp_clients.db` under the data
-//! directory the host supplies:
+//! Written against the storage ports (see [`crate::storage`]); the module
+//! links no database. What goes where:
 //!
-//! | Table | Holds |
-//! | --- | --- |
-//! | `mcp_servers` | one row per installed server, with no credential values |
-//! | `mcp_client_env` | the credential values, keyed by server and name |
-//! | `mcp_registry_cache` | upstream browse responses, with a timestamp |
-//! | `mcp_tool_cache` | each server's last advertised tool list, keyed by a definition fingerprint |
-//! | `mcp_registry_index` | the local copy of the official catalog, one row per server |
-//! | `mcp_registry_index_state` | where that copy's sync stands |
+//! | Port | Name | Holds |
+//! | --- | --- | --- |
+//! | documents | `mcp_servers` | one document per installed server, with no credential values |
+//! | documents | `mcp_server_names` | one claim per qualified name, so installing a service twice is one install |
+//! | documents | `mcp_registry_cache` | upstream browse responses, with a timestamp |
+//! | documents | `mcp_tool_cache` | each server's last advertised tool list, keyed by a definition fingerprint |
+//! | documents | `mcp_registry_index` | the local copy of the official catalog, one document per server, searched with `DocumentStore::search` |
+//! | documents | `mcp_registry_index_state` | where that copy's sync stands |
+//! | secrets | `mcp_client_env/<server id>` | the server's environment values and OAuth bundle, one secret |
+//! | secrets | `mcp_cache_fingerprint_key` | the key the tool-cache fingerprints are keyed with |
 //!
-//! Tool-cache definition fingerprints are keyed before they are stored in
-//! `SQLite`. The per-store key lives in a separate owner-only sidecar file so a
-//! database copy alone cannot be used to test guesses for configured secrets.
+//! Tool-cache definition fingerprints are keyed before they are stored, with a
+//! key held in the secret store, so a copy of the documents alone cannot be
+//! used to test guesses for configured secrets.
 //!
-//! The filename and schema are unchanged from the code this was extracted
-//! from, so a user upgrading across the move keeps every server they installed.
-//!
-//! # Credentials live in their own table for a reason
+//! # Credentials live in the secret store for a reason
 //!
 //! [`InstalledServer`] carries the *names* of a server's environment variables
 //! and never their values. Install records are listed over the bus, rendered in
 //! user interfaces, and written to logs; the values are read only when a server
-//! is about to be spawned. Keeping them in a separate table means the type that
-//! travels cannot carry them even by accident.
+//! is about to be spawned. Keeping them in the secret store, encrypted by the
+//! host's driver and unreachable by a document query, means neither the type
+//! that travels nor a backend listing can carry them even by accident.
 //!
-//! # One connection, held
+//! # Legacy files
 //!
-//! The store owns its connection rather than opening one per call. That is
-//! faster, and it closes a race: the schema migration below is a
-//! check-then-alter, and the code this replaced opened a fresh connection for
-//! every operation, so several concurrent calls could each see a column as
-//! missing and then all race to add it. Every loser failed with "duplicate
-//! column name", which surfaced to users as a red banner on a page that was
-//! otherwise working.
+//! Earlier releases kept all of this in `mcp_clients/mcp_clients.db`. The
+//! module no longer reads it; importing an existing file belongs to the host,
+//! which reads it read-only and writes the records through these ports.
 //!
 //! [`InstalledServer`]: tinymcp_bus::InstalledServer
 
 pub(crate) mod index;
-pub(crate) mod schema;
 mod tool_cache;
 mod types;
 
-pub(crate) use tool_cache::fingerprint;
+pub(crate) use tool_cache::{fingerprint, hex_digest};
 pub use tool_cache::{CachedTools, installed_fingerprint, static_cache_key};
 pub use types::Store;
 pub(crate) use types::now_ms;
