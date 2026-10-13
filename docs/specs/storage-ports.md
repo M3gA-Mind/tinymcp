@@ -56,6 +56,26 @@ names, and refuses the rest.
 - Audit listing reads the stream in windows and filters, sorts and pages in
   memory, so ordering matches the previous SQL (`timestamp DESC, id DESC`).
 
+## Hosting as a loadable module
+
+Loaded as a `cdylib`, the module cannot reach the host's storage handles. When
+its configuration names a `data_dir` and the host has not installed a
+`StorageProvider` itself, `setup` connects to the host's
+`ai.tinyhumans.tinystorage.Storage` objects (`BusProvider`, over
+`tinystoragedrivers-busproxy::connect_storage`) and installs that as the
+provider. The host binds the scope from the broker-authenticated caller and
+enforces the grant above; the module never names a tenant. Every data
+directory answers the one host-bound scope. A host with no storage objects
+fails the load rather than falling back to memory, which would lose every
+install at the next restart. A host that links the module into its own
+process installs its own provider before `setup` and skips the bus.
+
+Secrets travel on the confidential route, which the broker completes only to
+an attested recipient. The host's storage objects must therefore be served by
+an attested artifact before a released module can use the bus provider in
+production; an in-process broker in tests cannot supply that, so the bus
+tests keep secrets in a local store.
+
 ## Not in this crate
 
 - Importing an existing `mcp_clients.db` / `mcp_audit.db`. The host reads the

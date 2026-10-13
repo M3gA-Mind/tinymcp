@@ -30,12 +30,16 @@
 //! given, so the same code serves a desktop user and one tenant of a cloud
 //! host.
 
+#[cfg(feature = "module")]
+mod bus;
 #[cfg(test)]
 mod failing;
 mod grant;
 mod ports;
 mod provider;
 
+#[cfg(feature = "module")]
+pub use bus::BusProvider;
 pub use grant::{
     AUDIT_STREAM, CACHE_KEY_SECRET, ENV_SECRET_PREFIX, StorageGrant, collection_specs, grant,
 };
@@ -43,7 +47,16 @@ pub(crate) use grant::{
     REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE, SERVER_NAMES, SERVERS, TOOL_CACHE,
 };
 pub use ports::StoragePorts;
-pub use provider::{MemoryProvider, StorageProvider, install_provider, installed_provider};
+pub use provider::{
+    MemoryProvider, StorageProvider, install_provider, installed_provider, provider_installed,
+};
+
+#[cfg(all(test, feature = "module"))]
+pub(crate) mod test_host;
+
+#[cfg(all(test, feature = "module"))]
+#[path = "bus_tests.rs"]
+mod bus_tests;
 
 #[cfg(test)]
 #[path = "mod_tests.rs"]

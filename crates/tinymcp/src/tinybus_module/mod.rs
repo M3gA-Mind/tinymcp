@@ -47,6 +47,66 @@ use crate::registry::SupervisorConfig;
 /// here as background work and `setup` does not wait for them, so a server that
 /// is down delays nothing. See [`maintenance`].
 pub(super) async fn setup(connection: Connection, config: ModuleConfig) -> TinyBusResult<()> {
+    // A module that keeps state reaches the host's storage over the bus; the
+    // host binds the scope and the grant. A host that linked the module into
+    // its own process and installed a provider has already chosen. Failing
+    // here fails the load, like any other missing dependency: falling back to
+    // memory would quietly lose every install at the next restart.
+    //
+    // Directory operations (`Open`, `OpenConfigured`, `HasStoredState`) build
+    // services over the installed provider whatever the load-time `data_dir`
+    // was, so a host with no root directory still needs host storage. There the
+    // storage is best-effort: a root with nothing to persist keeps working
+    // without it, and the failure is logged rather than failing the load.
+    let provider = if crate::storage::provider_installed() {
+        None
+    } else {
+        host_storage_for(connection.clone(), &config).await?
+    };
+    if let Some(provider) = provider {
+        crate::storage::install_provider(provider);
+    }
+    setup_over_installed_storage(connection, config).await
+}
+
+/// The host-storage provider to install for `config`, if one can be had.
+///
+/// `None` means the host has no storage to give a root that persists nothing,
+/// so directory operations stay on the in-memory default.
+pub(super) async fn host_storage_for(
+    connection: Connection,
+    config: &ModuleConfig,
+) -> TinyBusResult<Option<Arc<dyn crate::storage::StorageProvider>>> {
+    match bus_provider(connection).await {
+        Ok(provider) => Ok(Some(provider)),
+        Err(error) if config.data_dir.is_none() => {
+            tracing::warn!(
+                %error,
+                "tinymcp: host storage unavailable; directory operations stay in memory"
+            );
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// The provider that reaches the host's storage over `connection`.
+pub(super) async fn bus_provider(
+    connection: Connection,
+) -> TinyBusResult<Arc<dyn crate::storage::StorageProvider>> {
+    let provider = crate::storage::BusProvider::connect(connection)
+        .await
+        .map_err(|error| {
+            tinybus::Error::failed(format!("tinymcp could not reach host storage: {error}"))
+        })?;
+    Ok(Arc::new(provider))
+}
+
+/// [`setup`] over whatever storage provider is installed already.
+pub(super) async fn setup_over_installed_storage(
+    connection: Connection,
+    config: ModuleConfig,
+) -> TinyBusResult<()> {
     let supervisor = SupervisorConfig::default();
     let service = Arc::new(
         McpService::new(&config)
