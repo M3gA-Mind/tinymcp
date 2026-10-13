@@ -140,3 +140,47 @@ fn open_during_a_close_resolves_the_close_first() {
     m.close_polled(TransitionStatus::Complete);
     assert_eq!(m.open_step(&b), Step::CallOpen(b.clone()));
 }
+
+#[test]
+fn replies_and_polls_outside_their_state_change_nothing() {
+    let mut m = ConfiguredLifecycle::default();
+    m.open_replied(Ok(receipt("x")));
+    m.close_replied(Ok(Some("c".into())));
+    assert_eq!(m.open_polled(TransitionStatus::Complete), Poll::Continue);
+    assert_eq!(m.close_polled(TransitionStatus::Complete), Poll::Continue);
+    assert!(m.is_closed());
+    assert!(m.open_object().is_none());
+}
+
+#[test]
+fn close_before_the_open_reply_repeats_the_open_call() {
+    let mut m = ConfiguredLifecycle::new();
+    let a = config("a");
+    assert_eq!(m.open_step(&a), Step::CallOpen(a.clone()));
+    assert_eq!(m.open_step(&a), Step::CallOpen(a.clone()));
+    assert_eq!(m.close_step(), Step::CallOpen(a));
+}
+
+#[test]
+fn a_close_in_flight_is_repeated_or_polled_by_both_entry_points() {
+    let mut m = ConfiguredLifecycle::new();
+    let a = config("a");
+    open(&mut m, &a);
+    assert_eq!(m.close_step(), Step::CallClose);
+    assert_eq!(m.open_step(&a), Step::CallClose);
+    assert_eq!(m.close_step(), Step::CallClose);
+    m.close_replied(Ok(Some("c".into())));
+    assert_eq!(m.close_step(), Step::PollClose("c".into()));
+    assert_eq!(m.close_polled(TransitionStatus::Pending), Poll::Continue);
+    assert_eq!(m.close_step(), Step::PollClose("c".into()));
+}
+
+#[test]
+fn a_pending_open_is_polled_again_by_open_and_close() {
+    let mut m = ConfiguredLifecycle::new();
+    let a = config("a");
+    m.open_step(&a);
+    m.open_replied(Ok(receipt("1")));
+    assert_eq!(m.open_step(&a), Step::PollOpen("1".into()));
+    assert_eq!(m.close_step(), Step::PollOpen("1".into()));
+}

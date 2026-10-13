@@ -91,8 +91,10 @@ pub use config::{
 };
 pub use config_document::{AppliedServer, ConfigApplyReport, ConfigApplyResponse};
 pub use method::{
-    ConnectOutcome, InstallOutcome, RegistryFreshness, RegistrySearchPage, RegistrySettings,
-    SearchCuration, ServerDetail, ToolCallOutcome, UpdateEnvOutcome, UpdateEnvStatus,
+    ConnectOutcome, InstallOutcome, NotConnectedExplanation, NotConnectedRemedy, RegistryFreshness,
+    RegistrySearchPage, RegistrySettings, SearchCuration, ServerDetail, ToolCallOutcome,
+    UpdateEnvOutcome, UpdateEnvStatus, explain_not_connected, not_connected_message,
+    require_identifier,
 };
 pub use names::{DIRECTORY_OBJECT_PREFIX, INTERFACE, METHODS, OBJECT_PATH};
 pub use registry::{

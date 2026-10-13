@@ -25,6 +25,17 @@
 //! share every transport primitive underneath, and splitting them would
 //! multiply a host's connection bookkeeping without isolating anything.
 
+//! # Members a given host may not call
+//!
+//! `RegistrySearch`, `Install`, `HasStoredState`, `ConfigAssist`, the `Setup*`
+//! family, `StaticCallTool`, `PrepareBridgeTools` and `Open` are deliberately
+//! kept. They serve other hosts of the module (guided setup, one-shot installs,
+//! the unclassified static call, no-create state probes); `OpenHuman` reaches the
+//! same behaviour through `RegistrySearchCurated`, `OpenConfigured`,
+//! `ConfigDocumentApply` and the classified variants. A host that does not call a
+//! member carries no duplicate of it, so keeping them costs the contract nothing
+//! and removing them would be a major bump for every other host.
+
 /// The well-known interface name the module claims on the bus.
 pub const INTERFACE: &str = "ai.tinyhumans.tinymcp.Mcp";
 
