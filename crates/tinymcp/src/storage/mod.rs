@@ -30,12 +30,16 @@
 //! given, so the same code serves a desktop user and one tenant of a cloud
 //! host.
 
+#[cfg(feature = "module")]
+mod bus;
 #[cfg(test)]
 mod failing;
 mod grant;
 mod ports;
 mod provider;
 
+#[cfg(feature = "module")]
+pub use bus::BusProvider;
 pub use grant::{
     AUDIT_STREAM, CACHE_KEY_SECRET, ENV_SECRET_PREFIX, StorageGrant, collection_specs, grant,
 };
