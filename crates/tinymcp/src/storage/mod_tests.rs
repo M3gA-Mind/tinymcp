@@ -201,7 +201,12 @@ async fn failing_documents_refuse_every_call_except_declaring_collections() {
             .await
             .is_err()
     );
-    assert!(documents.delete("c", "1", Precondition::None).await.is_err());
+    assert!(
+        documents
+            .delete("c", "1", Precondition::None)
+            .await
+            .is_err()
+    );
     assert!(documents.query("c", &Query::default()).await.is_err());
     assert!(documents.count("c", &filter).await.is_err());
     assert!(documents.delete_where("c", &filter).await.is_err());

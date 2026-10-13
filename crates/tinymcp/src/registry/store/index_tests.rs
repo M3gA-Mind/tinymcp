@@ -242,7 +242,11 @@ fn a_backend_without_transactions_still_writes_every_document_of_a_chunk() {
     ];
     futures_executor_block(write_chunk(documents.as_ref(), ops, false)).unwrap();
     for id in ["1", "2"] {
-        assert!(futures_executor_block(documents.get("c", id)).unwrap().is_some());
+        assert!(
+            futures_executor_block(documents.get("c", id))
+                .unwrap()
+                .is_some()
+        );
     }
 }
 
