@@ -28,7 +28,6 @@ const BATCH: usize = 100;
 /// The longest prefix of a word the search text carries.
 const MAX_PREFIX: usize = 12;
 /// How many candidates one index search asks the port for.
-const SEARCH_CANDIDATES: usize = 5_000;
 
 /// One server, ready to be written to the index.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -339,32 +338,17 @@ impl Store {
             .ports
             .run("searching the index", move |ports| async move {
                 let documents = ports.documents;
-                let searchable: Vec<&str> = owned_terms
-                    .iter()
-                    .map(String::as_str)
-                    .filter(|term| term.chars().count() >= 2)
-                    .collect();
-                let mut found: Vec<Value> = Vec::new();
-                if searchable.is_empty() {
-                    // Nothing the text index can hold (no terms, or one letter
-                    // each): read the source's rows.
-                    let page = tinystoragedrivers_core::DocumentStoreExt::query_all(
-                        documents.as_ref(),
-                        REGISTRY_INDEX,
-                        &Query::filter(Filter::eq("source", source.clone())),
-                    )
-                    .await?;
-                    found.extend(page.into_iter().map(|row| row.doc));
-                } else {
-                    let hits = documents
-                        .search(REGISTRY_INDEX, &searchable.join(" "), SEARCH_CANDIDATES)
-                        .await?;
-                    for hit in hits {
-                        if let Some(row) = documents.get(REGISTRY_INDEX, &hit.id).await? {
-                            found.push(row.doc);
-                        }
-                    }
-                }
+                // The text index holds word prefixes only, so a term that sits
+                // inside a word (`ack` in `slack`) is not among its hits. The
+                // substring filter below is the contract, and candidates must
+                // be a superset of it: read the source's rows.
+                let page = tinystoragedrivers_core::DocumentStoreExt::query_all(
+                    documents.as_ref(),
+                    REGISTRY_INDEX,
+                    &Query::filter(Filter::eq("source", source.clone())),
+                )
+                .await?;
+                let found: Vec<Value> = page.into_iter().map(|row| row.doc).collect();
                 Ok(found)
             })?;
 

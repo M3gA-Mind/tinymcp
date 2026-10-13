@@ -109,7 +109,16 @@ impl StoragePorts {
                 .documents
                 .count(SERVERS, &tinystoragedrivers_core::Filter::default())
                 .await
-                .unwrap_or(0);
+                .or_else(|error| {
+                    // A collection never declared here holds nothing, and the
+                    // probe must not create it; any other failure (an
+                    // unavailable or refusing port) is not "no installs".
+                    if error.kind() == tinystoragedrivers_core::ErrorKind::NotFound {
+                        Ok(0)
+                    } else {
+                        Err(error)
+                    }
+                })?;
             let audited = ports.streams.len(super::grant::AUDIT_STREAM).await?;
             Ok(servers > 0 || audited > 0)
         })

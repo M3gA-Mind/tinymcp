@@ -315,7 +315,7 @@ fn a_service_whose_provider_has_no_storage_fails_to_build() {
             data_dir: Some(std::path::PathBuf::from("/srv/mcp")),
             client: McpClientConfig::default(),
         },
-        &RefusingProvider,
+        std::sync::Arc::new(RefusingProvider),
     )
     .expect_err("there is nowhere to keep state");
     assert!(matches!(error, crate::Error::Store { .. }), "{error}");
@@ -323,7 +323,7 @@ fn a_service_whose_provider_has_no_storage_fails_to_build() {
 
 #[test]
 fn a_service_without_a_data_directory_never_asks_the_provider() {
-    McpService::with_provider(&ModuleConfig::default(), &RefusingProvider)
+    McpService::with_provider(&ModuleConfig::default(), std::sync::Arc::new(RefusingProvider))
         .expect("an in-memory service needs no provider");
 }
 
