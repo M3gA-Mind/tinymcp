@@ -5,7 +5,7 @@ use crate::{McpClientConfig, OpenConfiguredResponse, TransitionStatus};
 
 fn config(tag: &str) -> McpClientConfig {
     let mut config = McpClientConfig::default();
-    config.registry.base_url = Some(tag.to_owned());
+    config.client_identity.name = tag.to_owned();
     config
 }
 
