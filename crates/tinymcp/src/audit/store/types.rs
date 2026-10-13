@@ -99,10 +99,17 @@ impl AuditStore {
     /// Returns [`Error::Store`] when the read fails, and
     /// [`Error::MalformedResponse`] when a bound would not fit.
     pub fn list(&self, query: &McpWriteListQuery) -> Result<Vec<McpWriteRecord>> {
-        let wanted = usize::try_from(query.resolved_limit())
-            .map_err(|_| Error::malformed("limit is too large"))?;
-        let skip = usize::try_from(query.resolved_offset())
-            .map_err(|_| Error::malformed("offset is too large"))?;
+        // Bounds past what a signed 64-bit integer holds are refused rather
+        // than wrapped: a bound that overflowed into a negative would turn a
+        // page request into "no limit".
+        let bound = |value: u64, field: &str| {
+            i64::try_from(value)
+                .ok()
+                .and_then(|value| usize::try_from(value).ok())
+                .ok_or_else(|| Error::malformed(format!("{field} is too large")))
+        };
+        let wanted = bound(query.resolved_limit(), "limit")?;
+        let skip = bound(query.resolved_offset(), "offset")?;
         let since_ms = query
             .since_ms
             .map(|since| {

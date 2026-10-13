@@ -149,3 +149,13 @@ fn the_counted_filter_default_selects_everything() {
         .unwrap();
     assert_eq!(counted, 0);
 }
+
+#[test]
+fn the_memory_provider_refuses_a_relative_directory() {
+    let provider = MemoryProvider::new();
+    assert!(matches!(
+        provider.ports_for(Path::new("relative/dir")),
+        Err(crate::Error::InvalidArgument { .. })
+    ));
+    assert!(provider.ports_for(Path::new("")).is_err());
+}

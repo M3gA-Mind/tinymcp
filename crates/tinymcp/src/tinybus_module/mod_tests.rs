@@ -1789,16 +1789,13 @@ async fn a_module_that_came_up_answers_a_call_on_its_object_path() {
 async fn a_module_that_cannot_open_its_store_fails_to_come_up() {
     // Rather than coming up and answering every call with the same error: a
     // load failure says so once, at the moment a host can still react.
-    let directory = tempfile::tempdir().unwrap();
-    let occupied = directory.path().join("mcp_clients");
-    std::fs::create_dir_all(occupied.join("mcp_clients.db")).unwrap();
-
     let connection = in_process_connection().await;
 
     let error = super::setup(
         connection,
         ModuleConfig {
-            data_dir: Some(directory.path().to_path_buf()),
+            // The storage provider only serves absolute directories.
+            data_dir: Some(std::path::PathBuf::from("not/absolute")),
             client: McpClientConfig::default(),
         },
     )

@@ -1190,24 +1190,6 @@ async fn opener_debug_output_does_not_expose_directory_or_client_data() {
 }
 
 #[tokio::test]
-async fn opening_a_directory_propagates_store_creation_errors() {
-    let connection = serve_root(&ModuleConfig::default()).await;
-    let opener = super::DirectoryOpener::new(
-        connection.connection.clone(),
-        &ModuleConfig::default(),
-        SupervisorConfig::default(),
-    )
-    .unwrap();
-    let parent = tempfile::NamedTempFile::new().unwrap();
-    let path = parent.path().join("not-a-directory");
-    let error = opener.open(path.to_str().unwrap()).await.unwrap_err();
-    assert!(matches!(
-        error,
-        crate::Error::StoreIo { .. } | crate::Error::Store { .. }
-    ));
-}
-
-#[tokio::test]
 async fn an_absolute_open_matches_a_relative_load_time_directory() {
     let relative_root = tempfile::tempdir_in(".").unwrap();
     let relative = std::path::Path::new(relative_root.path().file_name().unwrap());

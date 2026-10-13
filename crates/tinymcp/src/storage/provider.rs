@@ -27,7 +27,8 @@ pub trait StorageProvider: Send + Sync + std::fmt::Debug {
 /// An in-memory provider: one backend, one scope per directory.
 ///
 /// State lives as long as the provider, so reopening a directory in the same
-/// process finds what was written. Nothing is written to disk.
+/// process finds what was written. Nothing is written to disk. A directory
+/// must be an absolute path, as everywhere else the module takes one.
 #[derive(Debug, Default)]
 pub struct MemoryProvider {
     backend: MemoryStorage,
@@ -44,6 +45,11 @@ impl MemoryProvider {
 
 impl StorageProvider for MemoryProvider {
     fn ports_for(&self, data_dir: &Path) -> Result<StoragePorts> {
+        if !data_dir.is_absolute() {
+            return Err(crate::Error::invalid_argument(
+                "a data directory must be a non-empty absolute path",
+            ));
+        }
         let key = data_dir.to_string_lossy().into_owned();
         let mut opened = self.opened.lock();
         if let Some(ports) = opened.get(&key) {
