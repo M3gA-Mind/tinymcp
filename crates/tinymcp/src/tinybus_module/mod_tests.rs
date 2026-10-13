@@ -1767,7 +1767,7 @@ async fn setting_up_serves_the_interface_and_claims_its_name() {
     let directory = tempfile::tempdir().unwrap();
     let connection = in_process_connection().await;
 
-    super::setup(
+    super::setup_over_installed_storage(
         connection,
         ModuleConfig {
             data_dir: Some(directory.path().to_path_buf()),
@@ -1793,7 +1793,7 @@ async fn a_module_that_came_up_answers_a_call_on_its_object_path() {
     // belong to the connection, and a module's loader holds it for the module's
     // life. Dropping it here would release both before the call.
     let _serving = serving.clone();
-    super::setup(
+    super::setup_over_installed_storage(
         serving,
         ModuleConfig {
             data_dir: Some(directory.path().to_path_buf()),
@@ -1829,7 +1829,7 @@ async fn a_module_that_cannot_open_its_store_fails_to_come_up() {
     // load failure says so once, at the moment a host can still react.
     let connection = in_process_connection().await;
 
-    let error = super::setup(
+    let error = super::setup_over_installed_storage(
         connection,
         ModuleConfig {
             // An empty directory names nothing a provider could serve.
@@ -1883,7 +1883,7 @@ async fn a_module_loaded_with_no_configuration_comes_up() {
         .unwrap();
     let _serving = serving.clone();
 
-    super::setup(
+    super::setup_over_installed_storage(
         serving,
         serde_json::from_value(serde_json::Value::Null).expect("null decodes"),
     )
@@ -2245,7 +2245,7 @@ async fn a_module_comes_up_without_waiting_for_a_server_that_never_answers() {
     // The guard only bounds a failure; a passing run returns at once.
     tokio::time::timeout(
         std::time::Duration::from_secs(10),
-        super::setup(
+        super::setup_over_installed_storage(
             in_process_connection().await,
             ModuleConfig {
                 data_dir: Some(directory.path().to_path_buf()),
@@ -2643,4 +2643,28 @@ async fn the_stored_state_probe_asks_the_provider_the_service_was_built_over() {
         .await,
         json!(true)
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_module_with_a_data_directory_fails_to_come_up_without_host_storage() {
+    use tinybus::{broker::Broker, transport::memory::MemoryBus};
+
+    let bus = MemoryBus::new();
+    Broker::new().spawn(bus.clone());
+    let connection = tinybus::Connection::connect(bus.connect().await.unwrap())
+        .await
+        .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+
+    let error = super::setup(
+        connection,
+        ModuleConfig {
+            data_dir: Some(directory.path().to_path_buf()),
+            client: tinymcp_bus::McpClientConfig::default(),
+        },
+    )
+    .await
+    .unwrap_err();
+
+    assert!(error.to_string().contains("host storage"), "{error}");
 }

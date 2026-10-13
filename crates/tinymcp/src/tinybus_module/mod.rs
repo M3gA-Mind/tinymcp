@@ -47,7 +47,6 @@ use crate::registry::SupervisorConfig;
 /// here as background work and `setup` does not wait for them, so a server that
 /// is down delays nothing. See [`maintenance`].
 pub(super) async fn setup(connection: Connection, config: ModuleConfig) -> TinyBusResult<()> {
-    let supervisor = SupervisorConfig::default();
     // A module that keeps state reaches the host's storage over the bus; the
     // host binds the scope and the grant. Failing here fails the load, like
     // any other missing dependency: falling back to memory would quietly lose
@@ -60,6 +59,15 @@ pub(super) async fn setup(connection: Connection, config: ModuleConfig) -> TinyB
             })?;
         crate::storage::install_provider(Arc::new(provider));
     }
+    setup_over_installed_storage(connection, config).await
+}
+
+/// [`setup`] over whatever storage provider is installed already.
+pub(super) async fn setup_over_installed_storage(
+    connection: Connection,
+    config: ModuleConfig,
+) -> TinyBusResult<()> {
+    let supervisor = SupervisorConfig::default();
     let service = Arc::new(
         McpService::new(&config)
             .map_err(|error| tinybus::Error::failed(format!("tinymcp could not start: {error}")))?
