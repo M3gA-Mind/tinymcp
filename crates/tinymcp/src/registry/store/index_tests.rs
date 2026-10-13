@@ -190,3 +190,66 @@ fn a_search_is_scoped_to_its_source() {
         Vec::<&str>::new()
     );
 }
+
+#[test]
+fn a_page_or_finish_without_a_begun_sync_changes_nothing() {
+    let store = store();
+    store
+        .store_index_page(SOURCE, &[row("a/one", "a/one one", "first")], None)
+        .unwrap();
+    store.finish_index_sync(SOURCE).unwrap();
+    assert_eq!(store.index_state(SOURCE).unwrap(), None);
+}
+
+#[test]
+fn a_word_longer_than_the_prefix_limit_is_found_by_its_full_text() {
+    let store = store();
+    store.begin_index_sync(SOURCE, BASE).unwrap();
+    store
+        .store_index_page(
+            SOURCE,
+            &[row(
+                "a/long",
+                "a/long extraordinarilylongidentifier",
+                "desc",
+            )],
+            None,
+        )
+        .unwrap();
+    store.finish_index_sync(SOURCE).unwrap();
+    let hits = store
+        .search_index(SOURCE, &terms(&["extraordinarilylongidentifier"]), 10)
+        .unwrap();
+    assert_eq!(names(&hits), vec!["a/long"]);
+}
+
+#[test]
+fn a_backend_without_transactions_still_writes_every_document_of_a_chunk() {
+    let documents = crate::storage::StoragePorts::memory().unwrap().documents;
+    let ops = vec![
+        WriteOp::Put {
+            collection: "c".to_string(),
+            id: "1".to_string(),
+            doc: serde_json::json!({"n": 1}),
+            precondition: Precondition::None,
+        },
+        WriteOp::Put {
+            collection: "c".to_string(),
+            id: "2".to_string(),
+            doc: serde_json::json!({"n": 2}),
+            precondition: Precondition::None,
+        },
+    ];
+    futures_executor_block(write_chunk(documents.as_ref(), ops, false)).unwrap();
+    for id in ["1", "2"] {
+        assert!(futures_executor_block(documents.get("c", id)).unwrap().is_some());
+    }
+}
+
+fn futures_executor_block<F: std::future::Future>(future: F) -> F::Output {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(future)
+}
