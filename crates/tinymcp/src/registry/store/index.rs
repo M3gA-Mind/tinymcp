@@ -384,33 +384,6 @@ impl Store {
         }
         Ok(hits)
     }
-
-    /// Ages every index row of `source` by `age_ms`, for tests that need a
-    /// finished sync to look old.
-    #[cfg(test)]
-    pub(crate) fn backdate_index_state(&self, source: &str, age_ms: i64) {
-        let id = hex_digest(source.as_bytes());
-        let found = self
-            .ports
-            .run("reading the index state", move |ports| async move {
-                ports.documents.get(REGISTRY_INDEX_STATE, &id).await
-            })
-            .expect("the state reads")
-            .expect("the state exists");
-        let mut state: StateDoc = serde_json::from_value(found.doc).expect("a state row");
-        state.synced_at = Some(now_ms() - age_ms);
-        let id = hex_digest(source.as_bytes());
-        let doc = serde_json::to_value(state).expect("encodes");
-        self.ports
-            .run("writing the index state", move |ports| async move {
-                ports
-                    .documents
-                    .put(REGISTRY_INDEX_STATE, &id, doc, Precondition::None)
-                    .await
-                    .map(|_| ())
-            })
-            .expect("the state writes");
-    }
 }
 
 /// Writes one chunk of index documents, atomically when the backend can.

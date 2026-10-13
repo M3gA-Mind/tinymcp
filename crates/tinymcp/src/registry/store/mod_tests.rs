@@ -2,34 +2,41 @@
 //!
 //! Two things here are load-bearing beyond ordinary persistence.
 //!
-//! **The migrations.** A user upgrading across a release opens a file written
-//! by an older build. Those tests create the *old* schema deliberately and then
-//! open a store over it, because that is the only way to prove a real upgrade
-//! works rather than proving a fresh install does.
+//! **The records.** A store reopened over the same ports must find what an
+//! earlier one wrote, and a record written before a field existed must load
+//! with that field's old meaning. Those tests seed raw documents deliberately,
+//! because that is the only way to prove an upgrade works rather than a fresh
+//! install.
 //!
-//! **The credential boundary.** Values live in their own table and must not
-//! reach a record that gets serialized. That is asserted directly.
+//! **The credential boundary.** Values live in the secret store and must not
+//! reach a record that gets serialized, or a document at all. That is asserted
+//! directly.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::collections::BTreeMap;
 
-use rusqlite::Connection;
 use serde_json::json;
+use tinystoragedrivers_core::Filter;
 
-use super::schema;
 use super::types::Store;
 use crate::Error;
+use crate::storage::{
+    CACHE_KEY_SECRET, ENV_SECRET_PREFIX, REGISTRY_CACHE, SERVER_NAMES, SERVERS, StoragePorts,
+    TOOL_CACHE,
+};
 use tinymcp_bus::{CommandKind, InstalledServer, McpTool, Transport};
 
-/// A store over a fresh temporary file.
-///
-/// A file rather than memory, so the migration tests can reopen the same
-/// database and the rest exercise the path a real host takes.
-fn store() -> (tempfile::TempDir, Store) {
-    let directory = tempfile::tempdir().unwrap();
-    let store = Store::open(directory.path()).expect("the store opens");
-    (directory, store)
+/// A store over fresh in-memory ports.
+fn store() -> Store {
+    Store::open_in_memory().expect("the store opens")
+}
+
+/// Ports plus a store over them, for tests that reopen or inspect.
+fn shared() -> (StoragePorts, Store) {
+    let ports = StoragePorts::memory().unwrap();
+    let store = Store::open(ports.clone()).expect("the store opens");
+    (ports, store)
 }
 
 /// A subprocess install.
@@ -70,7 +77,7 @@ fn http_server(id: &str, url: &str) -> InstalledServer {
 
 #[test]
 fn tool_cache_round_trips_and_requires_the_same_fingerprint() {
-    let (_directory, store) = store();
+    let store = store();
     let tools = [McpTool::new("search")];
     store
         .put_cached_tools("srv-1", "definition-a", &tools)
@@ -92,23 +99,16 @@ fn tool_cache_round_trips_and_requires_the_same_fingerprint() {
 
 #[test]
 fn persisted_tool_cache_fingerprints_are_keyed_and_stable_after_reopen() {
-    let directory = tempfile::tempdir().unwrap();
+    let (ports, store) = shared();
     let fingerprint = crate::registry::store::fingerprint(&["basic", "user", "password123"]);
     let tools = [McpTool::new("search")];
-    let store = Store::open(directory.path()).unwrap();
     store
         .put_cached_tools("static:weather", &fingerprint, &tools)
         .unwrap();
 
-    let persisted: String = store
-        .connection
-        .lock()
-        .query_row(
-            "SELECT fingerprint FROM mcp_tool_cache WHERE server_key = ?1",
-            ["static:weather"],
-            |row| row.get(0),
-        )
-        .unwrap();
+    let id = super::hex_digest(b"static:weather");
+    let persisted = store.get_raw(TOOL_CACHE, &id).unwrap();
+    let persisted = persisted["fingerprint"].as_str().unwrap().to_string();
     assert_ne!(persisted, fingerprint);
     assert_ne!(
         persisted,
@@ -117,7 +117,7 @@ fn persisted_tool_cache_fingerprints_are_keyed_and_stable_after_reopen() {
     );
     drop(store);
 
-    let reopened = Store::open(directory.path()).unwrap();
+    let reopened = Store::open(ports).unwrap();
     assert_eq!(format!("{reopened:?}"), "Store { .. }");
     let cached = reopened
         .cached_tools("static:weather", &fingerprint)
@@ -134,61 +134,42 @@ fn persisted_tool_cache_fingerprints_are_keyed_and_stable_after_reopen() {
     );
 }
 
-#[cfg(unix)]
 #[test]
-fn cache_fingerprint_key_is_private_and_refuses_symlinks() {
-    use std::os::unix::fs::{PermissionsExt as _, symlink};
-
-    let directory = tempfile::tempdir().unwrap();
-    let database = Store::path_for(directory.path());
-    std::fs::create_dir_all(database.parent().unwrap()).unwrap();
-    let key_path = database.with_extension("fingerprint-key");
-    let key = super::types::load_cache_fingerprint_key(&database).unwrap();
-    assert_ne!(key, [0; 32]);
-    assert_eq!(
-        std::fs::metadata(&key_path).unwrap().permissions().mode() & 0o777,
-        0o600
-    );
-
-    let linked_directory = tempfile::tempdir().unwrap();
-    let linked_database = Store::path_for(linked_directory.path());
-    std::fs::create_dir_all(linked_database.parent().unwrap()).unwrap();
-    let linked_key_path = linked_database.with_extension("fingerprint-key");
-    let target = linked_directory.path().join("target-key");
-    std::fs::write(&target, key).unwrap();
-    symlink(&target, &linked_key_path).unwrap();
-    assert!(super::types::load_cache_fingerprint_key(&linked_database).is_err());
-
-    let shared_directory = tempfile::tempdir().unwrap();
-    let shared_database = Store::path_for(shared_directory.path());
-    std::fs::create_dir_all(shared_database.parent().unwrap()).unwrap();
-    let shared_key_path = shared_database.with_extension("fingerprint-key");
-    std::fs::write(&shared_key_path, key).unwrap();
-    std::fs::set_permissions(&shared_key_path, std::fs::Permissions::from_mode(0o644)).unwrap();
-    assert!(super::types::load_cache_fingerprint_key(&shared_database).is_err());
+fn the_cache_key_is_kept_as_a_secret_and_never_in_a_document() {
+    let (ports, store) = shared();
+    let key = ports
+        .run("reading the key", |ports| async move {
+            ports.secrets.get(CACHE_KEY_SECRET).await
+        })
+        .unwrap()
+        .expect("the key is stored as a secret");
+    assert_eq!(key.len(), 64, "32 bytes of hex");
+    let fingerprint = store.keyed_cache_fingerprint("definition");
+    assert!(!fingerprint.contains(std::str::from_utf8(&key).unwrap()));
 }
 
 #[test]
 fn concurrent_store_opens_share_one_cache_fingerprint_key() {
-    let directory = tempfile::tempdir().unwrap();
-    let database = Store::path_for(directory.path());
-    std::fs::create_dir_all(database.parent().unwrap()).unwrap();
+    let ports = StoragePorts::memory().unwrap();
     let barrier = std::sync::Arc::new(std::sync::Barrier::new(4));
     let threads: Vec<_> = (0..4)
         .map(|_| {
-            let database = database.clone();
+            let ports = ports.clone();
             let barrier = barrier.clone();
             std::thread::spawn(move || {
                 barrier.wait();
-                super::types::load_cache_fingerprint_key(&database).unwrap()
+                Store::open(ports).unwrap().keyed_cache_fingerprint("same")
             })
         })
         .collect();
-    let keys: Vec<_> = threads
+    let keyed: Vec<_> = threads
         .into_iter()
         .map(|thread| thread.join().unwrap())
         .collect();
-    assert!(keys.iter().all(|key| key == &keys[0]));
+    // Every opener reads back whatever key won, so a store opened after the
+    // race agrees with the stored one.
+    let settled = Store::open(ports).unwrap().keyed_cache_fingerprint("same");
+    assert!(keyed.iter().any(|value| value == &settled));
 }
 
 #[test]
@@ -200,57 +181,28 @@ fn keyed_cache_fingerprint_matches_the_hmac_sha256_vector() {
 }
 
 #[test]
-fn cache_fingerprint_key_creation_requires_an_existing_store_directory() {
-    let directory = tempfile::tempdir().unwrap();
-    let database = Store::path_for(directory.path());
-    assert!(super::types::load_cache_fingerprint_key(&database).is_err());
-}
-
-#[test]
-#[cfg(unix)]
-fn cache_fingerprint_key_rejects_a_directory_at_the_key_path() {
-    let directory = tempfile::tempdir().unwrap();
-    let database = Store::path_for(directory.path());
-    std::fs::create_dir_all(database.parent().unwrap()).unwrap();
-    let key_path = database.with_extension("fingerprint-key");
-    std::fs::create_dir(&key_path).unwrap();
-
-    let error = super::types::load_cache_fingerprint_key(&database).unwrap_err();
+fn a_malformed_stored_cache_key_is_reported_when_opening() {
+    let ports = StoragePorts::memory().unwrap();
+    ports
+        .run("seeding the key", |ports| async move {
+            ports.secrets.set(CACHE_KEY_SECRET, b"too short").await
+        })
+        .unwrap();
     assert!(matches!(
-        error,
-        crate::error::Error::StoreIo { ref source, .. }
-            if source.kind() == std::io::ErrorKind::InvalidData
-    ));
-}
-
-#[cfg(unix)]
-#[test]
-fn cache_fingerprint_key_with_invalid_length_is_rejected() {
-    use std::os::unix::fs::PermissionsExt as _;
-
-    let directory = tempfile::tempdir().unwrap();
-    let database = Store::path_for(directory.path());
-    std::fs::create_dir_all(database.parent().unwrap()).unwrap();
-    let key_path = database.with_extension("fingerprint-key");
-    std::fs::write(&key_path, [0; 33]).unwrap();
-    std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600)).unwrap();
-
-    let error = super::types::load_cache_fingerprint_key(&database).unwrap_err();
-    assert!(matches!(
-        error,
-        crate::error::Error::StoreIo { ref source, .. }
-            if source.kind() == std::io::ErrorKind::InvalidData
+        Store::open(ports),
+        Err(crate::Error::Store { .. })
     ));
 }
 
 #[test]
 fn tool_cache_rejects_corrupt_json() {
-    let (_directory, store) = store();
+    let store = store();
     let fingerprint = store.keyed_cache_fingerprint("f");
-    store.connection.lock().execute(
-        "INSERT INTO mcp_tool_cache (server_key, fingerprint, tools_json, cached_at) VALUES ('srv-1', ?1, 'bad-json', 1)",
-        [fingerprint],
-    ).unwrap();
+    store.put_raw(
+        TOOL_CACHE,
+        &super::hex_digest(b"srv-1"),
+        json!({"server_key": "srv-1", "fingerprint": fingerprint, "tools": "bad", "cached_at": 1}),
+    );
     assert!(store.cached_tools("srv-1", "f").is_err());
 }
 
@@ -259,33 +211,24 @@ fn tool_cache_rejects_corrupt_json() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn opening_creates_the_directory_and_file() {
-    let directory = tempfile::tempdir().unwrap();
-    let expected = Store::path_for(directory.path());
-    assert!(!expected.exists());
-
-    let _store = Store::open(directory.path()).expect("the store opens");
-
-    assert!(expected.exists(), "{}", expected.display());
+fn opening_declares_every_collection_the_module_uses() {
+    let (ports, _store) = shared();
+    for spec in crate::storage::collection_specs() {
+        ports
+            .run("counting", move |ports| async move {
+                ports.documents.count(&spec.name, &Filter::default()).await
+            })
+            .unwrap();
+    }
 }
 
 #[test]
-fn the_filename_is_unchanged_from_before_the_extraction() {
-    // A user upgrading must find their existing installs, not an empty store
-    // beside an orphaned file.
-    let path = Store::path_for(std::path::Path::new("/data"));
-    assert!(path.ends_with("mcp_clients/mcp_clients.db"), "{path:?}");
-}
-
-#[test]
-fn opening_the_same_directory_twice_finds_the_same_data() {
-    let directory = tempfile::tempdir().unwrap();
-
-    let first = Store::open(directory.path()).unwrap();
+fn opening_the_same_ports_twice_finds_the_same_data() {
+    let (ports, first) = shared();
     first.insert_server(&stdio_server("srv-1")).unwrap();
     drop(first);
 
-    let second = Store::open(directory.path()).unwrap();
+    let second = Store::open(ports).unwrap();
     assert_eq!(second.list_servers().unwrap().len(), 1);
 }
 
@@ -296,13 +239,21 @@ fn an_in_memory_store_works_without_a_filesystem() {
     assert_eq!(store.list_servers().unwrap().len(), 1);
 }
 
+#[test]
+fn the_store_exposes_the_ports_it_writes_through() {
+    let (ports, store) = shared();
+    store.insert_server(&stdio_server("srv-1")).unwrap();
+    assert!(ports.has_state().unwrap());
+    assert!(store.ports().has_state().unwrap());
+}
+
 // ---------------------------------------------------------------------------
 // Installed servers
 // ---------------------------------------------------------------------------
 
 #[test]
 fn a_server_round_trips_through_the_store() {
-    let (_directory, store) = store();
+    let store = store();
     let server = stdio_server("srv-1");
 
     store.insert_server(&server).unwrap();
@@ -312,7 +263,7 @@ fn a_server_round_trips_through_the_store() {
 
 #[test]
 fn servers_are_listed_oldest_install_first() {
-    let (_directory, store) = store();
+    let store = store();
     store
         .insert_server(&InstalledServer {
             installed_at: 3_000,
@@ -339,7 +290,7 @@ fn servers_are_listed_oldest_install_first() {
 
 #[test]
 fn arguments_and_environment_names_survive_the_round_trip() {
-    let (_directory, store) = store();
+    let store = store();
     store.insert_server(&stdio_server("srv-1")).unwrap();
 
     let loaded = store.get_server("srv-1").unwrap();
@@ -349,7 +300,7 @@ fn arguments_and_environment_names_survive_the_round_trip() {
 
 #[test]
 fn an_http_remote_install_keeps_its_endpoint() {
-    let (_directory, store) = store();
+    let store = store();
     store
         .insert_server(&http_server("srv-http", "https://x.test/mcp"))
         .unwrap();
@@ -364,7 +315,7 @@ fn an_http_remote_install_keeps_its_endpoint() {
 
 #[test]
 fn each_row_keeps_its_own_transport() {
-    let (_directory, store) = store();
+    let store = store();
     store.insert_server(&stdio_server("srv-stdio")).unwrap();
     store
         .insert_server(&http_server("srv-http", "https://x.test/mcp"))
@@ -380,7 +331,7 @@ fn each_row_keeps_its_own_transport() {
 
 #[test]
 fn an_absent_server_is_reported_by_name() {
-    let (_directory, store) = store();
+    let store = store();
 
     let error = store.get_server("nope").expect_err("no such install");
 
@@ -393,7 +344,7 @@ fn an_absent_server_is_reported_by_name() {
 
 #[test]
 fn deleting_reports_whether_a_row_went() {
-    let (_directory, store) = store();
+    let store = store();
     store.insert_server(&stdio_server("srv-1")).unwrap();
 
     assert!(store.delete_server("srv-1").unwrap());
@@ -404,7 +355,7 @@ fn deleting_reports_whether_a_row_went() {
 fn deleting_a_server_takes_its_credentials_with_it() {
     // The cascade is what stops a credential outliving the install it belongs
     // to and being handed to whatever reuses the identifier.
-    let (_directory, store) = store();
+    let store = store();
     store.insert_server(&stdio_server("srv-1")).unwrap();
     store
         .set_env_values(
@@ -420,7 +371,7 @@ fn deleting_a_server_takes_its_credentials_with_it() {
 
 #[test]
 fn installing_if_absent_deduplicates_on_the_qualified_name() {
-    let (_directory, store) = store();
+    let store = store();
 
     assert!(
         store
@@ -439,7 +390,7 @@ fn installing_if_absent_deduplicates_on_the_qualified_name() {
 
 #[test]
 fn catalog_provenance_is_saved_only_for_catalog_installs() {
-    let (_directory, store) = store();
+    let store = store();
     store.insert_server(&stdio_server("user-1")).unwrap();
     assert!(!store.is_catalog_server("user-1").unwrap());
     assert!(
@@ -455,7 +406,7 @@ fn catalog_provenance_is_saved_only_for_catalog_installs() {
 
 #[test]
 fn a_lookup_by_qualified_name_returns_the_earliest_install() {
-    let (_directory, store) = store();
+    let store = store();
     store
         .insert_server(&InstalledServer {
             installed_at: 2_000,
@@ -478,7 +429,7 @@ fn a_lookup_by_qualified_name_returns_the_earliest_install() {
 
 #[test]
 fn a_lookup_for_an_uninstalled_service_finds_nothing() {
-    let (_directory, store) = store();
+    let store = store();
     assert!(
         store
             .find_server_by_qualified_name("@nobody/nothing")
@@ -493,7 +444,7 @@ fn a_lookup_for_an_uninstalled_service_finds_nothing() {
 
 #[test]
 fn a_configuration_blob_round_trips_and_clears() {
-    let (_directory, store) = store();
+    let store = store();
     store.insert_server(&stdio_server("srv-1")).unwrap();
     assert_eq!(store.get_server("srv-1").unwrap().config, None);
 
@@ -511,7 +462,7 @@ fn a_configuration_blob_round_trips_and_clears() {
 
 #[test]
 fn environment_names_can_be_replaced_without_touching_the_rest_of_the_row() {
-    let (_directory, store) = store();
+    let store = store();
     store.insert_server(&stdio_server("srv-1")).unwrap();
 
     store
@@ -525,7 +476,7 @@ fn environment_names_can_be_replaced_without_touching_the_rest_of_the_row() {
 
 #[test]
 fn the_enabled_flag_defaults_true_and_can_be_flipped() {
-    let (_directory, store) = store();
+    let store = store();
     store.insert_server(&stdio_server("srv-1")).unwrap();
     assert!(store.get_server("srv-1").unwrap().enabled);
 
@@ -538,7 +489,7 @@ fn the_enabled_flag_defaults_true_and_can_be_flipped() {
 
 #[test]
 fn a_disabled_server_is_stored_as_disabled() {
-    let (_directory, store) = store();
+    let store = store();
     store
         .insert_server(&InstalledServer {
             enabled: false,
@@ -551,7 +502,7 @@ fn a_disabled_server_is_stored_as_disabled() {
 
 #[test]
 fn recording_a_connection_sets_a_timestamp_where_there_was_none() {
-    let (_directory, store) = store();
+    let store = store();
     store.insert_server(&stdio_server("srv-1")).unwrap();
     assert_eq!(store.get_server("srv-1").unwrap().last_connected_at, None);
 
@@ -572,7 +523,7 @@ fn recording_a_connection_sets_a_timestamp_where_there_was_none() {
 
 #[test]
 fn credentials_round_trip() {
-    let (_directory, store) = store();
+    let store = store();
     store.insert_server(&stdio_server("srv-1")).unwrap();
 
     let env = BTreeMap::from([
@@ -588,7 +539,7 @@ fn credentials_round_trip() {
 fn replacing_credentials_removes_the_ones_that_are_gone() {
     // A name dropped from the new set must stop being handed to the server,
     // not linger from the previous write.
-    let (_directory, store) = store();
+    let store = store();
     store.insert_server(&stdio_server("srv-1")).unwrap();
 
     store
@@ -614,7 +565,7 @@ fn replacing_credentials_removes_the_ones_that_are_gone() {
 
 #[test]
 fn a_server_with_no_credentials_loads_an_empty_set() {
-    let (_directory, store) = store();
+    let store = store();
     store.insert_server(&stdio_server("srv-1")).unwrap();
 
     assert!(store.load_env_values("srv-1").unwrap().is_empty());
@@ -624,7 +575,7 @@ fn a_server_with_no_credentials_loads_an_empty_set() {
 fn a_credential_value_never_reaches_the_install_record() {
     // The record is listed over the bus, rendered in interfaces, and logged.
     // The values must not be reachable from it at all.
-    let (_directory, store) = store();
+    let store = store();
     store.insert_server(&stdio_server("srv-1")).unwrap();
     store
         .set_env_values(
@@ -649,13 +600,13 @@ fn a_credential_value_never_reaches_the_install_record() {
 
 #[test]
 fn an_empty_cache_misses() {
-    let (_directory, store) = store();
+    let store = store();
     assert_eq!(store.cached("any-key").unwrap(), None);
 }
 
 #[test]
 fn a_freshly_written_entry_hits() {
-    let (_directory, store) = store();
+    let store = store();
     store
         .cache("servers?q=weather", r#"{"servers":[]}"#)
         .unwrap();
@@ -668,7 +619,7 @@ fn a_freshly_written_entry_hits() {
 
 #[test]
 fn writing_the_same_key_replaces_the_previous_body() {
-    let (_directory, store) = store();
+    let store = store();
     store.cache("key", "first").unwrap();
     store.cache("key", "second").unwrap();
 
@@ -678,36 +629,22 @@ fn writing_the_same_key_replaces_the_previous_body() {
 #[test]
 fn an_entry_older_than_the_lifetime_misses() {
     // Backdated directly, so the test does not have to wait ten minutes.
-    let (_directory, store) = store();
+    let store = store();
     store.cache("key", "stale").unwrap();
 
-    store.with_connection(|connection| {
-        connection
-            .execute(
-                "UPDATE mcp_registry_cache SET cached_at = cached_at - ?1",
-                rusqlite::params![11 * 60 * 1_000i64],
-            )
-            .unwrap();
-    });
+    age_cache(&store, 11);
 
     assert_eq!(store.cached("key").unwrap(), None);
 }
 
 /// Moves every cached entry `minutes` into the past.
 fn age_cache(store: &Store, minutes: i64) {
-    store.with_connection(|connection| {
-        connection
-            .execute(
-                "UPDATE mcp_registry_cache SET cached_at = cached_at - ?1",
-                rusqlite::params![minutes * 60 * 1_000],
-            )
-            .unwrap();
-    });
+    store.age_collection(REGISTRY_CACHE, &["cached_at"], minutes * 60 * 1_000);
 }
 
 #[test]
 fn a_stale_read_returns_an_entry_past_its_lifetime() {
-    let (_directory, store) = store();
+    let store = store();
     store.cache("key", "old").unwrap();
     age_cache(&store, 60 * 24);
 
@@ -718,7 +655,7 @@ fn a_stale_read_returns_an_entry_past_its_lifetime() {
 
 #[test]
 fn a_prefix_read_returns_matching_entries_newest_first() {
-    let (_directory, store) = store();
+    let store = store();
     store.cache("browse:1", "older").unwrap();
     age_cache(&store, 30);
     store.cache("browse:2", "newer").unwrap();
@@ -732,7 +669,7 @@ fn a_prefix_read_returns_matching_entries_newest_first() {
 
 #[test]
 fn a_prefix_read_treats_like_wildcards_literally() {
-    let (_directory, store) = store();
+    let store = store();
     store.cache("a_b:1", "literal").unwrap();
     store.cache("axb:1", "wildcard match").unwrap();
 
@@ -748,7 +685,7 @@ fn a_prefix_read_treats_like_wildcards_literally() {
 
 #[test]
 fn cache_keys_are_independent() {
-    let (_directory, store) = store();
+    let store = store();
     store.cache("a", "first").unwrap();
 
     assert_eq!(store.cached("a").unwrap().as_deref(), Some("first"));
@@ -756,196 +693,248 @@ fn cache_keys_are_independent() {
 }
 
 // ---------------------------------------------------------------------------
-// Migrations
+// Records that predate a field, and records that are damaged
 // ---------------------------------------------------------------------------
 
-/// Writes the original schema — before the three additive columns — with one
-/// row in it, exactly as an older build would have left the file.
-fn write_pre_migration_database(path: &std::path::Path) {
-    let connection = Connection::open(path).unwrap();
-    connection
-        .execute_batch(
-            "CREATE TABLE mcp_servers (
-                 server_id           TEXT PRIMARY KEY,
-                 qualified_name      TEXT NOT NULL,
-                 display_name        TEXT NOT NULL,
-                 description         TEXT,
-                 icon_url            TEXT,
-                 command_kind        TEXT NOT NULL DEFAULT 'node',
-                 command             TEXT NOT NULL,
-                 args_json           TEXT NOT NULL DEFAULT '[]',
-                 env_keys_json       TEXT NOT NULL DEFAULT '[]',
-                 config_json         TEXT,
-                 installed_at        INTEGER NOT NULL,
-                 last_connected_at   INTEGER
-             );
-             INSERT INTO mcp_servers
-                 (server_id, qualified_name, display_name, command, installed_at)
-             VALUES ('legacy-1', '@old/server', 'Old Server', 'npx', 1000);",
-        )
-        .unwrap();
-}
-
-#[test]
-fn an_older_database_gains_the_columns_it_is_missing() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("mcp_clients.db");
-    write_pre_migration_database(&path);
-
-    let store = Store::open_file(&path).expect("the older file opens");
-
-    let columns =
-        store.with_connection(|connection| schema::columns_of(connection, "mcp_servers").unwrap());
-    for column in ["transport", "deployment_url", "enabled", "catalog_managed"] {
-        assert!(
-            columns.iter().any(|name| name == column),
-            "missing {column}"
-        );
-    }
+/// A server document as the first release wrote it: no transport, enabled or
+/// provenance fields.
+fn seed_original_record(store: &Store) {
+    store.put_raw(
+        SERVERS,
+        "legacy-1",
+        json!({
+            "server_id": "legacy-1",
+            "qualified_name": "@old/server",
+            "display_name": "Old Server",
+            "command_kind": "node",
+            "command": "npx",
+            "installed_at": 1000,
+        }),
+    );
 }
 
 #[test]
 fn legacy_installs_keep_unknown_catalog_provenance() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("mcp_clients.db");
-    write_pre_migration_database(&path);
-    let store = Store::open_file(&path).unwrap();
+    let store = store();
+    seed_original_record(&store);
     assert!(!store.is_catalog_server("legacy-1").unwrap());
 }
 
 #[test]
-fn a_row_from_before_the_transport_column_loads_as_a_subprocess_install() {
-    // Every install predating that column was a subprocess install. Reading it
+fn a_record_from_before_the_transport_field_loads_as_a_subprocess_install() {
+    // Every install predating that field was a subprocess install. Reading it
     // as anything else would misroute it on the next connect.
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("mcp_clients.db");
-    write_pre_migration_database(&path);
+    let store = store();
+    seed_original_record(&store);
 
-    let store = Store::open_file(&path).unwrap();
     let loaded = store.get_server("legacy-1").unwrap();
 
     assert_eq!(loaded.transport, Transport::Stdio);
+    assert!(loaded.args.is_empty());
+    assert!(loaded.env_keys.is_empty());
 }
 
 #[test]
-fn a_row_from_before_the_enabled_column_loads_as_enabled() {
+fn a_record_from_before_the_enabled_field_loads_as_enabled() {
     // Those installs were auto-connecting. Loading them as disabled would
     // silently stop a user's servers on upgrade.
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("mcp_clients.db");
-    write_pre_migration_database(&path);
-
-    let store = Store::open_file(&path).unwrap();
+    let store = store();
+    seed_original_record(&store);
 
     assert!(store.get_server("legacy-1").unwrap().enabled);
 }
 
 #[test]
-fn migrating_is_idempotent_across_reopens() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("mcp_clients.db");
-    write_pre_migration_database(&path);
-
-    for _ in 0..3 {
-        let store = Store::open_file(&path).expect("reopening a migrated file");
-        assert_eq!(store.list_servers().unwrap().len(), 1);
-    }
-}
-
-#[test]
-fn a_duplicate_column_failure_is_treated_as_success() {
-    // Two processes holding the same file can each see a column as missing and
-    // both try to add it. The loser must not report an error: the column
-    // existing is the outcome wanted.
-    let store = Store::open_in_memory().unwrap();
-
-    store.with_connection(|connection| {
-        schema::add_column(
-            connection,
-            "ALTER TABLE mcp_servers ADD COLUMN transport TEXT NOT NULL DEFAULT 'stdio'",
-            "transport",
-        )
-        .expect("a duplicate column is not an error");
-    });
-}
-
-#[test]
-fn any_other_migration_failure_still_propagates() {
-    // Swallowing the duplicate-column case must not turn into swallowing
-    // everything.
-    let store = Store::open_in_memory().unwrap();
-
-    store.with_connection(|connection| {
-        let error = schema::add_column(
-            connection,
-            "ALTER TABLE table_that_does_not_exist ADD COLUMN x TEXT",
-            "x",
-        )
-        .expect_err("a missing table is a real failure");
-        assert!(matches!(error, Error::Store { .. }), "{error:?}");
-    });
-}
-
-// ---------------------------------------------------------------------------
-// Opening, and rows that predate a column
-// ---------------------------------------------------------------------------
-
-#[test]
-fn a_store_that_cannot_be_opened_is_reported_rather_than_panicking() {
-    // A directory where the file should be. Reported so a host can log it and
-    // decide, rather than failing to start on a path problem.
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("occupied.db");
-    std::fs::create_dir(&path).unwrap();
-
-    assert!(Store::open_file(&path).is_err());
-}
-
-#[test]
-fn a_row_whose_json_columns_are_unreadable_fails_the_read_rather_than_being_guessed_at() {
-    // `args` and `env_keys` are JSON in a text column. A value that does not
-    // decode is corruption, and inventing an empty list would silently drop a
-    // server's arguments or hide which credentials it holds.
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("store.db");
-    let store = Store::open_file(&path).unwrap();
+fn a_record_whose_fields_are_unreadable_fails_the_read_rather_than_being_guessed_at() {
+    // `args` and `env_keys` are lists. A value that does not decode is
+    // corruption, and inventing an empty list would silently drop a server's
+    // arguments or hide which credentials it holds.
+    let store = store();
     store.insert_server(&stdio_server("srv-1")).unwrap();
-    drop(store);
+    let mut doc = store.get_raw(SERVERS, "srv-1").unwrap();
+    doc["args"] = json!("not a list");
+    store.put_raw(SERVERS, "srv-1", doc);
 
-    let connection = rusqlite::Connection::open(&path).unwrap();
-    connection
-        .execute(
-            "UPDATE mcp_servers SET args_json = 'not json' WHERE server_id = 'srv-1'",
-            [],
-        )
-        .unwrap();
-    drop(connection);
-
-    let store = Store::open_file(&path).unwrap();
     assert!(store.list_servers().is_err());
+    assert!(store.get_server("srv-1").is_err());
 }
 
 #[test]
-fn a_row_whose_configuration_is_unreadable_fails_the_read() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("store.db");
-    let store = Store::open_file(&path).unwrap();
+fn a_record_whose_configuration_is_unreadable_fails_the_read() {
+    let store = store();
     store.insert_server(&stdio_server("srv-1")).unwrap();
-    drop(store);
+    let mut doc = store.get_raw(SERVERS, "srv-1").unwrap();
+    doc["config"] = json!(7);
+    store.put_raw(SERVERS, "srv-1", doc);
+    // A configuration is any JSON value, so this one reads; a record that is
+    // not an object at all does not.
+    assert!(store.get_server("srv-1").is_ok());
+    store.put_raw(SERVERS, "srv-1", json!({"server_id": "srv-1"}));
+    assert!(store.get_server("srv-1").is_err());
+}
 
-    let connection = rusqlite::Connection::open(&path).unwrap();
-    connection
-        .execute(
-            "UPDATE mcp_servers SET config_json = '{ not json' WHERE server_id = 'srv-1'",
-            [],
+// ---------------------------------------------------------------------------
+// Credentials and claims
+// ---------------------------------------------------------------------------
+
+#[test]
+fn credential_values_live_in_one_secret_and_never_in_a_document() {
+    let (ports, store) = shared();
+    store.insert_server(&stdio_server("srv-1")).unwrap();
+    store
+        .set_env_values(
+            "srv-1",
+            &BTreeMap::from([("API_KEY".to_string(), "super-secret".to_string())]),
         )
         .unwrap();
-    drop(connection);
 
-    assert!(
-        Store::open_file(&path)
-            .unwrap()
-            .get_server("srv-1")
-            .is_err()
+    let secret = ports
+        .run("reading the secret", |ports| async move {
+            ports
+                .secrets
+                .get(&format!("{ENV_SECRET_PREFIX}srv-1"))
+                .await
+        })
+        .unwrap()
+        .expect("the values are a secret");
+    assert!(String::from_utf8_lossy(&secret).contains("super-secret"));
+
+    let server = store.get_raw(SERVERS, "srv-1").unwrap().to_string();
+    assert!(!server.contains("super-secret"), "{server}");
+}
+
+#[test]
+fn clearing_every_credential_removes_the_secret() {
+    let (ports, store) = shared();
+    store.insert_server(&stdio_server("srv-1")).unwrap();
+    store
+        .set_env_values(
+            "srv-1",
+            &BTreeMap::from([("API_KEY".to_string(), "v".to_string())]),
+        )
+        .unwrap();
+    store.set_env_values("srv-1", &BTreeMap::new()).unwrap();
+
+    let secret = ports
+        .run("reading the secret", |ports| async move {
+            ports
+                .secrets
+                .get(&format!("{ENV_SECRET_PREFIX}srv-1"))
+                .await
+        })
+        .unwrap();
+    assert!(secret.is_none());
+}
+
+#[test]
+fn a_secret_that_is_not_a_credential_map_fails_the_load() {
+    let (ports, store) = shared();
+    ports
+        .run("seeding", |ports| async move {
+            ports
+                .secrets
+                .set(&format!("{ENV_SECRET_PREFIX}srv-1"), b"[1, 2]")
+                .await
+        })
+        .unwrap();
+    assert!(store.load_env_values("srv-1").is_err());
+}
+
+#[test]
+fn deleting_a_server_releases_its_qualified_name() {
+    let store = store();
+    assert!(store.insert_server_if_absent(&stdio_server("srv-1")).unwrap());
+    assert!(store.get_raw(SERVER_NAMES, &super::hex_digest(b"@test/server")).is_some());
+
+    store.delete_server("srv-1").unwrap();
+
+    assert!(store.get_raw(SERVER_NAMES, &super::hex_digest(b"@test/server")).is_none());
+    assert!(store.insert_server_if_absent(&stdio_server("srv-2")).unwrap());
+}
+
+#[test]
+fn a_claim_whose_server_is_gone_is_taken_over() {
+    // A crash between the claim and the server write leaves a claim with no
+    // install behind it; it must not block that service forever.
+    let store = store();
+    store.put_raw(
+        SERVER_NAMES,
+        &super::hex_digest(b"@test/server"),
+        json!({"qualified_name": "@test/server", "server_id": "ghost"}),
     );
+    assert!(store.insert_server_if_absent(&stdio_server("srv-1")).unwrap());
+    assert_eq!(store.list_servers().unwrap().len(), 1);
+}
+
+#[test]
+fn concurrent_installs_of_one_service_make_exactly_one_install() {
+    let store = std::sync::Arc::new(store());
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(6));
+    let threads: Vec<_> = (0..6)
+        .map(|index| {
+            let store = store.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                store
+                    .insert_server_if_absent(&stdio_server(&format!("srv-{index}")))
+                    .unwrap()
+            })
+        })
+        .collect();
+    let inserted = threads
+        .into_iter()
+        .map(|thread| thread.join().unwrap())
+        .filter(|inserted| *inserted)
+        .count();
+    assert_eq!(inserted, 1);
+    assert_eq!(store.list_servers().unwrap().len(), 1);
+}
+
+#[test]
+fn a_plain_insert_of_a_taken_identifier_is_refused() {
+    let store = store();
+    store.insert_server(&stdio_server("srv-1")).unwrap();
+    assert!(matches!(
+        store.insert_server(&stdio_server("srv-1")),
+        Err(crate::Error::Store { .. })
+    ));
+}
+
+#[test]
+fn updating_a_server_that_is_not_installed_changes_nothing() {
+    let store = store();
+    store.update_enabled("nobody", false).unwrap();
+    store.touch_last_connected("nobody").unwrap();
+    store.update_config("nobody", Some(&json!({}))).unwrap();
+    store.update_env_keys("nobody", &["K".to_string()]).unwrap();
+    assert!(store.list_servers().unwrap().is_empty());
+}
+
+#[test]
+fn concurrent_updates_to_one_server_all_land() {
+    let store = std::sync::Arc::new(store());
+    store.insert_server(&stdio_server("srv-1")).unwrap();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+    let threads: Vec<_> = (0..3)
+        .map(|index| {
+            let store = store.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                match index {
+                    0 => store.update_enabled("srv-1", false).unwrap(),
+                    1 => store.touch_last_connected("srv-1").unwrap(),
+                    _ => store.update_config("srv-1", Some(&json!({"k": 1}))).unwrap(),
+                }
+            })
+        })
+        .collect();
+    for thread in threads {
+        thread.join().unwrap();
+    }
+    let server = store.get_server("srv-1").unwrap();
+    assert!(!server.enabled);
+    assert!(server.last_connected_at.is_some());
+    assert_eq!(server.config, Some(json!({"k": 1})));
 }

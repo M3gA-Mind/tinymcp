@@ -139,7 +139,7 @@ impl Store {
         Ok(())
     }
 
-    pub(super) fn write_cached_tools(
+    fn write_cached_tools(
         &self,
         server_key: &str,
         fingerprint: &str,
@@ -210,32 +210,6 @@ impl Store {
                     .delete(TOOL_CACHE, &id, Precondition::None)
                     .await
             })
-    }
-
-    /// Ages the cached tools for `server_key`, for tests that need them stale.
-    #[cfg(test)]
-    pub(crate) fn backdate_cached_tools(&self, server_key: &str, age_ms: i64) {
-        let id = hex_digest(server_key.as_bytes());
-        let found = self
-            .ports
-            .run("reading the tool cache", move |ports| async move {
-                ports.documents.get(TOOL_CACHE, &id).await
-            })
-            .expect("the cache reads")
-            .expect("the entry exists");
-        let mut row: ToolCacheDoc = serde_json::from_value(found.doc).expect("a cache row");
-        row.cached_at = now_ms() - age_ms;
-        let id = hex_digest(server_key.as_bytes());
-        let doc = serde_json::to_value(row).expect("encodes");
-        self.ports
-            .run("writing the tool cache", move |ports| async move {
-                ports
-                    .documents
-                    .put(TOOL_CACHE, &id, doc, Precondition::None)
-                    .await
-                    .map(|_| ())
-            })
-            .expect("the cache writes");
     }
 }
 

@@ -32,14 +32,16 @@ fn names(hits: &[IndexHit]) -> Vec<&str> {
 
 /// Moves every timestamp of the index back by a day.
 fn age(store: &Store) {
-    store.with_connection(|connection| {
-        connection
-            .execute_batch(
-                "UPDATE mcp_registry_index SET synced_at = synced_at - 86400000;
-                 UPDATE mcp_registry_index_state SET synced_at = synced_at - 86400000;",
-            )
-            .unwrap();
-    });
+    store.age_collection(
+        crate::storage::REGISTRY_INDEX,
+        &["synced_at"],
+        86_400_000,
+    );
+    store.age_collection(
+        crate::storage::REGISTRY_INDEX_STATE,
+        &["synced_at"],
+        86_400_000,
+    );
 }
 
 #[test]

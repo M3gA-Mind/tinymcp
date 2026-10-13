@@ -36,6 +36,8 @@
 //! [`InstalledServer`]: tinymcp_bus::InstalledServer
 
 pub(crate) mod index;
+#[cfg(test)]
+mod testing;
 mod tool_cache;
 mod types;
 

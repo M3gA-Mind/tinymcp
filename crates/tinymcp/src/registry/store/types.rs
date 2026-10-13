@@ -647,7 +647,7 @@ impl Store {
         self.write_cache(cache_key, body_json, now_ms())
     }
 
-    pub(super) fn write_cache(&self, cache_key: &str, body_json: &str, cached_at: i64) -> Result<()> {
+    fn write_cache(&self, cache_key: &str, body_json: &str, cached_at: i64) -> Result<()> {
         let id = hex_digest(cache_key.as_bytes());
         let doc = serde_json::to_value(CacheDoc {
             cache_key: cache_key.to_string(),
@@ -664,22 +664,6 @@ impl Store {
             })
     }
 
-    /// Ages a cached browse response, for tests that need it stale.
-    #[cfg(test)]
-    pub(crate) fn backdate_cache(&self, cache_key: &str, age_ms: i64) {
-        let entry = self
-            .read_cache(cache_key)
-            .expect("the cache reads")
-            .expect("the entry exists");
-        self.write_cache(cache_key, &entry.body_json, now_ms() - age_ms)
-            .expect("the cache writes");
-    }
-
-    /// The documents port, for tests that inspect or seed raw records.
-    #[cfg(test)]
-    pub(crate) fn documents(&self) -> std::sync::Arc<dyn DocumentStore> {
-        std::sync::Arc::clone(&self.ports.documents)
-    }
 }
 
 fn decode_server(doc: Value) -> Result<InstalledServer> {
