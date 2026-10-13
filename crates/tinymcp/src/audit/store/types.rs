@@ -103,7 +103,12 @@ impl AuditStore {
             .map_err(|_| Error::malformed("limit is too large"))?;
         let skip = usize::try_from(query.resolved_offset())
             .map_err(|_| Error::malformed("offset is too large"))?;
-        let since_ms = query.since_ms;
+        let since_ms = query
+            .since_ms
+            .map(|since| {
+                i64::try_from(since).map_err(|_| Error::malformed("since_ms is too large"))
+            })
+            .transpose()?;
         let client = query.resolved_client_filter().map(ToString::to_string);
         let tool = query.resolved_tool_filter().map(ToString::to_string);
         let success_only = query.resolved_success_only();

@@ -328,6 +328,7 @@ impl Store {
     ///
     /// Returns [`crate::Error::Store`] when the query fails.
     pub(crate) fn search_index(&self, source: &str, terms: &[String]) -> Result<Vec<IndexHit>> {
+        let wanted_source = source.to_string();
         let source = source.to_string();
         let owned_terms = terms.to_vec();
         let rows = self
@@ -366,7 +367,7 @@ impl Store {
         let mut hits = Vec::new();
         for doc in rows {
             let row: IndexDoc = serde_json::from_value(doc)?;
-            if row.source != source {
+            if row.source != wanted_source {
                 continue;
             }
             let matches = terms.iter().all(|term| {

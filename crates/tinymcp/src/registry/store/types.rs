@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tinystoragedrivers_core::{
-    DocumentStore, DocumentStoreExt as _, ErrorKind, Filter, Precondition, Query, Sort,
+    DocumentStoreExt as _, ErrorKind, Filter, Precondition, Query, Sort,
 };
 
 use super::tool_cache::hex_digest;

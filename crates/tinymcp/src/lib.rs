@@ -78,6 +78,7 @@ mod error;
 pub mod processing;
 pub mod registry;
 pub mod server;
+pub mod storage;
 #[cfg(all(feature = "module", not(feature = "static-link")))]
 mod tinybus_module;
 #[cfg(feature = "static-link")]
