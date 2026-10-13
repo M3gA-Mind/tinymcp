@@ -1,4 +1,4 @@
-//! The flow backed by a host's own secret store rather than the `SQLite`
+//! The flow backed by a host's own secret store rather than the default
 //! [`Store`]: what a multi-tenant host needs to keep PKCE, registration and
 //! refresh state in its own per-tenant secrets.
 

@@ -1633,14 +1633,11 @@ async fn switchable_registry() -> (String, Arc<Switchable>) {
 
 /// Moves every cached entry past the cache lifetime.
 fn expire_cache(store: &Store) {
-    store.with_connection(|connection| {
-        connection
-            .execute(
-                "UPDATE mcp_registry_cache SET cached_at = cached_at - ?1",
-                rusqlite::params![24 * 60 * 60 * 1_000i64],
-            )
-            .unwrap();
-    });
+    store.age_collection(
+        crate::storage::REGISTRY_CACHE,
+        &["cached_at"],
+        24 * 60 * 60 * 1_000,
+    );
 }
 
 /// Budgets with every listing short, and `cooldown` as given.

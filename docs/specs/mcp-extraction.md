@@ -1,3 +1,5 @@
+> Superseded in part: persistence moved to the storage ports; see [storage-ports.md](storage-ports.md).
+
 # Extracting the OpenHuman MCP client and registry into `tinymcp`
 
 - **Status:** Accepted

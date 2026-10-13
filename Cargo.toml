@@ -107,17 +107,21 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 # Structured diagnostics. Endpoints are always passed through `redact_endpoint`
 # before they reach a log line.
 tracing = { version = "0.1", default-features = false, features = ["std"] }
-# The installed-server store. `bundled` so a build does not depend on a system
-# SQLite, which is what makes the module loadable on a host that has none.
-rusqlite = { version = "0.40", features = ["bundled"] }
+# The storage ports (documents, streams) the installed-server store and the audit
+# log are written against, and the `Blocking` bridge that lets the synchronous
+# store call them. A git tag, like every other tinystoragedrivers consumer, so a
+# host that vendors the repository once redirects it with a `[patch]`. This
+# crate links no database: the host picks the backend.
+tinystoragedrivers-core = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.7.0", features = ["blocking"] }
+# The `SecretStore` port: server environment values and OAuth bundles are kept
+# there, never in a document. Same tag as the core.
+tinystoragedrivers-secrets = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.7.0" }
 # Locating a user's home directory, to find the version-manager shim
 # directories a desktop launch's stripped PATH leaves out.
 dirs = "7"
 # SHA-256: PKCE code challenges in the authorization-code flow, and the digest
 # in an action tool's name (`tinymcp-bus`'s `agent_tools::searchable_name`).
 sha2 = "0.11"
-# Unix O_NOFOLLOW when reading the persisted cache fingerprint key.
-libc = "0.2"
 # Install identifiers.
 uuid = { version = "1", features = ["v4"] }
 

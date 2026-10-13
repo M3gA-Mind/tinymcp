@@ -38,6 +38,9 @@ pub struct McpService {
     /// change only when its configuration does.
     static_servers: McpServerRegistry,
     audit: AuditStore,
+    /// The storage provider this service was built over, so a state probe
+    /// asks the same backend the service reads and writes.
+    provider: Arc<dyn crate::storage::StorageProvider>,
     server_sessions: crate::server::bridge::ServerSessions,
     /// The boot pass and supervisor, when they have been started.
     ///
@@ -56,16 +59,29 @@ impl McpService {
     ///
     /// # Errors
     ///
-    /// Returns [`crate::Error::StoreIo`] or [`crate::Error::Store`] when the
-    /// stores cannot be opened, and [`crate::Error::ClientBuild`] when an HTTP
-    /// client cannot be built.
+    /// Returns [`crate::Error::Store`] when the stores cannot be opened, and
+    /// [`crate::Error::ClientBuild`] when an HTTP client cannot be built.
     pub fn new(config: &ModuleConfig) -> Result<Self> {
+        Self::with_provider(config, crate::storage::installed_provider())
+    }
+
+    /// Builds the service over the storage `provider` hands out for the
+    /// configured data directory.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::new`].
+    pub fn with_provider(
+        config: &ModuleConfig,
+        provider: Arc<dyn crate::storage::StorageProvider>,
+    ) -> Result<Self> {
         // No data directory means nothing to persist, which is the right shape
         // for a host that only wants its statically declared servers.
-        let (store, audit) = match config.data_dir.as_deref() {
-            Some(dir) => (Store::open(dir)?, AuditStore::open(dir)?),
-            None => (Store::open_in_memory()?, AuditStore::open_in_memory()?),
+        let ports = match config.data_dir.as_deref() {
+            Some(dir) => provider.ports_for(&absolute_data_dir(dir)?)?,
+            None => crate::storage::StoragePorts::memory()?,
         };
+        let (store, audit) = (Store::open(ports.clone())?, AuditStore::open(ports)?);
 
         let dynamic = Arc::new(McpRegistry::new(
             store,
@@ -80,6 +96,7 @@ impl McpService {
             dynamic,
             static_servers,
             audit,
+            provider,
             server_sessions: crate::server::bridge::ServerSessions::default(),
             maintenance: None,
             opener: None,
@@ -362,17 +379,18 @@ impl McpService {
         })
     }
 
-    /// `(data_dir)` — checks for an existing database without opening it.
+    /// `(data_dir)` — checks whether the directory's storage already holds
+    /// installs or audit records, without creating anything.
     async fn has_stored_state(&self, data_dir: String) -> tinybus::Result<bool> {
         std::future::ready(()).await;
-        let path = Store::path_for(std::path::Path::new(&data_dir));
-        match std::fs::symlink_metadata(path) {
-            Ok(metadata) => Ok(metadata.file_type().is_file()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-            Err(error) => Err(tinybus::Error::failed(format!(
-                "could not inspect MCP state: {error}"
-            ))),
-        }
+        // Same normalisation and same provider as `with_provider`, so the
+        // probe asks about the directory the service itself would open.
+        absolute_data_dir(std::path::Path::new(&data_dir))
+            .and_then(|dir| self.provider.ports_for(&dir))
+            .and_then(|ports| ports.has_state())
+            .map_err(|error| {
+                tinybus::Error::failed(format!("could not inspect MCP state: {error}"))
+            })
     }
 
     // -- installs -----------------------------------------------------------

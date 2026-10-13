@@ -1,105 +1,65 @@
 //! The audit store and its two operations.
 
 use crate::McpWriteListQueryExt;
-use std::path::{Path, PathBuf};
 
-use parking_lot::Mutex;
-use rusqlite::types::Type;
-use rusqlite::{Connection, Row, ToSql, params};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tinystoragedrivers_core::{StorageError, StreamEntry};
 
 use crate::error::{Error, Result};
+use crate::storage::{AUDIT_STREAM, StoragePorts};
 use tinymcp_bus::{ERROR_MESSAGE_MAX_BYTES, McpWriteListQuery, McpWriteRecord, NewMcpWriteRecord};
 
-/// The directory the audit file lives in, under the host's data directory.
-const DB_DIR: &str = "mcp_audit";
-/// The audit database filename.
-const DB_FILE: &str = "mcp_audit.db";
+/// How many stream entries one read asks for.
+const WINDOW: usize = 256;
 
-/// Every column of `mcp_writes`, in the order [`map_record`] reads them.
-const RECORD_COLUMNS: &str = "id, timestamp_ms, client_info, tool_name, args_summary, \
-     resulting_chunk_id, success, error_message";
+/// One audit record as stored in the stream.
+#[derive(Debug, Serialize, Deserialize)]
+struct AuditEntry {
+    timestamp_ms: i64,
+    client_info: String,
+    tool_name: String,
+    #[serde(default)]
+    args_summary: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resulting_chunk_id: Option<String>,
+    success: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    error_message: Option<String>,
+}
 
 /// The durable record of MCP tool writes.
+///
+/// An append-only stream on the storage ports; a record's identifier is its
+/// offset plus one, so identifiers start at 1 and only grow.
 #[derive(Debug)]
 pub struct AuditStore {
-    connection: Mutex<Connection>,
+    ports: StoragePorts,
 }
 
 impl AuditStore {
-    /// Opens, creating the directory and file if they do not exist.
+    /// Opens the audit log over `ports`.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::StoreIo`] when the directory cannot be created, and
-    /// [`Error::Store`] when the file cannot be opened or the schema created.
-    pub fn open(data_dir: &Path) -> Result<Self> {
-        let directory = data_dir.join(DB_DIR);
-        std::fs::create_dir_all(&directory).map_err(|source| Error::StoreIo {
-            path: directory.clone(),
-            source: Box::new(source),
+    /// Returns [`Error::Store`] when the stream cannot be reached.
+    pub fn open(ports: StoragePorts) -> Result<Self> {
+        ports.run("opening the audit log", |ports| async move {
+            ports.streams.len(AUDIT_STREAM).await.map(|_| ())
         })?;
-
-        Self::open_file(&directory.join(DB_FILE))
+        Ok(Self { ports })
     }
 
-    /// Opens one specific file.
+    /// Opens an audit log over a private in-memory backend, for tests.
     ///
     /// # Errors
     ///
-    /// As [`Self::open`], minus the directory creation.
-    pub fn open_file(path: &Path) -> Result<Self> {
-        let connection = Connection::open(path).map_err(|source| {
-            Error::store(
-                format!("opening the audit log at {}", path.display()),
-                source,
-            )
-        })?;
-
-        connection
-            .execute_batch(
-                "CREATE TABLE IF NOT EXISTS mcp_writes (
-                     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-                     timestamp_ms        INTEGER NOT NULL,
-                     client_info         TEXT NOT NULL,
-                     tool_name           TEXT NOT NULL,
-                     args_summary        TEXT,
-                     resulting_chunk_id  TEXT,
-                     success             INTEGER NOT NULL,
-                     error_message       TEXT
-                 );
-
-                 -- The listing orders by time and filters by client or tool.
-                 CREATE INDEX IF NOT EXISTS mcp_writes_timestamp
-                     ON mcp_writes (timestamp_ms DESC, id DESC);
-                 CREATE INDEX IF NOT EXISTS mcp_writes_client
-                     ON mcp_writes (client_info);
-                 CREATE INDEX IF NOT EXISTS mcp_writes_tool
-                     ON mcp_writes (tool_name);",
-            )
-            .map_err(|source| Error::store("creating the audit schema", source))?;
-
-        Ok(Self {
-            connection: Mutex::new(connection),
-        })
-    }
-
-    /// Opens an in-memory audit log, for tests.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::Store`] when the schema cannot be created.
+    /// Returns [`Error::Store`] when the backend cannot be opened.
     pub fn open_in_memory() -> Result<Self> {
-        Self::open_file(Path::new(":memory:"))
+        Self::open(StoragePorts::memory()?)
     }
 
-    /// The path an audit log for `data_dir` would use.
-    #[must_use]
-    pub fn path_for(data_dir: &Path) -> PathBuf {
-        data_dir.join(DB_DIR).join(DB_FILE)
-    }
-
-    /// Records one write, returning its assigned row identifier.
+    /// Records one write, returning its assigned identifier.
     ///
     /// The error message is truncated to [`ERROR_MESSAGE_MAX_BYTES`] on a
     /// character boundary. It comes from a remote server and is bounded by
@@ -109,88 +69,116 @@ impl AuditStore {
     /// # Errors
     ///
     /// Returns [`Error::Serialization`] when the argument summary cannot be
-    /// encoded, and [`Error::Store`] when the insert fails.
+    /// encoded, and [`Error::Store`] when the append fails.
     pub fn record(&self, record: &NewMcpWriteRecord) -> Result<i64> {
-        let args_summary = serde_json::to_string(&record.args_summary)?;
-        let error_message = truncate_error(record.error_message.as_deref());
-
-        let connection = self.connection.lock();
-        connection
-            .execute(
-                "INSERT INTO mcp_writes
-                     (timestamp_ms, client_info, tool_name, args_summary,
-                      resulting_chunk_id, success, error_message)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![
-                    record.timestamp_ms,
-                    record.client_info,
-                    record.tool_name,
-                    args_summary,
-                    record.resulting_chunk_id,
-                    i64::from(record.success),
-                    error_message,
-                ],
-            )
-            .map_err(|source| Error::store("recording a write", source))?;
-
-        Ok(connection.last_insert_rowid())
+        let entry = serde_json::to_value(AuditEntry {
+            timestamp_ms: record.timestamp_ms,
+            client_info: record.client_info.clone(),
+            tool_name: record.tool_name.clone(),
+            args_summary: record.args_summary.clone(),
+            resulting_chunk_id: record.resulting_chunk_id.clone(),
+            success: record.success,
+            error_message: truncate_error(record.error_message.as_deref()),
+        })?;
+        let offset = self
+            .ports
+            .run("recording a write", move |ports| async move {
+                ports.streams.append(AUDIT_STREAM, entry).await
+            })?;
+        offset_to_id(offset).ok_or_else(|| Error::malformed("the audit offset does not fit an id"))
     }
 
     /// Lists recorded writes, most recent first.
     ///
     /// The query's bounds are applied through its `resolved_*` accessors, so a
-    /// caller cannot ask for an unbounded page.
+    /// caller cannot ask for an unbounded page. The stream is read in windows and
+    /// filtered as it goes, so only matching records are held.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Store`] when the query fails, and
-    /// [`Error::MalformedResponse`] when a bound would not fit the column type.
+    /// Returns [`Error::Store`] when the read fails, and
+    /// [`Error::MalformedResponse`] when a bound would not fit.
     pub fn list(&self, query: &McpWriteListQuery) -> Result<Vec<McpWriteRecord>> {
-        let mut sql = format!("SELECT {RECORD_COLUMNS} FROM mcp_writes WHERE 1=1");
-        let mut bound: Vec<Box<dyn ToSql>> = Vec::new();
+        // Bounds past what a signed 64-bit integer holds are refused rather
+        // than wrapped: a bound that overflowed into a negative would turn a
+        // page request into "no limit".
+        let bound = |value: u64, field: &str| {
+            i64::try_from(value)
+                .ok()
+                .and_then(|value| usize::try_from(value).ok())
+                .ok_or_else(|| Error::malformed(format!("{field} is too large")))
+        };
+        let wanted = bound(query.resolved_limit(), "limit")?;
+        let skip = bound(query.resolved_offset(), "offset")?;
+        let since_ms = query
+            .since_ms
+            .map(|since| {
+                i64::try_from(since).map_err(|_| Error::malformed("since_ms is too large"))
+            })
+            .transpose()?;
+        let client = query.resolved_client_filter().map(ToString::to_string);
+        let tool = query.resolved_tool_filter().map(ToString::to_string);
+        let success_only = query.resolved_success_only();
 
-        if let Some(since_ms) = query.since_ms {
-            sql.push_str(" AND timestamp_ms >= ?");
-            bound.push(Box::new(to_sqlite_integer(since_ms, "since_ms")?));
-        }
-        if let Some(client) = query.resolved_client_filter() {
-            sql.push_str(" AND client_info = ?");
-            bound.push(Box::new(client.to_string()));
-        }
-        if let Some(tool) = query.resolved_tool_filter() {
-            sql.push_str(" AND tool_name = ?");
-            bound.push(Box::new(tool.to_string()));
-        }
-        if query.resolved_success_only() {
-            sql.push_str(" AND success = 1");
-        }
+        let entries = self
+            .ports
+            .run("listing audit records", move |ports| async move {
+                let end = ports.streams.len(AUDIT_STREAM).await?;
+                let mut matched: Vec<(u64, AuditEntry)> = Vec::new();
+                let mut from = 0u64;
+                while from < end {
+                    let batch = ports
+                        .streams
+                        .read_window(AUDIT_STREAM, from, WINDOW)
+                        .await?;
+                    let Some(last) = batch.last().map(|entry| entry.offset) else {
+                        break;
+                    };
+                    for StreamEntry { offset, value } in batch {
+                        let entry: AuditEntry = serde_json::from_value(value)
+                            .map_err(|error| StorageError::serialization(error.to_string()))?;
+                        let keep = since_ms.is_none_or(|since| entry.timestamp_ms >= since)
+                            && client.as_deref().is_none_or(|c| entry.client_info == c)
+                            && tool.as_deref().is_none_or(|t| entry.tool_name == t)
+                            && (!success_only || entry.success);
+                        if keep {
+                            matched.push((offset, entry));
+                        }
+                    }
+                    from = last + 1;
+                }
+                Ok(matched)
+            })?;
 
-        // The identifier breaks ties so two writes in the same millisecond do
-        // not swap places between two reads of the same page.
-        sql.push_str(" ORDER BY timestamp_ms DESC, id DESC LIMIT ? OFFSET ?");
-        bound.push(Box::new(to_sqlite_integer(
-            query.resolved_limit(),
-            "limit",
-        )?));
-        bound.push(Box::new(to_sqlite_integer(
-            query.resolved_offset(),
-            "offset",
-        )?));
-
-        let connection = self.connection.lock();
-        let mut statement = connection
-            .prepare(&sql)
-            .map_err(|source| Error::store("preparing an audit listing", source))?;
-
-        let parameters: Vec<&dyn ToSql> = bound.iter().map(AsRef::as_ref).collect();
-        let records = statement
-            .query_map(parameters.as_slice(), map_record)
-            .map_err(|source| Error::store("listing audit records", source))?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(|source| Error::store("reading an audit row", source))?;
-
-        Ok(records)
+        let mut records: Vec<McpWriteRecord> = entries
+            .into_iter()
+            .filter_map(|(offset, entry)| {
+                Some(McpWriteRecord {
+                    id: offset_to_id(offset)?,
+                    timestamp_ms: entry.timestamp_ms,
+                    client_info: entry.client_info,
+                    tool_name: entry.tool_name,
+                    args_summary: entry.args_summary,
+                    resulting_chunk_id: entry.resulting_chunk_id,
+                    success: entry.success,
+                    error_message: entry.error_message,
+                })
+            })
+            .collect();
+        // Newest first: by time, then by identifier, so two writes in the same
+        // millisecond do not swap places between two reads of the same page.
+        records.sort_by(|a, b| {
+            b.timestamp_ms
+                .cmp(&a.timestamp_ms)
+                .then_with(|| b.id.cmp(&a.id))
+        });
+        Ok(records.into_iter().skip(skip).take(wanted).collect())
     }
+}
+
+/// An offset as a record identifier.
+fn offset_to_id(offset: u64) -> Option<i64> {
+    i64::try_from(offset).ok()?.checked_add(1)
 }
 
 /// Truncates an error message on a character boundary.
@@ -205,32 +193,4 @@ fn truncate_error(message: Option<&str>) -> Option<String> {
         end -= 1;
     }
     Some(message.get(..end).unwrap_or_default().to_string())
-}
-
-/// Narrows an unsigned bound to what the column can hold.
-fn to_sqlite_integer(value: u64, field: &str) -> Result<i64> {
-    i64::try_from(value)
-        .map_err(|_| Error::malformed(format!("{field} is too large for a sqlite integer")))
-}
-
-/// Reads one `mcp_writes` row.
-fn map_record(row: &Row<'_>) -> rusqlite::Result<McpWriteRecord> {
-    let args_summary = match row.get::<_, Option<String>>(4)? {
-        Some(raw) => serde_json::from_str(&raw).map_err(|error| {
-            rusqlite::Error::FromSqlConversionFailure(4, Type::Text, Box::new(error))
-        })?,
-        None => Value::Null,
-    };
-    let success: i64 = row.get(6)?;
-
-    Ok(McpWriteRecord {
-        id: row.get(0)?,
-        timestamp_ms: row.get(1)?,
-        client_info: row.get(2)?,
-        tool_name: row.get(3)?,
-        args_summary,
-        resulting_chunk_id: row.get(5)?,
-        success: success != 0,
-        error_message: row.get(7)?,
-    })
 }

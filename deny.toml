@@ -52,4 +52,7 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # The shared tool vocabulary, behind the optional `tools` feature. A git source
 # so a host that links another checkout of it can `[patch]` the two into one
 # package; see the workspace manifest.
-allow-git = ["https://github.com/tinyhumansai/tinytools"]
+allow-git = [
+    "https://github.com/tinyhumansai/tinytools",
+    "https://github.com/tinyhumansai/tinystoragedrivers",
+]

@@ -224,7 +224,6 @@ async fn opening_a_directory_returns_a_path_that_answers() {
         .await
         .unwrap();
     assert_eq!(installed.len(), 0);
-    assert!(crate::Store::path_for(other.path()).exists());
 }
 
 #[tokio::test]
@@ -281,8 +280,6 @@ async fn configured_directories_keep_their_own_mocked_static_servers() {
         beta_result["rendered"]["content"][0]["text"],
         "beta provider"
     );
-    assert!(crate::Store::path_for(alpha_dir.path()).exists());
-    assert!(crate::Store::path_for(beta_dir.path()).exists());
 }
 
 #[tokio::test]
@@ -1190,24 +1187,6 @@ async fn opener_debug_output_does_not_expose_directory_or_client_data() {
     let debug = format!("{opener:?}");
     assert!(debug.contains("DirectoryOpener"));
     assert!(!debug.contains("data_dir"));
-}
-
-#[tokio::test]
-async fn opening_a_directory_propagates_store_creation_errors() {
-    let connection = serve_root(&ModuleConfig::default()).await;
-    let opener = super::DirectoryOpener::new(
-        connection.connection.clone(),
-        &ModuleConfig::default(),
-        SupervisorConfig::default(),
-    )
-    .unwrap();
-    let parent = tempfile::NamedTempFile::new().unwrap();
-    let path = parent.path().join("not-a-directory");
-    let error = opener.open(path.to_str().unwrap()).await.unwrap_err();
-    assert!(matches!(
-        error,
-        crate::Error::StoreIo { .. } | crate::Error::Store { .. }
-    ));
 }
 
 #[tokio::test]

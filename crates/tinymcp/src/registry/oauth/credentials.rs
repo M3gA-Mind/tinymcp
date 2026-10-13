@@ -5,7 +5,7 @@
 //! `Authorization` value and the refresh bundle under [`OAUTH_BUNDLE_KEY`].
 //! [`OAuthCredentialStore`] is exactly that, so a host can back sign-in and
 //! refresh with its own secret store (a per-tenant vault, say) instead of the
-//! `SQLite` [`Store`]. [`Store`] implements it, so existing callers are
+//! default [`Store`], whose secrets sit on the storage ports. [`Store`] implements it, so existing callers are
 //! unchanged.
 //!
 //! [`OAUTH_BUNDLE_KEY`]: super::OAUTH_BUNDLE_KEY

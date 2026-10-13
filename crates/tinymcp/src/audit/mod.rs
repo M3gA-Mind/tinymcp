@@ -3,14 +3,16 @@
 //! A user who has let an agent loose on their tools needs to be able to answer
 //! "what did it actually do" afterwards. That is what this is for.
 //!
-//! # Its own file
+//! # Its own stream
 //!
-//! The audit log lives in `mcp_audit/mcp_audit.db`, separate from the installed
-//! -server store. Before the extraction it shared a database with the host's
-//! own memory tables, which made it unmovable without taking that host's schema
-//! with it. A host that needs audit rows and its own data in one transaction
-//! should read them out and write them itself; nothing here needs that
-//! coupling.
+//! The audit log is the append-only stream `mcp_audit` on the storage ports
+//! (see [`crate::storage`]), apart from the installed-server documents. Before
+//! the extraction it shared a database with the host's own memory tables, which
+//! made it unmovable without taking that host's schema with it. A record's
+//! identifier is its stream offset plus one. A host that needs audit rows and
+//! its own data in one transaction should read them out and write them itself;
+//! nothing here needs that coupling. Importing a legacy `mcp_audit.db` is the
+//! host's job.
 //!
 //! # A summary, never the arguments
 //!

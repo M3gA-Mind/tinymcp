@@ -32,14 +32,12 @@ fn names(hits: &[IndexHit]) -> Vec<&str> {
 
 /// Moves every timestamp of the index back by a day.
 fn age(store: &Store) {
-    store.with_connection(|connection| {
-        connection
-            .execute_batch(
-                "UPDATE mcp_registry_index SET synced_at = synced_at - 86400000;
-                 UPDATE mcp_registry_index_state SET synced_at = synced_at - 86400000;",
-            )
-            .unwrap();
-    });
+    store.age_collection(crate::storage::REGISTRY_INDEX, &["synced_at"], 86_400_000);
+    store.age_collection(
+        crate::storage::REGISTRY_INDEX_STATE,
+        &["synced_at"],
+        86_400_000,
+    );
 }
 
 #[test]
@@ -191,4 +189,101 @@ fn a_search_is_scoped_to_its_source() {
         names(&store.search_index(SOURCE, &terms(&["one"])).unwrap()),
         Vec::<&str>::new()
     );
+}
+
+#[test]
+fn a_page_or_finish_without_a_begun_sync_changes_nothing() {
+    let store = store();
+    store
+        .store_index_page(SOURCE, &[row("a/one", "a/one one", "first")], None)
+        .unwrap();
+    store.finish_index_sync(SOURCE).unwrap();
+    assert_eq!(store.index_state(SOURCE).unwrap(), None);
+}
+
+#[test]
+fn a_word_longer_than_the_prefix_limit_is_found_by_its_full_text() {
+    let store = store();
+    store.begin_index_sync(SOURCE, BASE).unwrap();
+    store
+        .store_index_page(
+            SOURCE,
+            &[row(
+                "a/long",
+                "a/long extraordinarilylongidentifier",
+                "desc",
+            )],
+            None,
+        )
+        .unwrap();
+    store.finish_index_sync(SOURCE).unwrap();
+    let hits = store
+        .search_index(SOURCE, &terms(&["extraordinarilylongidentifier"]))
+        .unwrap();
+    assert_eq!(names(&hits), vec!["a/long"]);
+}
+
+#[test]
+fn a_backend_without_transactions_still_writes_every_document_of_a_chunk() {
+    let documents = crate::storage::StoragePorts::memory().unwrap().documents;
+    let ops = vec![
+        WriteOp::Put {
+            collection: "c".to_string(),
+            id: "1".to_string(),
+            doc: serde_json::json!({"n": 1}),
+            precondition: Precondition::None,
+        },
+        WriteOp::Put {
+            collection: "c".to_string(),
+            id: "2".to_string(),
+            doc: serde_json::json!({"n": 2}),
+            precondition: Precondition::None,
+        },
+    ];
+    futures_executor_block(write_chunk(documents.as_ref(), ops, false)).unwrap();
+    for id in ["1", "2"] {
+        assert!(
+            futures_executor_block(documents.get("c", id))
+                .unwrap()
+                .is_some()
+        );
+    }
+}
+
+fn futures_executor_block<F: std::future::Future>(future: F) -> F::Output {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(future)
+}
+
+#[test]
+fn a_sync_state_that_cannot_be_read_fails_the_page_and_the_finish() {
+    let store = store();
+    store.put_raw(
+        crate::storage::REGISTRY_INDEX_STATE,
+        &hex_digest(SOURCE.as_bytes()),
+        serde_json::json!({"unexpected": true}),
+    );
+    assert!(
+        store
+            .store_index_page(SOURCE, &[row("a/one", "a/one one", "first")], None)
+            .is_err()
+    );
+    assert!(store.finish_index_sync(SOURCE).is_err());
+}
+
+#[test]
+fn a_term_inside_a_word_still_finds_its_row() {
+    // The text index carries word prefixes only; `ack` is not a prefix of
+    // `slack`, yet the documented contract is substring matching.
+    let store = store();
+    store.begin_index_sync(SOURCE, BASE).unwrap();
+    store
+        .store_index_page(SOURCE, &[row("a/slack", "a/slack slack", "")], None)
+        .unwrap();
+
+    let hits = store.search_index(SOURCE, &terms(&["ack"])).unwrap();
+    assert_eq!(names(&hits), ["a/slack"]);
 }

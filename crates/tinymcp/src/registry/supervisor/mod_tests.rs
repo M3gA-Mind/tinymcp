@@ -512,13 +512,7 @@ async fn a_tick_that_cannot_read_the_store_gives_up_quietly_rather_than_failing_
     // The supervisor runs forever. A store read that fails once — a locked
     // file, a disk hiccup — must cost one cycle, not the process's ability to
     // ever reconnect anything.
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("store.db");
-    let store = Store::open_file(&path).unwrap();
-    {
-        let connection = rusqlite::Connection::open(&path).unwrap();
-        connection.execute("DROP TABLE mcp_servers", []).unwrap();
-    }
+    let store = Store::open(crate::storage::StoragePorts::with_failing_documents()).unwrap();
 
     let mut supervisor = Supervisor::new(
         SupervisorConfig::default(),

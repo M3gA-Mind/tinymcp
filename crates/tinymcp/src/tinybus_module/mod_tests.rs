@@ -102,29 +102,6 @@ fn every_served_member_is_reachable_by_its_contract_constant() {
 }
 
 #[tokio::test]
-#[cfg(unix)]
-async fn stored_state_probe_does_not_follow_a_database_symlink() {
-    let directory = tempfile::tempdir().unwrap();
-    let outside = tempfile::tempdir().unwrap();
-    let linked = directory.path().join("mcp_clients");
-    std::fs::create_dir_all(&linked).unwrap();
-    let target = crate::Store::path_for(outside.path());
-    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
-    std::fs::write(&target, b"fixture").unwrap();
-    std::os::unix::fs::symlink(&target, linked.join("mcp_clients.db")).unwrap();
-
-    assert_eq!(
-        ok(
-            &service(),
-            names::methods::HAS_STORED_STATE,
-            json!([directory.path().to_string_lossy()]),
-        )
-        .await,
-        json!(false)
-    );
-}
-
-#[tokio::test]
 async fn prepare_agent_tools_preserves_names_schemas_tags_and_exposure() {
     let source = json!({
         "server_id": "id-1",
@@ -208,9 +185,8 @@ async fn prepare_bridge_tools_returns_the_owner_declarations() {
 }
 
 #[tokio::test]
-async fn stored_state_probe_does_not_open_or_create_a_workspace_store() {
+async fn the_stored_state_probe_reports_installs_without_creating_any() {
     let requested = tempfile::tempdir().unwrap();
-    let path = crate::Store::path_for(requested.path());
     let service = service();
 
     assert_eq!(
@@ -222,10 +198,14 @@ async fn stored_state_probe_does_not_open_or_create_a_workspace_store() {
         .await,
         json!(false)
     );
-    assert!(!path.exists());
 
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(&path, b"fixture").unwrap();
+    let ports = crate::storage::installed_provider()
+        .ports_for(requested.path())
+        .unwrap();
+    crate::Store::open(ports)
+        .unwrap()
+        .insert_server(&remote_install("srv-1", "http://127.0.0.1:1/"))
+        .unwrap();
     assert_eq!(
         ok(
             &service,
@@ -312,18 +292,66 @@ fn a_service_with_no_data_directory_persists_nothing() {
     assert_eq!(service().dynamic().installed_list().unwrap().len(), 0);
 }
 
+/// A provider that has no storage for any directory.
+#[derive(Debug)]
+struct RefusingProvider;
+
+impl crate::storage::StorageProvider for RefusingProvider {
+    fn ports_for(
+        &self,
+        _data_dir: &std::path::Path,
+    ) -> crate::Result<crate::storage::StoragePorts> {
+        Err(crate::Error::store(
+            "opening storage",
+            tinystoragedrivers_core::StorageError::unavailable("no storage here"),
+        ))
+    }
+}
+
+#[test]
+fn a_service_whose_provider_has_no_storage_fails_to_build() {
+    let error = McpService::with_provider(
+        &ModuleConfig {
+            data_dir: Some(std::path::PathBuf::from("/srv/mcp")),
+            client: McpClientConfig::default(),
+        },
+        std::sync::Arc::new(RefusingProvider),
+    )
+    .expect_err("there is nowhere to keep state");
+    assert!(matches!(error, crate::Error::Store { .. }), "{error}");
+}
+
+#[test]
+fn a_service_without_a_data_directory_never_asks_the_provider() {
+    McpService::with_provider(
+        &ModuleConfig::default(),
+        std::sync::Arc::new(RefusingProvider),
+    )
+    .expect("an in-memory service needs no provider");
+}
+
 #[test]
 fn a_service_with_a_data_directory_creates_its_stores() {
     let directory = tempfile::tempdir().unwrap();
 
-    let _service = McpService::new(&ModuleConfig {
+    let service = McpService::new(&ModuleConfig {
         data_dir: Some(directory.path().to_path_buf()),
         client: McpClientConfig::default(),
     })
     .expect("the service builds");
 
-    assert!(crate::Store::path_for(directory.path()).exists());
-    assert!(crate::AuditStore::path_for(directory.path()).exists());
+    // The service's stores write through the provider's ports for the
+    // directory, so what it records is what a state probe then finds.
+    let ports = crate::storage::installed_provider()
+        .ports_for(directory.path())
+        .unwrap();
+    assert!(!ports.has_state().unwrap());
+    service
+        .dynamic()
+        .store()
+        .insert_server(&remote_install("srv-1", "http://127.0.0.1:1/"))
+        .unwrap();
+    assert!(ports.has_state().unwrap());
 }
 
 #[test]
@@ -1799,16 +1827,13 @@ async fn a_module_that_came_up_answers_a_call_on_its_object_path() {
 async fn a_module_that_cannot_open_its_store_fails_to_come_up() {
     // Rather than coming up and answering every call with the same error: a
     // load failure says so once, at the moment a host can still react.
-    let directory = tempfile::tempdir().unwrap();
-    let occupied = directory.path().join("mcp_clients");
-    std::fs::create_dir_all(occupied.join("mcp_clients.db")).unwrap();
-
     let connection = in_process_connection().await;
 
     let error = super::setup(
         connection,
         ModuleConfig {
-            data_dir: Some(directory.path().to_path_buf()),
+            // An empty directory names nothing a provider could serve.
+            data_dir: Some(std::path::PathBuf::new()),
             client: McpClientConfig::default(),
         },
     )
@@ -2206,7 +2231,12 @@ async fn a_module_comes_up_without_waiting_for_a_server_that_never_answers() {
     });
 
     let directory = tempfile::tempdir().unwrap();
-    let store = crate::Store::open(directory.path()).unwrap();
+    let store = crate::Store::open(
+        crate::storage::installed_provider()
+            .ports_for(directory.path())
+            .unwrap(),
+    )
+    .unwrap();
     store
         .insert_server(&remote_install("srv-slow", &url))
         .unwrap();
@@ -2587,5 +2617,30 @@ async fn argument_validation_normalizes_optional_strings_and_required_string_arr
         tinymcp_bus::ServerArgumentsValidation::Valid(
             serde_json::from_value(json!({"label":"fixture", "items":["one","two"]})).unwrap()
         )
+    );
+}
+
+#[tokio::test]
+async fn the_stored_state_probe_asks_the_provider_the_service_was_built_over() {
+    let requested = tempfile::tempdir().unwrap();
+    let provider = std::sync::Arc::new(crate::storage::MemoryProvider::new());
+    let bound: std::sync::Arc<dyn crate::storage::StorageProvider> = provider.clone();
+    let service = McpService::with_provider(&ModuleConfig::default(), bound).unwrap();
+    crate::Store::open(
+        crate::storage::StorageProvider::ports_for(provider.as_ref(), requested.path()).unwrap(),
+    )
+    .unwrap()
+    .insert_server(&remote_install("srv-1", "http://127.0.0.1:1/"))
+    .unwrap();
+
+    // The process-wide provider knows nothing of this directory.
+    assert_eq!(
+        ok(
+            &service,
+            names::methods::HAS_STORED_STATE,
+            json!([requested.path().to_string_lossy()]),
+        )
+        .await,
+        json!(true)
     );
 }

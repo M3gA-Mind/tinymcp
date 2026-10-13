@@ -193,14 +193,11 @@ async fn settle(index: &OfficialIndex) {
 
 /// Moves the last finished sync back by `hours`.
 fn age_sync(store: &Store, hours: i64) {
-    store.with_connection(|connection| {
-        connection
-            .execute(
-                "UPDATE mcp_registry_index_state SET synced_at = synced_at - ?1",
-                rusqlite::params![hours * 60 * 60 * 1_000],
-            )
-            .unwrap();
-    });
+    store.age_collection(
+        crate::storage::REGISTRY_INDEX_STATE,
+        &["synced_at"],
+        hours * 60 * 60 * 1_000,
+    );
 }
 
 /// A store whose index holds `pages`, synced from `base`.
