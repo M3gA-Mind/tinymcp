@@ -6,27 +6,17 @@
 use std::sync::Arc;
 
 use tinybus::{Connection, broker::Broker, transport::memory::MemoryBus};
-use tinystoragedrivers_busproxy::{PerCallerEndpoint, serve};
-use tinystoragedrivers_client::StorageServer;
-use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+use tinystoragedrivers_core::MemoryStorage;
 use tinystoragedrivers_secrets::{MemorySecrets, SecretStore};
 
+use super::test_host::{TestHost, serve_storage};
 use super::*;
 use crate::Store;
 
-/// A host serving `backend`'s `scope` to every caller, with secrets.
-async fn host(backend: &MemoryStorage, scope: &str) -> (MemoryBus, Connection) {
+async fn host(backend: &MemoryStorage, scope: &str) -> (MemoryBus, TestHost) {
     let bus = MemoryBus::new();
     Broker::new().spawn(bus.clone());
-    let host = Connection::connect(bus.connect().await.unwrap())
-        .await
-        .unwrap();
-    let storage = backend.for_scope(&Scope::new(scope).unwrap()).unwrap();
-    let secrets = Arc::new(MemorySecrets::new());
-    let endpoint = PerCallerEndpoint::new(move |_sender| {
-        Some(StorageServer::new(storage.clone()).with_secrets(secrets.clone()))
-    });
-    serve(&host, Arc::new(endpoint)).await.unwrap();
+    let host = serve_storage(&bus, backend, scope).await;
     (bus, host)
 }
 

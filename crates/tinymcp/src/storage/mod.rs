@@ -50,6 +50,9 @@ pub use ports::StoragePorts;
 pub use provider::{MemoryProvider, StorageProvider, install_provider, installed_provider};
 
 #[cfg(all(test, feature = "module"))]
+pub(crate) mod test_host;
+
+#[cfg(all(test, feature = "module"))]
 #[path = "bus_tests.rs"]
 mod bus_tests;
 

@@ -24,6 +24,7 @@ use crate::tinybus_module::{McpService, ModuleConfig, test_linked_module};
 struct TestBus {
     connection: Connection,
     _host: tinybus::module::ModuleHost,
+    _storage: Option<crate::storage::test_host::TestHost>,
     _broker_task: tokio::task::JoinHandle<tinybus::Result<()>>,
 }
 
@@ -41,6 +42,17 @@ async fn serve_root(config: &ModuleConfig) -> TestBus {
     let bus = MemoryBus::new();
     let broker = tinybus::broker::Broker::new();
     let broker_task = broker.spawn(bus.clone());
+    let storage = match config.data_dir {
+        Some(_) => Some(
+            crate::storage::test_host::serve_storage(
+                &bus,
+                &tinystoragedrivers_core::MemoryStorage::new(),
+                "module-tinymcp",
+            )
+            .await,
+        ),
+        None => None,
+    };
     let host = tinybus::module::ModuleHost::new(broker.clone());
     let module = test_linked_module().unwrap();
     let info = host
@@ -59,6 +71,7 @@ async fn serve_root(config: &ModuleConfig) -> TestBus {
         connection,
         _host: host,
         _broker_task: broker_task,
+        _storage: storage,
     }
 }
 
@@ -204,7 +217,7 @@ async fn audit_tools(connection: &Connection, path: &str) -> Vec<String> {
         .collect()
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn opening_a_directory_returns_a_path_that_answers() {
     let root_dir = tempfile::tempdir().unwrap();
     let other = tempfile::tempdir().unwrap();
@@ -226,7 +239,7 @@ async fn opening_a_directory_returns_a_path_that_answers() {
     assert_eq!(installed.len(), 0);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn configured_directories_keep_their_own_mocked_static_servers() {
     let root_dir = tempfile::tempdir().unwrap();
     let (alpha_dir, beta_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
@@ -282,7 +295,7 @@ async fn configured_directories_keep_their_own_mocked_static_servers() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn configured_open_requires_confidential_delivery() {
     let root_dir = tempfile::tempdir().unwrap();
     let child = tempfile::tempdir().unwrap();
@@ -303,7 +316,7 @@ async fn configured_open_requires_confidential_delivery() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn reopening_one_directory_with_different_client_settings_replaces_its_service() {
     let root_dir = tempfile::tempdir().unwrap();
     let data_dir = tempfile::tempdir().unwrap();
@@ -341,7 +354,7 @@ async fn reopening_one_directory_with_different_client_settings_replaces_its_ser
     assert_eq!(result["rendered"]["content"][0]["text"], "beta provider");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn reconfiguring_the_load_time_directory_keeps_the_root_opener() {
     let root_dir = tempfile::tempdir().unwrap();
     let (alpha_url, beta_url) = (
@@ -391,7 +404,7 @@ async fn reconfiguring_the_load_time_directory_keeps_the_root_opener() {
     assert_eq!(child_names, ["alpha"]);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn reconfiguration_waits_for_an_in_flight_tool_call_before_replacing_the_service() {
     use std::sync::Arc;
     use tokio::sync::Semaphore;
@@ -490,7 +503,7 @@ async fn reconfiguration_waits_for_an_in_flight_tool_call_before_replacing_the_s
     assert_eq!(names, ["beta"]);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn root_transition_status_is_nonblocking_before_tree_writer_registration() {
     use std::sync::Arc;
     use tokio::sync::Semaphore;
@@ -623,7 +636,7 @@ async fn assert_competing_lifecycle_requests_are_rejected(
     assert_eq!(failure_name(&close), errors::INVALID_ARGUMENT);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn closing_waits_for_active_tool_calls_before_acknowledging_cleanup() {
     use std::sync::Arc;
     use tokio::sync::Semaphore;
@@ -783,7 +796,7 @@ async fn mock_static_server_with_gate(
     format!("http://{address}/")
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn opening_the_same_directory_twice_returns_the_same_path() {
     let root_dir = tempfile::tempdir().unwrap();
     let other = tempfile::tempdir().unwrap();
@@ -798,7 +811,7 @@ async fn opening_the_same_directory_twice_returns_the_same_path() {
     assert_eq!(first, second);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn close_returns_a_transition_that_can_be_awaited_until_the_object_is_removed() {
     let root_dir = tempfile::tempdir().unwrap();
     let child = tempfile::tempdir().unwrap();
@@ -852,7 +865,7 @@ async fn close_returns_a_transition_that_can_be_awaited_until_the_object_is_remo
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn closing_releases_capacity_and_never_reuses_a_stale_object_path() {
     use tokio::time::{Duration, timeout};
 
@@ -915,7 +928,7 @@ async fn closing_releases_capacity_and_never_reuses_a_stale_object_path() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn closing_the_root_resets_its_configuration_and_keeps_the_opener_alive() {
     let root_dir = tempfile::tempdir().unwrap();
     let endpoint = mock_static_server("signed-in provider").await;
@@ -963,7 +976,7 @@ async fn closing_the_root_resets_its_configuration_and_keeps_the_opener_alive() 
     assert_eq!(child_servers, Vec::<String>::new());
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn different_directories_get_different_paths() {
     let root_dir = tempfile::tempdir().unwrap();
     let (one, two) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
@@ -989,7 +1002,7 @@ async fn different_directories_get_different_paths() {
     assert_ne!(first, second);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_load_time_directory_answers_at_the_root_path() {
     let root_dir = tempfile::tempdir().unwrap();
     let connection = serve_root(&config_in(root_dir.path())).await;
@@ -1007,7 +1020,7 @@ async fn the_load_time_directory_answers_at_the_root_path() {
     assert_eq!(path, OBJECT_PATH);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn each_directory_keeps_its_own_records() {
     let root_dir = tempfile::tempdir().unwrap();
     let other = tempfile::tempdir().unwrap();
@@ -1047,7 +1060,7 @@ async fn each_directory_keeps_its_own_records() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_relative_or_empty_path_is_refused_by_name() {
     let connection = serve_root(&ModuleConfig::default()).await;
 
@@ -1060,7 +1073,7 @@ async fn a_relative_or_empty_path_is_refused_by_name() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_refusal_never_echoes_the_path() {
     let connection = serve_root(&ModuleConfig::default()).await;
 
@@ -1076,7 +1089,7 @@ async fn a_refusal_never_echoes_the_path() {
     assert!(!error.to_string().contains("secret-user"), "{error}");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_opened_directory_cannot_open_further_directories() {
     let root_dir = tempfile::tempdir().unwrap();
     let (one, two) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
@@ -1102,7 +1115,7 @@ async fn an_opened_directory_cannot_open_further_directories() {
     assert_eq!(failure_name(&error), errors::INVALID_ARGUMENT);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_service_that_is_not_a_root_refuses_to_open() {
     let connection = serve_untrusted_root(&ModuleConfig::default()).await;
     // Built the way `Open` builds its objects: no opener.
@@ -1126,7 +1139,7 @@ async fn a_service_that_is_not_a_root_refuses_to_open() {
     assert_eq!(failure_name(&error), errors::INVALID_ARGUMENT);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_number_of_served_directories_is_bounded() {
     let root = tempfile::tempdir().unwrap();
     let connection = serve_root(&config_in(root.path())).await;
@@ -1175,7 +1188,7 @@ async fn the_number_of_served_directories_is_bounded() {
     assert!(again.starts_with(DIRECTORY_OBJECT_PREFIX));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn opener_debug_output_does_not_expose_directory_or_client_data() {
     let connection = serve_root(&ModuleConfig::default()).await;
     let opener = super::DirectoryOpener::new(
@@ -1189,7 +1202,7 @@ async fn opener_debug_output_does_not_expose_directory_or_client_data() {
     assert!(!debug.contains("data_dir"));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_absolute_open_matches_a_relative_load_time_directory() {
     let relative_root = tempfile::tempdir_in(".").unwrap();
     let relative = std::path::Path::new(relative_root.path().file_name().unwrap());
