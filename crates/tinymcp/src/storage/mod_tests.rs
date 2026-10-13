@@ -3,7 +3,13 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use super::*;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// An absolute directory path on every platform (`/data/a` is not absolute on
+/// Windows); the memory provider never touches the disk.
+fn dir(name: &str) -> PathBuf {
+    std::env::temp_dir().join("tinymcp-test").join(name)
+}
 use tinystoragedrivers_core::{Filter, MemoryStorage};
 
 use crate::{AuditStore, Store};
@@ -95,26 +101,20 @@ fn installed_servers_count_as_stored_state() {
 #[test]
 fn the_memory_provider_answers_the_same_state_for_one_directory() {
     let provider = MemoryProvider::new();
-    let first = provider.ports_for(Path::new("/data/a")).unwrap();
+    let first = provider.ports_for(&dir("a")).unwrap();
     AuditStore::open(first).unwrap().record(&a_write()).unwrap();
-    let again = provider.ports_for(Path::new("/data/a")).unwrap();
+    let again = provider.ports_for(&dir("a")).unwrap();
     assert!(again.has_state().unwrap());
 }
 
 #[test]
 fn the_memory_provider_keeps_directories_apart() {
     let provider = MemoryProvider::new();
-    AuditStore::open(provider.ports_for(Path::new("/data/a")).unwrap())
+    AuditStore::open(provider.ports_for(&dir("a")).unwrap())
         .unwrap()
         .record(&a_write())
         .unwrap();
-    assert!(
-        !provider
-            .ports_for(Path::new("/data/b"))
-            .unwrap()
-            .has_state()
-            .unwrap()
-    );
+    assert!(!provider.ports_for(&dir("b")).unwrap().has_state().unwrap());
 }
 
 #[test]
@@ -152,7 +152,7 @@ fn an_installed_provider_replaces_the_default() {
 #[test]
 fn the_process_wide_provider_answers_for_a_directory() {
     let ports = installed_provider()
-        .ports_for(Path::new("/tinymcp-test/process-wide"))
+        .ports_for(&dir("process-wide"))
         .unwrap();
     assert!(!ports.has_state().unwrap());
 }
