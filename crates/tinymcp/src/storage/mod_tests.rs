@@ -178,3 +178,39 @@ fn the_memory_provider_refuses_a_relative_directory() {
     ));
     assert!(provider.ports_for(Path::new("")).is_err());
 }
+
+#[tokio::test]
+async fn failing_documents_refuse_every_call_except_declaring_collections() {
+    use super::failing::FailingDocuments;
+    use tinystoragedrivers_core::{DocumentStore, Precondition, Query};
+
+    let documents = FailingDocuments;
+    assert!(
+        !documents
+            .capabilities()
+            .contains(tinystoragedrivers_core::Capability::Transactions)
+    );
+    for spec in collection_specs() {
+        documents.ensure_collection(&spec).await.unwrap();
+    }
+    let filter = Filter::eq("a", "b");
+    assert!(documents.get("c", "1").await.is_err());
+    assert!(
+        documents
+            .put("c", "1", serde_json::json!({}), Precondition::None)
+            .await
+            .is_err()
+    );
+    assert!(documents.delete("c", "1", Precondition::None).await.is_err());
+    assert!(documents.query("c", &Query::default()).await.is_err());
+    assert!(documents.count("c", &filter).await.is_err());
+    assert!(documents.delete_where("c", &filter).await.is_err());
+    assert!(
+        documents
+            .claim("c", &filter, &[], &serde_json::json!({}))
+            .await
+            .is_err()
+    );
+    assert!(documents.search("c", "text", 1).await.is_err());
+    assert!(documents.drop_collection("c").await.is_err());
+}
