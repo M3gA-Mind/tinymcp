@@ -49,6 +49,10 @@ pub(crate) use grant::{
 pub use ports::StoragePorts;
 pub use provider::{MemoryProvider, StorageProvider, install_provider, installed_provider};
 
+#[cfg(all(test, feature = "module"))]
+#[path = "bus_tests.rs"]
+mod bus_tests;
+
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod tests;
