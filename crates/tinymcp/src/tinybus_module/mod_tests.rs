@@ -323,8 +323,11 @@ fn a_service_whose_provider_has_no_storage_fails_to_build() {
 
 #[test]
 fn a_service_without_a_data_directory_never_asks_the_provider() {
-    McpService::with_provider(&ModuleConfig::default(), std::sync::Arc::new(RefusingProvider))
-        .expect("an in-memory service needs no provider");
+    McpService::with_provider(
+        &ModuleConfig::default(),
+        std::sync::Arc::new(RefusingProvider),
+    )
+    .expect("an in-memory service needs no provider");
 }
 
 #[test]

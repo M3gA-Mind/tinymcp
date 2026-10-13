@@ -707,10 +707,21 @@ fn env_secret_name(server_id: &str) -> String {
     format!("{ENV_SECRET_PREFIX}{server_id}")
 }
 
+/// Serialises first-time creation of the cache fingerprint key in this process.
+static CACHE_KEY_INIT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Reads the tool-cache fingerprint key from the secret store, creating it
 /// the first time. A store whose secret cannot be written fails to open
 /// rather than keying the cache with a key it cannot keep.
+///
+/// The secret port has no create-if-absent operation, so concurrent openers in
+/// this process are serialised by [`CACHE_KEY_INIT`]: the first creates the key
+/// and the rest read it. Two *processes* sharing one backend can still race;
+/// that needs a compare-and-set on the secret port (tinystoragedrivers).
 fn load_cache_fingerprint_key(ports: &StoragePorts) -> Result<[u8; CACHE_FINGERPRINT_KEY_BYTES]> {
+    let _serialised = CACHE_KEY_INIT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let candidate = super::tool_cache::hex(&new_cache_fingerprint_key());
     // Hex text, so any secret driver can hold it.
     let stored = ports.run("loading the cache key", move |ports| async move {
