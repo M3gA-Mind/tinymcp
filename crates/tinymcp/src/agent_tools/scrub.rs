@@ -247,7 +247,8 @@ impl SecretScrubber {
         }
     }
 
-    /// Resource contents with known secrets replaced in their text and `_meta`.
+    /// Resource contents with known secrets replaced in their URI, MIME type,
+    /// text, and `_meta`.
     ///
     /// A base64 blob is left as the server sent it.
     pub fn scrub_resource_contents(&self, contents: &mut [McpResourceContents]) {
@@ -255,6 +256,10 @@ impl SecretScrubber {
             return;
         }
         for part in contents {
+            part.uri = self.scrub(&part.uri);
+            if let Some(mime_type) = part.mime_type.as_mut() {
+                *mime_type = self.scrub(mime_type);
+            }
             if let Some(text) = part.text.as_mut() {
                 *text = self.scrub(text);
             }

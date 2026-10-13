@@ -158,6 +158,31 @@ fn resource_contents_lose_known_secrets_from_text_and_meta_but_keep_blobs() {
 }
 
 #[test]
+fn resource_contents_lose_known_secrets_from_uri_and_mime_type() {
+    let scrubber = SecretScrubber::new(
+        &McpAuthConfig::BearerToken {
+            token: "resource-secret-token".into(),
+        },
+        "https://example.com/mcp",
+    );
+    let mut contents = vec![McpResourceContents {
+        uri: "ui://card?key=resource-secret-token".into(),
+        mime_type: Some("text/html;key=resource-secret-token".into()),
+        text: None,
+        blob: None,
+        meta: None,
+    }];
+
+    scrubber.scrub_resource_contents(&mut contents);
+
+    assert_eq!(contents[0].uri, "ui://card?key=[redacted]");
+    assert_eq!(
+        contents[0].mime_type.as_deref(),
+        Some("text/html;key=[redacted]")
+    );
+}
+
+#[test]
 fn an_empty_scrubber_leaves_resource_contents_untouched() {
     let scrubber = SecretScrubber::new(&McpAuthConfig::None, "https://example.com/mcp");
     let original = McpResourceContents {
