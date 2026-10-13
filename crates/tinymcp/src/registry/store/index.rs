@@ -26,7 +26,7 @@ use crate::storage::{REGISTRY_INDEX, REGISTRY_INDEX_STATE};
 /// How many index documents one batch writes.
 const BATCH: usize = 100;
 /// The longest prefix of a word the search text carries.
-/// How many candidates one index search asks the port for.
+const MAX_PREFIX: usize = 12;
 
 /// One server, ready to be written to the index.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -332,7 +332,6 @@ impl Store {
     pub(crate) fn search_index(&self, source: &str, terms: &[String]) -> Result<Vec<IndexHit>> {
         let wanted_source = source.to_string();
         let source = source.to_string();
-        let owned_terms = terms.to_vec();
         let rows = self
             .ports
             .run("searching the index", move |ports| async move {
