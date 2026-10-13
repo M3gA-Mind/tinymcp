@@ -218,7 +218,7 @@ fn a_word_longer_than_the_prefix_limit_is_found_by_its_full_text() {
         .unwrap();
     store.finish_index_sync(SOURCE).unwrap();
     let hits = store
-        .search_index(SOURCE, &terms(&["extraordinarilylongidentifier"]), 10)
+        .search_index(SOURCE, &terms(&["extraordinarilylongidentifier"]))
         .unwrap();
     assert_eq!(names(&hits), vec!["a/long"]);
 }
