@@ -3,7 +3,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use super::*;
-use crate::{RegistryServerDetail, ServerStatus};
+use crate::{ConnStatus, RegistryServerDetail, ServerStatus};
 
 const QUALIFIED: &str = "io.github.ryudi84/uuid";
 const AGENT: NotConnectedRemedy<'static> = NotConnectedRemedy {
