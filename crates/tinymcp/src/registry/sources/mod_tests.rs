@@ -379,19 +379,9 @@ fn a_body_within_the_bound_is_left_alone() {
 fn a_cache_that_cannot_be_written_costs_a_round_trip_rather_than_the_search() {
     // Failing a user's search because a cache write failed would cost them the
     // search; the only price for skipping it is one more request next time.
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("store.db");
-    let store = crate::registry::Store::open_file(&path).unwrap();
-
-    // Drop the table the cache writes into, so the write fails for a reason
-    // that has nothing to do with the caller.
-    store.cache("warmup", "{}").unwrap();
-    {
-        let connection = rusqlite::Connection::open(&path).unwrap();
-        connection
-            .execute("DROP TABLE mcp_registry_cache", [])
-            .unwrap();
-    }
+    let store = crate::registry::Store::open(crate::storage::StoragePorts::with_failing_documents())
+        .unwrap();
+    assert!(store.cache("warmup", "{}").is_err());
 
     // Returns nothing and does not panic.
     super::shared::cache(&store, "key", "{}");

@@ -30,6 +30,8 @@
 //! given, so the same code serves a desktop user and one tenant of a cloud
 //! host.
 
+#[cfg(test)]
+mod failing;
 mod grant;
 mod ports;
 mod provider;
