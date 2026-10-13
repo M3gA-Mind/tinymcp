@@ -1932,6 +1932,7 @@ async fn the_cached_overview_replays_persisted_tools_without_dialling() {
                 name: "forecast".into(),
                 description: Some("cached".into()),
                 input_schema: json!({"type": "object"}),
+                meta: None,
             }],
         )
         .unwrap();
@@ -1997,6 +1998,30 @@ async fn the_connected_overview_lists_a_connected_server_with_its_tools() {
 
     assert_eq!(overview[0]["server_id"], json!("srv-1"));
     assert_eq!(overview[0]["tools"][0]["name"], json!("forecast"));
+}
+
+#[tokio::test]
+async fn listing_an_installed_servers_tools_keeps_each_tools_meta() {
+    let directory = tempfile::tempdir().unwrap();
+    let url = mock_mcp_app_server().await;
+    let service = service_at(directory.path(), "http://127.0.0.1:1");
+    service
+        .dynamic()
+        .store()
+        .insert_server(&remote_install("srv-1", &url))
+        .unwrap();
+    ok(&service, names::methods::CONNECT, json!(["srv-1"])).await;
+
+    let tools = ok(&service, names::methods::LIST_TOOLS, json!(["srv-1"])).await;
+    let overview = ok(&service, names::methods::CONNECTED_OVERVIEW, json!([])).await;
+    let cached = ok(&service, names::methods::CACHED_OVERVIEW, json!([])).await;
+
+    let card = json!({ "ui": { "resourceUri": "ui://weather/card.html" } });
+    assert_eq!(tools[0]["name"], json!("forecast"));
+    assert_eq!(tools[0]["_meta"], card);
+    assert!(tools[1].get("_meta").is_none(), "{tools}");
+    assert_eq!(overview[0]["tools"][0]["_meta"], card);
+    assert_eq!(cached[0]["tools"][0]["_meta"], card);
 }
 
 #[tokio::test]
@@ -2168,6 +2193,32 @@ async fn mock_mcp_server_counted() -> (String, Arc<AtomicUsize>) {
     )
     .with_state(Arc::clone(&hits));
     (format!("{}/", serve(app).await), hits)
+}
+
+/// Binds a loopback MCP server whose tools reference a UI resource.
+async fn mock_mcp_app_server() -> String {
+    let app = Router::new().route(
+        "/",
+        axum::routing::post(|axum::Json(body): axum::Json<Value>| async move {
+            let result = match body["method"].as_str().unwrap_or_default() {
+                "initialize" => json!({
+                    "protocolVersion": tinymcp_bus::LATEST_PROTOCOL_VERSION,
+                    "capabilities": { "tools": {}, "resources": {} },
+                    "serverInfo": { "name": "apps", "version": "1" },
+                }),
+                "tools/list" => json!({ "tools": [
+                    {
+                        "name": "forecast",
+                        "_meta": { "ui": { "resourceUri": "ui://weather/card.html" } }
+                    },
+                    { "name": "plain" }
+                ] }),
+                _ => json!({}),
+            };
+            axum::Json(json!({ "jsonrpc": "2.0", "id": body["id"].clone(), "result": result }))
+        }),
+    );
+    format!("{}/", serve(app).await)
 }
 
 /// An enabled remote install pointing at `url`.

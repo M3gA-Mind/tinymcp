@@ -340,6 +340,7 @@ async fn verify_metadata_operations(
                         name: "read_fixture".into(),
                         description: Some("Read the fixture".into()),
                         input_schema: json!({"type":"object", "properties":{"id":{"type":"string"}}}),
+                        meta: None,
                     }],
                     default_exposure: McpToolExposure::Direct,
                     direct_tools: Vec::new(),
