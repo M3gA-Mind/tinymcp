@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used)]
+
 use super::McpToolExposure;
 use crate::McpClientIdentityConfig;
 use serde_json::json;
