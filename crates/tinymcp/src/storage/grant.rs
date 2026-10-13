@@ -49,7 +49,9 @@ pub fn grant() -> StorageGrant {
             .into_iter()
             .map(|spec| spec.name)
             .collect(),
-        searchable: vec![REGISTRY_INDEX.to_string()],
+        // Index search reads the source's rows and filters by substring, so no
+        // collection needs full-text indexing from the backend.
+        searchable: Vec::new(),
         streams: vec![AUDIT_STREAM.to_string()],
         secrets: vec![
             format!("{ENV_SECRET_PREFIX}*"),
@@ -69,8 +71,7 @@ pub fn collection_specs() -> Vec<CollectionSpec> {
         CollectionSpec::new(REGISTRY_CACHE).index(IndexSpec::new("cache_key", ["cache_key"])),
         CollectionSpec::new(TOOL_CACHE),
         CollectionSpec::new(REGISTRY_INDEX)
-            .index(IndexSpec::new("source", ["source"]))
-            .searchable(["search"]),
+            .index(IndexSpec::new("source", ["source"])),
         CollectionSpec::new(REGISTRY_INDEX_STATE),
     ]
 }

@@ -125,7 +125,16 @@ impl ServerDoc {
 struct NameClaim {
     qualified_name: String,
     server_id: String,
+    /// When the claim was made (Unix ms). A claim without its server only
+    /// counts as abandoned once it is older than [`CLAIM_LEASE_MS`]; a claim
+    /// that predates this field reads as `0`, i.e. long expired.
+    #[serde(default)]
+    claimed_at: i64,
 }
+
+/// How long a claim may wait for its server row before another installer may
+/// treat it as left behind by a crash.
+const CLAIM_LEASE_MS: i64 = 60_000;
 
 /// A cached browse response.
 #[derive(Debug, Serialize, Deserialize)]
@@ -232,6 +241,7 @@ impl Store {
         let claim = serde_json::to_value(NameClaim {
             qualified_name: server.qualified_name.clone(),
             server_id: server.server_id.clone(),
+            claimed_at: now_ms(),
         })?;
         let id = server.server_id.clone();
         let name = server.qualified_name.clone();
@@ -267,6 +277,16 @@ impl Store {
                             .unwrap_or_default()
                             .to_string();
                         if documents.get(SERVERS, &holder).await?.is_some() {
+                            return Ok(false);
+                        }
+                        // Within its lease the holder may simply not have
+                        // written its server yet: it is in flight, not stale.
+                        let claimed_at = held
+                            .doc
+                            .get("claimed_at")
+                            .and_then(Value::as_i64)
+                            .unwrap_or(0);
+                        if now_ms().saturating_sub(claimed_at) < CLAIM_LEASE_MS {
                             return Ok(false);
                         }
                         match documents

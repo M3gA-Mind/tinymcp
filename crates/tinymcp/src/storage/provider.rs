@@ -32,7 +32,7 @@ pub trait StorageProvider: Send + Sync + std::fmt::Debug {
 #[derive(Debug, Default)]
 pub struct MemoryProvider {
     backend: MemoryStorage,
-    opened: Mutex<HashMap<String, StoragePorts>>,
+    opened: Mutex<HashMap<PathBuf, StoragePorts>>,
 }
 
 impl MemoryProvider {
@@ -50,12 +50,14 @@ impl StorageProvider for MemoryProvider {
                 "a data directory must be a non-empty absolute path",
             ));
         }
-        let key = data_dir.to_string_lossy().into_owned();
+        // Keyed by the original path: a lossy string would merge distinct
+        // directories whose names differ only in invalid UTF-8 bytes.
+        let key = data_dir.to_path_buf();
         let mut opened = self.opened.lock();
         if let Some(ports) = opened.get(&key) {
             return Ok(ports.clone());
         }
-        let scope = format!("dir-{}", crate::registry::store::hex_digest(key.as_bytes()));
+        let scope = format!("dir-{}", crate::registry::store::hex_digest(&path_bytes(&key)));
         let ports = StoragePorts::memory_scoped(&self.backend, &scope)?;
         opened.insert(key, ports.clone());
         Ok(ports)
@@ -100,4 +102,20 @@ pub fn install_provider(provider: Arc<dyn StorageProvider>) {
 #[must_use]
 pub fn installed_provider() -> Arc<dyn StorageProvider> {
     slot().current()
+}
+
+/// The bytes of a path, without lossy conversion.
+fn path_bytes(path: &Path) -> Vec<u8> {
+    #[cfg(unix)]
+    {
+        std::os::unix::ffi::OsStrExt::as_bytes(path.as_os_str()).to_vec()
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows paths are UTF-16; encode the code units so distinct
+        // (even ill-formed) names stay distinct.
+        std::os::windows::ffi::OsStrExt::encode_wide(path.as_os_str())
+            .flat_map(u16::to_le_bytes)
+            .collect()
+    }
 }
