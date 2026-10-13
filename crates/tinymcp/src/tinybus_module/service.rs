@@ -581,6 +581,8 @@ impl McpService {
             .await
             .map_err(|error| Self::failed_scrubbed(&error, &scrubber))?;
         scrubber.scrub_resource_contents(&mut contents);
+        crate::transport::enforce_resource_cap(&uri, &contents)
+            .map_err(|error| Self::failed_scrubbed(&error, &scrubber))?;
         Ok(contents)
     }
 
@@ -890,6 +892,8 @@ impl McpService {
             .await
             .map_err(|error| Self::failed_scrubbed(&error, &scrubber))?;
         scrubber.scrub_resource_contents(&mut contents);
+        crate::transport::enforce_resource_cap(&uri, &contents)
+            .map_err(|error| Self::failed_scrubbed(&error, &scrubber))?;
         Ok(contents)
     }
 

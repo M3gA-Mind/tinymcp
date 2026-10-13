@@ -2038,8 +2038,9 @@ async fn service_with_connected_app_server(directory: &std::path::Path, url: &st
     service
 }
 
-/// A service declaring the app server at `url` as the static server `apps`.
-fn service_with_static_app_server(url: &str) -> McpService {
+/// A service declaring the app server at `url` as the static server `apps`,
+/// authenticated with `token`.
+fn service_with_static_app_server(url: &str, token: &str) -> McpService {
     McpService::new(&ModuleConfig {
         data_dir: None,
         client: McpClientConfig {
@@ -2047,7 +2048,7 @@ fn service_with_static_app_server(url: &str) -> McpService {
                 name: "apps".into(),
                 endpoint: url.to_string(),
                 auth: tinymcp_bus::McpAuthConfig::BearerToken {
-                    token: "mcp-app-resource-secret-55".into(),
+                    token: token.into(),
                 },
                 ..McpServerConfig::default()
             }],
@@ -2114,6 +2115,67 @@ async fn reading_an_installed_servers_resource_redacts_the_bare_stored_bearer_to
     .await;
 
     assert_eq!(contents[0]["text"], json!("<p>[redacted]</p>"));
+}
+
+#[tokio::test]
+async fn an_installed_servers_resource_pushed_over_the_cap_by_redaction_is_refused() {
+    let directory = tempfile::tempdir().unwrap();
+    let url = mock_mcp_app_server().await;
+    let service = service_at(directory.path(), "http://127.0.0.1:1");
+    service
+        .dynamic()
+        .store()
+        .insert_server(&remote_install("srv-1", &url))
+        .unwrap();
+    service
+        .dynamic()
+        .store()
+        .set_env_values(
+            "srv-1",
+            &std::collections::BTreeMap::from([("API_KEY".to_string(), "k9".to_string())]),
+        )
+        .unwrap();
+    ok(&service, names::methods::CONNECT, json!(["srv-1"])).await;
+
+    let error = call(
+        &service,
+        names::methods::READ_RESOURCE,
+        json!(["srv-1", "ui://weather/echoes.html"]),
+    )
+    .await
+    .expect_err("redaction grew the contents past the cap");
+    let few = ok(
+        &service,
+        names::methods::READ_RESOURCE,
+        json!(["srv-1", "ui://weather/few.html"]),
+    )
+    .await;
+
+    assert_eq!(wire_name(&error), tinymcp_bus::errors::RESOURCE_TOO_LARGE);
+    assert_eq!(few[0]["text"], json!("[redacted] [redacted]"));
+}
+
+#[tokio::test]
+async fn a_static_servers_resource_pushed_over_the_cap_by_redaction_is_refused() {
+    let url = mock_mcp_app_server().await;
+    let service = service_with_static_app_server(&url, "k9");
+
+    let error = call(
+        &service,
+        names::methods::STATIC_READ_RESOURCE,
+        json!(["apps", "ui://weather/echoes.html"]),
+    )
+    .await
+    .expect_err("redaction grew the contents past the cap");
+    let few = ok(
+        &service,
+        names::methods::STATIC_READ_RESOURCE,
+        json!(["apps", "ui://weather/few.html"]),
+    )
+    .await;
+
+    assert_eq!(wire_name(&error), tinymcp_bus::errors::RESOURCE_TOO_LARGE);
+    assert_eq!(few[0]["text"], json!("[redacted] [redacted]"));
 }
 
 #[tokio::test]
@@ -2185,7 +2247,7 @@ async fn reading_a_resource_on_a_server_that_is_not_connected_says_so() {
 #[tokio::test]
 async fn reading_a_static_servers_resource_redacts_its_configured_credential() {
     let url = mock_mcp_app_server().await;
-    let service = service_with_static_app_server(&url);
+    let service = service_with_static_app_server(&url, "mcp-app-resource-secret-55");
 
     let card = ok(
         &service,
@@ -2207,7 +2269,7 @@ async fn reading_a_static_servers_resource_redacts_its_configured_credential() {
 #[tokio::test]
 async fn reading_a_static_servers_resource_enforces_the_cap_and_unknown_names() {
     let url = mock_mcp_app_server().await;
-    let service = service_with_static_app_server(&url);
+    let service = service_with_static_app_server(&url, "mcp-app-resource-secret-55");
 
     let huge = call(
         &service,
@@ -2435,6 +2497,14 @@ async fn mock_mcp_app_server() -> String {
                     "ui://weather/secret.html" => json!({ "contents": [{
                         "uri": "ui://weather/secret.html",
                         "text": "<p>mcp-app-resource-secret-55</p>"
+                    }] }),
+                    "ui://weather/echoes.html" => json!({ "contents": [{
+                        "uri": "ui://weather/echoes.html",
+                        "text": "k9 ".repeat(tinymcp_bus::MAX_RESOURCE_BYTES / 3 - 10)
+                    }] }),
+                    "ui://weather/few.html" => json!({ "contents": [{
+                        "uri": "ui://weather/few.html",
+                        "text": "k9 k9"
                     }] }),
                     "ui://weather/huge.html" => json!({ "contents": [{
                         "uri": "ui://weather/huge.html",

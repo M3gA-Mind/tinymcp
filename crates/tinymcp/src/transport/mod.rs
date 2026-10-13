@@ -22,6 +22,7 @@ mod resources;
 #[cfg(test)]
 pub(crate) mod ui_fixture;
 pub use render::{redact_endpoint, render_tool_result};
+pub(crate) use resources::enforce_resource_cap;
 
 pub mod http;
 pub mod stdio;
