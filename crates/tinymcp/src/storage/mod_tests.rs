@@ -45,7 +45,7 @@ fn the_grant_names_every_collection_the_specs_declare() {
 }
 
 #[test]
-fn every_declared_collection_is_valid_and_the_index_collection_is_searchable() {
+fn every_declared_collection_is_valid_and_none_needs_full_text_search() {
     for spec in collection_specs() {
         spec.validate().expect("a valid collection declaration");
     }
@@ -53,7 +53,9 @@ fn every_declared_collection_is_valid_and_the_index_collection_is_searchable() {
         .into_iter()
         .find(|spec| spec.name == REGISTRY_INDEX)
         .expect("the index is declared");
-    assert!(index.search.is_some());
+    // Index search filters rows by substring, so the backend need not offer
+    // full-text indexing.
+    assert!(index.search.is_none());
 }
 
 #[test]

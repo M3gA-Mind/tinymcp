@@ -112,7 +112,7 @@ impl StoragePorts {
     fn with_documents(documents: FailingDocuments) -> Self {
         let working = Self::memory().expect("memory ports");
         Self::new(
-            std::sync::Arc::new(FailingDocuments::default()),
+            std::sync::Arc::new(documents),
             working.streams,
             working.secrets,
         )
