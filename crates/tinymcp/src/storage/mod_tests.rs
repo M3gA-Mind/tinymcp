@@ -1,0 +1,142 @@
+//! Tests for the storage ports, the grant and the providers.
+
+use super::*;
+use std::path::Path;
+use tinystoragedrivers_core::{Filter, MemoryStorage};
+
+use crate::{AuditStore, Store};
+use tinymcp_bus::NewMcpWriteRecord;
+
+fn a_write() -> NewMcpWriteRecord {
+    NewMcpWriteRecord {
+        timestamp_ms: 1,
+        client_info: "client".into(),
+        tool_name: "tool".into(),
+        args_summary: serde_json::json!({}),
+        resulting_chunk_id: None,
+        success: true,
+        error_message: None,
+    }
+}
+
+#[test]
+fn the_grant_names_every_collection_the_specs_declare() {
+    let specs = collection_specs();
+    let granted = grant();
+    let declared: Vec<String> = specs.into_iter().map(|spec| spec.name).collect();
+    assert_eq!(granted.collections, declared);
+    assert!(granted.searchable.iter().all(|name| declared.contains(name)));
+    assert_eq!(granted.streams, [AUDIT_STREAM]);
+    assert!(granted.secrets.contains(&format!("{ENV_SECRET_PREFIX}*")));
+    assert!(granted.secrets.contains(&CACHE_KEY_SECRET.to_string()));
+}
+
+#[test]
+fn every_declared_collection_is_valid_and_the_index_collection_is_searchable() {
+    for spec in collection_specs() {
+        spec.validate().expect("a valid collection declaration");
+    }
+    let index = collection_specs()
+        .into_iter()
+        .find(|spec| spec.name == REGISTRY_INDEX)
+        .expect("the index is declared");
+    assert!(index.search.is_some());
+}
+
+#[test]
+fn preparing_twice_is_harmless() {
+    let ports = StoragePorts::memory().unwrap();
+    ports.prepare().unwrap();
+    ports.prepare().unwrap();
+}
+
+#[test]
+fn a_fresh_backend_holds_no_state_until_something_is_written() {
+    let ports = StoragePorts::memory().unwrap();
+    assert!(!ports.has_state().unwrap());
+    let audit = AuditStore::open(ports.clone()).unwrap();
+    assert!(!ports.has_state().unwrap());
+    audit.record(&a_write()).unwrap();
+    assert!(ports.has_state().unwrap());
+}
+
+#[test]
+fn installed_servers_count_as_stored_state() {
+    let ports = StoragePorts::memory().unwrap();
+    let store = Store::open(ports.clone()).unwrap();
+    assert!(!ports.has_state().unwrap());
+    let server = tinymcp_bus::InstalledServer {
+        server_id: "one".into(),
+        qualified_name: "@test/one".into(),
+        display_name: "One".into(),
+        description: None,
+        icon_url: None,
+        command_kind: tinymcp_bus::CommandKind::Node,
+        command: "npx".into(),
+        args: Vec::new(),
+        env_keys: Vec::new(),
+        config: None,
+        installed_at: 1,
+        last_connected_at: None,
+        transport: tinymcp_bus::Transport::Stdio,
+        enabled: true,
+    };
+    store.insert_server(&server).unwrap();
+    assert!(ports.has_state().unwrap());
+}
+
+#[test]
+fn the_memory_provider_answers_the_same_state_for_one_directory() {
+    let provider = MemoryProvider::new();
+    let first = provider.ports_for(Path::new("/data/a")).unwrap();
+    AuditStore::open(first).unwrap().record(&a_write()).unwrap();
+    let again = provider.ports_for(Path::new("/data/a")).unwrap();
+    assert!(again.has_state().unwrap());
+}
+
+#[test]
+fn the_memory_provider_keeps_directories_apart() {
+    let provider = MemoryProvider::new();
+    AuditStore::open(provider.ports_for(Path::new("/data/a")).unwrap())
+        .unwrap()
+        .record(&a_write())
+        .unwrap();
+    assert!(!provider.ports_for(Path::new("/data/b")).unwrap().has_state().unwrap());
+}
+
+#[test]
+fn a_shared_backend_gives_each_scope_its_own_records() {
+    let backend = MemoryStorage::new();
+    let alice = StoragePorts::memory_scoped(&backend, "alice").unwrap();
+    let bob = StoragePorts::memory_scoped(&backend, "bob").unwrap();
+    AuditStore::open(alice.clone()).unwrap().record(&a_write()).unwrap();
+    assert!(alice.has_state().unwrap());
+    assert!(!bob.has_state().unwrap());
+}
+
+#[test]
+fn an_invalid_scope_is_refused() {
+    let error = StoragePorts::memory_scoped(&MemoryStorage::new(), "").unwrap_err();
+    assert!(matches!(error, crate::Error::Store { .. }));
+}
+
+#[test]
+fn an_installed_provider_is_the_one_services_are_built_with() {
+    let before = installed_provider();
+    let provider: std::sync::Arc<dyn StorageProvider> = std::sync::Arc::new(MemoryProvider::new());
+    install_provider(std::sync::Arc::clone(&provider));
+    assert!(std::sync::Arc::ptr_eq(&installed_provider(), &provider));
+    install_provider(before);
+}
+
+#[test]
+fn the_counted_filter_default_selects_everything() {
+    let ports = StoragePorts::memory().unwrap();
+    ports.prepare().unwrap();
+    let counted = ports
+        .run("counting", |ports| async move {
+            ports.documents.count(SERVERS, &Filter::default()).await
+        })
+        .unwrap();
+    assert_eq!(counted, 0);
+}
