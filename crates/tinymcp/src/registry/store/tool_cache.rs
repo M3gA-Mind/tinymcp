@@ -22,11 +22,13 @@
 //! A read whose fingerprint differs misses, so editing a server's definition
 //! can never surface the old server's tools under the new one.
 
-use rusqlite::{OptionalExtension as _, params};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
+use tinystoragedrivers_core::Precondition;
 
 use super::types::{Store, now_ms};
-use crate::error::{Error, Result};
+use crate::error::Result;
+use crate::storage::TOOL_CACHE;
 use tinymcp_bus::{InstalledServer, McpTool};
 
 /// The key prefix for a server pinned in a host's configuration, keeping it
@@ -103,6 +105,12 @@ pub(super) fn keyed_fingerprint(key: &[u8; 32], value: &str) -> String {
     hex(&outer.finalize())
 }
 
+/// Lower-case hex of the SHA-256 of `bytes`: a document id that is safe for
+/// any key, however long or whatever it contains.
+pub(crate) fn hex_digest(bytes: &[u8]) -> String {
+    hex(&Sha256::digest(bytes))
+}
+
 /// Lower-case hex of `bytes`.
 pub(crate) fn hex(bytes: &[u8]) -> String {
     use std::fmt::Write as _;
@@ -126,18 +134,34 @@ impl Store {
         fingerprint: &str,
         tools: &[McpTool],
     ) -> Result<()> {
-        let encoded = serde_json::to_string(tools)?;
-        let fingerprint = self.keyed_cache_fingerprint(fingerprint);
-        self.connection
-            .lock()
-            .execute(
-                "INSERT OR REPLACE INTO mcp_tool_cache (server_key, fingerprint, tools_json, cached_at)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![server_key, fingerprint, encoded, now_ms()],
-            )
-            .map_err(|source| Error::store("writing the tool cache", source))?;
+        self.write_cached_tools(server_key, fingerprint, tools, now_ms())?;
         tracing::debug!(server_key, tools = tools.len(), "cached a tool listing");
         Ok(())
+    }
+
+    pub(super) fn write_cached_tools(
+        &self,
+        server_key: &str,
+        fingerprint: &str,
+        tools: &[McpTool],
+        cached_at: i64,
+    ) -> Result<()> {
+        let fingerprint = self.keyed_cache_fingerprint(fingerprint);
+        let id = hex_digest(server_key.as_bytes());
+        let doc = serde_json::to_value(ToolCacheDoc {
+            server_key: server_key.to_string(),
+            fingerprint,
+            tools: serde_json::to_value(tools)?,
+            cached_at,
+        })?;
+        self.ports
+            .run("writing the tool cache", move |ports| async move {
+                ports
+                    .documents
+                    .put(TOOL_CACHE, &id, doc, Precondition::None)
+                    .await
+                    .map(|_| ())
+            })
     }
 
     /// The tools last cached for `server_key`, when they were cached for the
@@ -152,27 +176,23 @@ impl Store {
     /// decoded.
     pub fn cached_tools(&self, server_key: &str, fingerprint: &str) -> Result<Option<CachedTools>> {
         let fingerprint = self.keyed_cache_fingerprint(fingerprint);
-        let row: Option<(String, String, i64)> = self
-            .connection
-            .lock()
-            .query_row(
-                "SELECT fingerprint, tools_json, cached_at FROM mcp_tool_cache WHERE server_key = ?1",
-                params![server_key],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )
-            .optional()
-            .map_err(|source| Error::store("reading the tool cache", source))?;
-
-        let Some((stored, tools_json, cached_at)) = row else {
+        let id = hex_digest(server_key.as_bytes());
+        let found = self
+            .ports
+            .run("reading the tool cache", move |ports| async move {
+                ports.documents.get(TOOL_CACHE, &id).await
+            })?;
+        let Some(found) = found else {
             return Ok(None);
         };
-        if stored != fingerprint {
+        let row: ToolCacheDoc = serde_json::from_value(found.doc)?;
+        if row.fingerprint != fingerprint {
             tracing::debug!(server_key, "the cached tools describe another definition");
             return Ok(None);
         }
         Ok(Some(CachedTools {
-            tools: serde_json::from_str(&tools_json)?,
-            cached_at,
+            tools: serde_json::from_value(row.tools)?,
+            cached_at: row.cached_at,
         }))
     }
 
@@ -182,14 +202,48 @@ impl Store {
     ///
     /// Returns [`Error::Store`] when the delete fails.
     pub fn forget_cached_tools(&self, server_key: &str) -> Result<bool> {
-        let removed = self
-            .connection
-            .lock()
-            .execute(
-                "DELETE FROM mcp_tool_cache WHERE server_key = ?1",
-                params![server_key],
-            )
-            .map_err(|source| Error::store("forgetting cached tools", source))?;
-        Ok(removed > 0)
+        let id = hex_digest(server_key.as_bytes());
+        self.ports
+            .run("forgetting cached tools", move |ports| async move {
+                ports
+                    .documents
+                    .delete(TOOL_CACHE, &id, Precondition::None)
+                    .await
+            })
     }
+
+    /// Ages the cached tools for `server_key`, for tests that need them stale.
+    #[cfg(test)]
+    pub(crate) fn backdate_cached_tools(&self, server_key: &str, age_ms: i64) {
+        let id = hex_digest(server_key.as_bytes());
+        let found = self
+            .ports
+            .run("reading the tool cache", move |ports| async move {
+                ports.documents.get(TOOL_CACHE, &id).await
+            })
+            .expect("the cache reads")
+            .expect("the entry exists");
+        let mut row: ToolCacheDoc = serde_json::from_value(found.doc).expect("a cache row");
+        row.cached_at = now_ms() - age_ms;
+        let id = hex_digest(server_key.as_bytes());
+        let doc = serde_json::to_value(row).expect("encodes");
+        self.ports
+            .run("writing the tool cache", move |ports| async move {
+                ports
+                    .documents
+                    .put(TOOL_CACHE, &id, doc, Precondition::None)
+                    .await
+                    .map(|_| ())
+            })
+            .expect("the cache writes");
+    }
+}
+
+/// One tool-cache document.
+#[derive(Debug, Serialize, Deserialize)]
+struct ToolCacheDoc {
+    server_key: String,
+    fingerprint: String,
+    tools: serde_json::Value,
+    cached_at: i64,
 }

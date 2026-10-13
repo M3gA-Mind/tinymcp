@@ -695,28 +695,42 @@ fn env_secret_name(server_id: &str) -> String {
 /// the first time. A store whose secret cannot be written fails to open
 /// rather than keying the cache with a key it cannot keep.
 fn load_cache_fingerprint_key(ports: &StoragePorts) -> Result<[u8; CACHE_FINGERPRINT_KEY_BYTES]> {
-    let candidate = new_cache_fingerprint_key();
+    let candidate = super::tool_cache::hex(&new_cache_fingerprint_key());
+    // Hex text, so any secret driver can hold it.
     let stored = ports.run("loading the cache key", move |ports| async move {
         if let Some(bytes) = ports.secrets.get(CACHE_KEY_SECRET).await? {
             return Ok(bytes.to_vec());
         }
-        ports.secrets.set(CACHE_KEY_SECRET, &candidate).await?;
+        ports.secrets.set(CACHE_KEY_SECRET, candidate.as_bytes()).await?;
         // Another opener may have written between the read and the write;
         // whatever is stored now is the key.
         Ok(ports
             .secrets
             .get(CACHE_KEY_SECRET)
             .await?
-            .map_or_else(|| candidate.to_vec(), |bytes| bytes.to_vec()))
+            .map_or_else(|| candidate.into_bytes(), |bytes| bytes.to_vec()))
     })?;
-    stored.try_into().map_err(|_| {
+    decode_hex_key(&stored).ok_or_else(|| {
         Error::store(
             "loading the cache key",
             tinystoragedrivers_core::StorageError::serialization(
-                "the stored cache fingerprint key has the wrong length",
+                "the stored cache fingerprint key is malformed",
             ),
         )
     })
+}
+
+/// Parses the stored 64-character hex key.
+fn decode_hex_key(text: &[u8]) -> Option<[u8; CACHE_FINGERPRINT_KEY_BYTES]> {
+    let text = std::str::from_utf8(text).ok()?;
+    if text.len() != CACHE_FINGERPRINT_KEY_BYTES * 2 || !text.is_ascii() {
+        return None;
+    }
+    let mut key = [0; CACHE_FINGERPRINT_KEY_BYTES];
+    for (slot, pair) in key.iter_mut().zip(text.as_bytes().chunks(2)) {
+        *slot = u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?;
+    }
+    Some(key)
 }
 
 fn new_cache_fingerprint_key() -> [u8; CACHE_FINGERPRINT_KEY_BYTES] {
