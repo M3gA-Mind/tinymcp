@@ -30,8 +30,10 @@
 /// 1.20 adds module-owned generic server argument validation. 1.21 adds
 /// module-owned MCP identifier normalization to `TransformText`. 1.22 adds the
 /// shared configured-client lifecycle vocabulary (`client_lifecycle`): the
-/// open/close receipt state machine and the admission/retirement table.
-pub const CONTRACT_VERSION: (u32, u32) = (1, 22);
+/// open/close receipt state machine and the admission/retirement table. 1.23 adds pure registry-answer helpers
+/// (`require_identifier`, `ServerDetail::server_json`, `explain_not_connected`) that
+/// hosts previously copied; no member was added or removed.
+pub const CONTRACT_VERSION: (u32, u32) = (1, 23);
 
 /// Returns whether a host holding [`CONTRACT_VERSION`] can bind to a module
 /// reporting `module`.

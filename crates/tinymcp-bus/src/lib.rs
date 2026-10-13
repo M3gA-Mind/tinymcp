@@ -91,6 +91,8 @@ pub use config::{
 };
 pub use config_document::{AppliedServer, ConfigApplyReport, ConfigApplyResponse};
 pub use method::{
+    NotConnectedExplanation, NotConnectedRemedy, explain_not_connected, not_connected_message,
+    require_identifier,
     ConnectOutcome, InstallOutcome, RegistryFreshness, RegistrySearchPage, RegistrySettings,
     SearchCuration, ServerDetail, ToolCallOutcome, UpdateEnvOutcome, UpdateEnvStatus,
 };

@@ -13,7 +13,13 @@
 //! a caller from having to unwrap two layers to find out whether anything went
 //! wrong, and keeps the failure path typed rather than stringly.
 
+mod explain;
 mod types;
+
+pub use explain::{
+    NotConnectedExplanation, NotConnectedRemedy, explain_not_connected, not_connected_message,
+    require_identifier,
+};
 
 pub use types::{
     ConnectOutcome, InstallOutcome, RegistryFreshness, RegistrySearchPage, RegistrySettings,
@@ -23,3 +29,7 @@ pub use types::{
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod test;
+
+#[cfg(test)]
+#[path = "explain_tests.rs"]
+mod explain_test;
