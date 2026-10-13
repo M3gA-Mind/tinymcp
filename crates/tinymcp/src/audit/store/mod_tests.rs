@@ -8,6 +8,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use super::types::AuditStore;
+use crate::storage::StoragePorts;
 use crate::Error;
 use crate::McpWriteListQueryExt;
 use serde_json::json;
@@ -44,38 +45,50 @@ fn all() -> McpWriteListQuery {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn opening_creates_the_directory_and_file() {
-    let directory = tempfile::tempdir().unwrap();
-    let expected = AuditStore::path_for(directory.path());
-    assert!(!expected.exists());
-
-    let _store = AuditStore::open(directory.path()).expect("the audit log opens");
-
-    assert!(expected.exists(), "{}", expected.display());
+fn opening_reaches_the_audit_stream_without_writing_to_it() {
+    let ports = StoragePorts::memory().unwrap();
+    let _store = AuditStore::open(ports.clone()).expect("the audit log opens");
+    assert!(!ports.has_state().unwrap());
 }
 
 #[test]
-fn the_audit_log_is_its_own_file_beside_the_server_store() {
+fn the_audit_log_is_a_stream_of_its_own() {
     // It shared a database with the host's own tables before the extraction,
-    // which is what made it unmovable.
-    let audit = AuditStore::path_for(std::path::Path::new("/data"));
-    let servers = crate::Store::path_for(std::path::Path::new("/data"));
-    assert_ne!(audit, servers);
-    assert!(audit.ends_with("mcp_audit/mcp_audit.db"), "{audit:?}");
+    // which is what made it unmovable; now it is one named stream, apart from
+    // the server documents.
+    let ports = StoragePorts::memory().unwrap();
+    let store = AuditStore::open(ports.clone()).unwrap();
+    store
+        .record(&write_at(1_000, "claude", "memory_write"))
+        .unwrap();
+    let streams = ports
+        .run("listing streams", |ports| async move {
+            ports.streams.streams("").await
+        })
+        .unwrap();
+    assert_eq!(streams, [crate::storage::AUDIT_STREAM]);
 }
 
 #[test]
 fn reopening_finds_what_was_written() {
-    let directory = tempfile::tempdir().unwrap();
+    let ports = StoragePorts::memory().unwrap();
 
-    let first = AuditStore::open(directory.path()).unwrap();
+    let first = AuditStore::open(ports.clone()).unwrap();
     first
         .record(&write_at(1_000, "claude", "memory_write"))
         .unwrap();
     drop(first);
 
-    let second = AuditStore::open(directory.path()).unwrap();
+    let second = AuditStore::open(ports).unwrap();
     assert_eq!(second.list(&all()).unwrap().len(), 1);
+}
+
+#[test]
+fn identifiers_start_at_one_and_only_grow() {
+    let store = store();
+    let first = store.record(&write_at(5, "claude", "a")).unwrap();
+    let second = store.record(&write_at(1, "claude", "b")).unwrap();
+    assert_eq!((first, second), (1, 2));
 }
 
 // ---------------------------------------------------------------------------
@@ -543,30 +556,6 @@ fn a_row_whose_argument_summary_was_never_written_reads_as_null() {
 }
 
 #[test]
-fn an_audit_log_opens_under_the_directory_it_is_given() {
-    let directory = tempfile::tempdir().unwrap();
-
-    let store = AuditStore::open(directory.path()).expect("the log opens");
-    store
-        .record(&write_at(1_000, "claude", "memory_write"))
-        .unwrap();
-
-    assert!(AuditStore::path_for(directory.path()).exists());
-    assert_eq!(store.list(&all()).unwrap().len(), 1);
-}
-
-#[test]
-fn an_audit_log_that_cannot_be_opened_is_reported_rather_than_panicking() {
-    // A directory where the file should be. Reported as an error so a host can
-    // log it and come up without auditing rather than failing to start.
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("occupied.db");
-    std::fs::create_dir(&path).unwrap();
-
-    assert!(AuditStore::open_file(&path).is_err());
-}
-
-#[test]
 fn an_absurd_limit_is_capped_rather_than_refused() {
     // Unlike the offset, the limit has a ceiling of its own, so a caller asking
     // for everything gets the largest page instead of an error. That is the
@@ -590,23 +579,50 @@ fn an_absurd_limit_is_capped_rather_than_refused() {
 }
 
 #[test]
-fn a_row_whose_argument_summary_is_unreadable_fails_the_read() {
-    // The column is JSON in a text column. A value that does not decode is
-    // corruption, and inventing an empty summary would make an audit record
-    // say something the write did not.
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("audit.db");
-    let store = AuditStore::open_file(&path).unwrap();
+fn a_record_that_is_unreadable_fails_the_read() {
+    // A value that does not decode is corruption, and inventing an empty
+    // record would make an audit entry say something the write did not.
+    let ports = StoragePorts::memory().unwrap();
+    let store = AuditStore::open(ports.clone()).unwrap();
     store
         .record(&write_at(1_000, "claude", "memory_write"))
         .unwrap();
-    drop(store);
-
-    let connection = rusqlite::Connection::open(&path).unwrap();
-    connection
-        .execute("UPDATE mcp_writes SET args_summary = '{ not json'", [])
+    ports
+        .run("seeding", |ports| async move {
+            ports
+                .streams
+                .append(crate::storage::AUDIT_STREAM, json!({ "timestamp_ms": "x" }))
+                .await
+        })
         .unwrap();
-    drop(connection);
 
-    assert!(AuditStore::open_file(&path).unwrap().list(&all()).is_err());
+    assert!(matches!(store.list(&all()), Err(Error::Store { .. })));
+}
+
+#[test]
+fn an_unbounded_since_is_refused() {
+    let store = store();
+    let query = McpWriteListQuery {
+        since_ms: Some(u64::MAX),
+        ..all()
+    };
+    assert!(store.list(&query).is_err());
+}
+
+#[test]
+fn listing_reads_more_than_one_window_of_the_stream() {
+    let store = store();
+    for index in 0..600 {
+        store
+            .record(&write_at(i64::from(index), "claude", "memory_write"))
+            .unwrap();
+    }
+    let rows = store
+        .list(&McpWriteListQuery {
+            limit: Some(MAX_LIST_LIMIT),
+            ..all()
+        })
+        .unwrap();
+    assert_eq!(rows.len(), 600.min(usize::try_from(MAX_LIST_LIMIT).unwrap()));
+    assert_eq!(rows[0].timestamp_ms, 599);
 }
