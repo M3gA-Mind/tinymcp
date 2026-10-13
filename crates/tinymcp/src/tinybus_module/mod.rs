@@ -48,6 +48,18 @@ use crate::registry::SupervisorConfig;
 /// is down delays nothing. See [`maintenance`].
 pub(super) async fn setup(connection: Connection, config: ModuleConfig) -> TinyBusResult<()> {
     let supervisor = SupervisorConfig::default();
+    // A module that keeps state reaches the host's storage over the bus; the
+    // host binds the scope and the grant. Failing here fails the load, like
+    // any other missing dependency: falling back to memory would quietly lose
+    // every install at the next restart.
+    if config.data_dir.is_some() {
+        let provider = crate::storage::BusProvider::connect(connection.clone())
+            .await
+            .map_err(|error| {
+                tinybus::Error::failed(format!("tinymcp could not reach host storage: {error}"))
+            })?;
+        crate::storage::install_provider(Arc::new(provider));
+    }
     let service = Arc::new(
         McpService::new(&config)
             .map_err(|error| tinybus::Error::failed(format!("tinymcp could not start: {error}")))?
