@@ -34,13 +34,13 @@ tinymcp-bus = { path = "crates/tinymcp-bus" }
 # TinyBus defines the message types, interface macro, and frozen module ABI
 # used by the generated integration. Socket and CLI features are unnecessary
 # here.
-tinybus = { version = "=0.1.3", default-features = false, features = [
+tinybus = { version = ">=0.1.3, <0.2", default-features = false, features = [
     "macros",
     "modules",
 ] }
 # The module-side SDK owns the isolated runtime and exports the ABI entrypoints
 # required by TinyBus's dynamic loader.
-tinybus-module = "=0.1.3"
+tinybus-module = ">=0.1.3, <0.2"
 # Derive macros for the crate-wide error type in `crates/tinymcp/src/error/`.
 # Every dependency entry should carry a comment like this one saying why it is
 # here.
