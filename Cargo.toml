@@ -112,15 +112,15 @@ tracing = { version = "0.1", default-features = false, features = ["std"] }
 # store call them. A git tag, like every other tinystoragedrivers consumer, so a
 # host that vendors the repository once redirects it with a `[patch]`. This
 # crate links no database: the host picks the backend.
-tinystoragedrivers-core = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.10.0", features = ["blocking"] }
+tinystoragedrivers-core = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.11.0", features = ["blocking"] }
 # The `SecretStore` port: server environment values and OAuth bundles are kept
 # there, never in a document. Same tag as the core.
-tinystoragedrivers-secrets = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.10.0" }
+tinystoragedrivers-secrets = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.11.0" }
 # The module-side storage bus: `connect_storage` over the module's TinyBus
 # connection, giving the same port traits the host serves. Used only by the
 # `module` feature (a cdylib reaches storage through the host, never a file).
-tinystoragedrivers-busproxy = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.10.0" }
-tinystoragedrivers-client = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.10.0" }
+tinystoragedrivers-busproxy = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.11.0" }
+tinystoragedrivers-client = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.11.0" }
 # Locating a user's home directory, to find the version-manager shim
 # directories a desktop launch's stripped PATH leaves out.
 dirs = "7"
