@@ -140,8 +140,12 @@ async fn closing_a_session_that_was_never_opened_does_nothing() {
 #[cfg(unix)]
 mod against_a_fake_server {
     use super::{Error, LATEST_PROTOCOL_VERSION, McpStdioClient};
+    use crate::transport::stdio::{DirectSpawner, StdioLaunch, StdioSpawner};
+    use futures_util::future::BoxFuture;
     use std::fmt::Write as _;
+    use std::sync::Arc;
     use tinymcp_bus::McpClientIdentityConfig;
+    use tokio::process::Child;
 
     /// A server that answers each request in order, one JSON line per reply.
     ///
@@ -194,6 +198,57 @@ mod against_a_fake_server {
         // this would hang or fail if it did.
         let second = client.initialize().await.expect("the cached handshake");
         assert_eq!(second.protocol_version, first.protocol_version);
+    }
+
+    /// Records every launch, then delegates to the direct spawner.
+    #[derive(Debug, Default)]
+    struct Recording {
+        launches: std::sync::Mutex<Vec<StdioLaunch>>,
+    }
+
+    impl StdioSpawner for Recording {
+        fn spawn(&self, launch: StdioLaunch) -> BoxFuture<'_, std::io::Result<Child>> {
+            self.launches.lock().unwrap().push(launch.clone());
+            DirectSpawner.spawn(launch)
+        }
+    }
+
+    /// Refuses every launch, as a jail with no policy for the command would.
+    #[derive(Debug)]
+    struct Refusing;
+
+    impl StdioSpawner for Refusing {
+        fn spawn(&self, _launch: StdioLaunch) -> BoxFuture<'_, std::io::Result<Child>> {
+            Box::pin(async {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "jail refused",
+                ))
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn an_installed_spawner_launches_the_server_instead_of_a_direct_spawn() {
+        let spawner = Arc::new(Recording::default());
+        let client = client_for(responder(&[&initialize_reply()])).with_spawner(spawner.clone());
+
+        client.initialize().await.expect("the handshake");
+
+        let launches = spawner.launches.lock().unwrap();
+        assert_eq!(launches.len(), 1);
+        assert_eq!(launches[0].program, std::path::PathBuf::from("/bin/sh"));
+        assert_eq!(launches[0].args[0], "-c");
+        assert_eq!(launches[0].env[0].0, "PATH");
+    }
+
+    #[tokio::test]
+    async fn a_refusing_spawner_fails_the_session_closed_with_no_direct_fallback() {
+        let client = client_for(responder(&[&initialize_reply()])).with_spawner(Arc::new(Refusing));
+
+        let error = client.initialize().await.expect_err("a refused launch");
+
+        assert!(format!("{error}").contains("jail refused"), "{error:?}");
     }
 
     #[tokio::test]

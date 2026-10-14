@@ -31,6 +31,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
 use futures_util::future::BoxFuture;
@@ -51,6 +52,65 @@ use tinymcp_bus::{
 
 pub mod spawn_env;
 
+/// Everything needed to launch a stdio server, after path resolution.
+///
+/// A [`StdioSpawner`] receives this instead of a prepared `Command`, so a
+/// jailing spawner can rewrite the program and arguments (wrap them in a
+/// sandbox launcher) rather than only observe them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StdioLaunch {
+    /// The resolved executable.
+    pub program: PathBuf,
+    /// Arguments for the executable.
+    pub args: Vec<String>,
+    /// Environment to apply on top of the parent's, `PATH` first.
+    pub env: Vec<(String, String)>,
+    /// Working directory, when one was configured.
+    pub cwd: Option<PathBuf>,
+}
+
+/// The seam through which the host supplies the process launcher.
+///
+/// The returned child must have piped stdin and stdout. When a spawner is
+/// installed the client never starts a process any other way, and a spawner
+/// error fails the session closed: there is no fallback to a direct spawn.
+pub trait StdioSpawner: Send + Sync + std::fmt::Debug {
+    /// Launches `launch`, returning the child with piped stdin/stdout.
+    ///
+    /// # Errors
+    ///
+    /// Returns the I/O error that prevented the launch (or the policy refusal
+    /// the jail reported).
+    fn spawn(&self, launch: StdioLaunch) -> BoxFuture<'_, std::io::Result<Child>>;
+}
+
+/// The default launcher: a direct `tokio::process::Command` spawn.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct DirectSpawner;
+
+impl StdioSpawner for DirectSpawner {
+    fn spawn(&self, launch: StdioLaunch) -> BoxFuture<'_, std::io::Result<Child>> {
+        Box::pin(async move {
+            let mut command = Command::new(&launch.program);
+            command
+                .args(&launch.args)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                // See the module note: a dropped client must not leave an
+                // orphaned server process behind.
+                .kill_on_drop(true);
+            if let Some(cwd) = launch.cwd.as_ref() {
+                command.current_dir(cwd);
+            }
+            for (key, value) in &launch.env {
+                command.env(key, value);
+            }
+            command.spawn()
+        })
+    }
+}
+
 /// An MCP client speaking JSON-RPC to a child process.
 #[derive(Debug)]
 pub struct McpStdioClient {
@@ -61,6 +121,7 @@ pub struct McpStdioClient {
     next_id: AtomicI64,
     client_info: McpClientInfo,
     capabilities: Value,
+    spawner: Arc<dyn StdioSpawner>,
     state: Mutex<Option<StdioSession>>,
     cached_tools: parking_lot::Mutex<HashMap<String, McpRemoteTool>>,
 }
@@ -94,9 +155,18 @@ impl McpStdioClient {
             next_id: AtomicI64::new(1),
             client_info: McpClientInfo::from(identity),
             capabilities: identity.capabilities.clone(),
+            spawner: Arc::new(DirectSpawner),
             state: Mutex::new(None),
             cached_tools: parking_lot::Mutex::new(HashMap::new()),
         }
+    }
+
+    /// The same client launching its server through `spawner` (for example a
+    /// jailed launcher) instead of a direct spawn.
+    #[must_use]
+    pub fn with_spawner(mut self, spawner: Arc<dyn StdioSpawner>) -> Self {
+        self.spawner = spawner;
+        self
     }
 
     /// The same client sending `capabilities` in `initialize`, replacing
@@ -174,26 +244,17 @@ impl McpStdioClient {
             return Err(Error::missing_runtime(self.command.clone()));
         };
 
-        let mut command = Command::new(&resolved);
-        command
-            .args(&self.args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            // See the module note: a dropped client must not leave an orphaned
-            // server process behind.
-            .kill_on_drop(true);
-        if let Some(cwd) = self.cwd.as_ref() {
-            command.current_dir(cwd);
-        }
         // The reconstructed path goes on first so an explicit `PATH` in the
         // server's own environment overrides it.
-        command.env("PATH", &resolved_path);
-        for (key, value) in &self.env {
-            command.env(key, value);
-        }
-
-        let mut child = command.spawn().map_err(|error| {
+        let mut env = vec![("PATH".to_string(), resolved_path.clone())];
+        env.extend(self.env.iter().cloned());
+        let launch = StdioLaunch {
+            program: resolved,
+            args: self.args.clone(),
+            env,
+            cwd: self.cwd.clone(),
+        };
+        let mut child = self.spawner.spawn(launch).await.map_err(|error| {
             Error::malformed(format!("spawning `{}` failed: {error}", self.command))
         })?;
         let stdin = child
