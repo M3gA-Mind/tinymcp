@@ -102,3 +102,18 @@ fn the_serde_representation_is_pinned() {
     let back: PendingAuthorization = serde_json::from_value(value).unwrap();
     assert_eq!(back, parked(42));
 }
+
+#[tokio::test]
+async fn the_memory_stores_debug_output_never_shows_a_state() {
+    let store = MemoryPendingStore::new();
+    store.park("state-secret-1", parked(now())).await.unwrap();
+    let flow = super::super::OAuthFlow::new(None)
+        .unwrap()
+        .with_pending_store(std::sync::Arc::new(store));
+
+    let rendered = format!("{flow:?}");
+
+    assert!(!rendered.contains("state-secret-1"), "{rendered}");
+    assert!(!rendered.contains("verifier-1"), "{rendered}");
+    assert!(rendered.contains("parked: 1"), "{rendered}");
+}

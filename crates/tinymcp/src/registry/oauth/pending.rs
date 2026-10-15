@@ -138,10 +138,20 @@ pub trait PendingAuthorizationStore: Send + Sync + std::fmt::Debug {
 /// The default store: pending authorizations in this process's memory.
 ///
 /// Right when the redirect returns to the process that started the sign-in.
-/// Expired entries are dropped whenever the store is touched.
-#[derive(Debug, Default)]
+/// Expired entries are dropped whenever the store is touched. Its `Debug`
+/// output shows only how many are parked: each key is a `state`, a bearer
+/// secret while the sign-in is open.
+#[derive(Default)]
 pub struct MemoryPendingStore {
     entries: Mutex<HashMap<String, PendingAuthorization>>,
+}
+
+impl std::fmt::Debug for MemoryPendingStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MemoryPendingStore")
+            .field("parked", &self.entries.lock().len())
+            .finish()
+    }
 }
 
 impl MemoryPendingStore {
