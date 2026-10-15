@@ -67,6 +67,11 @@ Contract 1.24 carries each tool's `_meta` on `McpTool`, so `ListTools`,
 with `ResourceTooLarge`, and redact the server's known credentials from the
 contents' text and `_meta`.
 
+Contract 1.25 keeps a listed tool's `annotations` on `McpRemoteTool`
+(`readOnlyHint`, `destructiveHint`, …), with `McpRemoteTool::is_read_only`,
+so a host can tell a tool that only reads from one that changes something
+before it calls it. The field is optional and omitted when absent.
+
 Library consumers bring implementation extension traits into scope for moved
 DTO methods. Contract-only hosts call the compiled module. See
 [the relocation specification](../../docs/specs/pure-vocabulary.md) for public

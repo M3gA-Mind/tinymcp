@@ -24,7 +24,12 @@ fn a_listed_tools_annotations_are_kept() {
 
 #[test]
 fn a_tool_without_the_hint_or_with_it_false_is_not_read_only() {
-    for annotations in [None, Some(json!({})), Some(json!({"readOnlyHint": false})), Some(json!({"readOnlyHint": "yes"}))] {
+    for annotations in [
+        None,
+        Some(json!({})),
+        Some(json!({"readOnlyHint": false})),
+        Some(json!({"readOnlyHint": "yes"})),
+    ] {
         let mut tool = McpRemoteTool::new("sign_out");
         tool.annotations = annotations.clone();
         assert!(!tool.is_read_only(), "{annotations:?}");
@@ -43,5 +48,8 @@ fn absent_annotations_stay_off_the_wire() {
     annotated.annotations = Some(json!({"readOnlyHint": true}));
     let wire = serde_json::to_value(&annotated).unwrap();
     assert_eq!(wire["annotations"], json!({"readOnlyHint": true}));
-    assert_eq!(serde_json::from_value::<McpRemoteTool>(wire).unwrap(), annotated);
+    assert_eq!(
+        serde_json::from_value::<McpRemoteTool>(wire).unwrap(),
+        annotated
+    );
 }
