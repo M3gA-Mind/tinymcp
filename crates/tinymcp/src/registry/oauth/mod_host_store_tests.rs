@@ -114,9 +114,9 @@ async fn the_server_a_pending_state_belongs_to_can_be_read_before_completing() {
         .unwrap();
     let state = authorize_param(&url, "state").unwrap();
 
-    assert_eq!(flow.pending_server(&state).as_deref(), Some(TENANT_SERVER));
-    assert_eq!(flow.pending_count(), 1, "peeking does not consume");
-    assert_eq!(flow.pending_server("never-issued"), None);
+    assert_eq!(flow.pending_server(&state).await.unwrap().as_deref(), Some(TENANT_SERVER));
+    assert_eq!(flow.pending_count().await.unwrap(), 1, "peeking does not consume");
+    assert_eq!(flow.pending_server("never-issued").await.unwrap(), None);
 }
 
 #[tokio::test]
@@ -291,7 +291,7 @@ async fn a_guarded_flow_refuses_an_internal_authorization_server() {
 
     assert!(error.to_string().contains("https"), "{error}");
     assert_eq!(state.registrations.load(Ordering::SeqCst), 0);
-    assert_eq!(flow.pending_count(), 0);
+    assert_eq!(flow.pending_count().await.unwrap(), 0);
 }
 
 #[tokio::test]

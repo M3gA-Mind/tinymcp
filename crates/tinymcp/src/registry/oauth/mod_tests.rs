@@ -561,7 +561,7 @@ async fn completing_with_an_unknown_state_is_refused() {
 
 #[tokio::test]
 async fn a_fresh_flow_has_nothing_parked() {
-    assert_eq!(OAuthFlow::new(None).unwrap().pending_count(), 0);
+    assert_eq!(OAuthFlow::new(None).unwrap().pending_count().await.unwrap(), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -910,7 +910,7 @@ async fn beginning_parks_exactly_one_pending_authorization() {
         .await
         .unwrap();
 
-    assert_eq!(flow.pending_count(), 1);
+    assert_eq!(flow.pending_count().await.unwrap(), 1);
 }
 
 #[tokio::test]
@@ -1317,7 +1317,7 @@ async fn a_state_is_consumed_even_when_the_exchange_fails() {
 
     let _ = flow.complete(&store, &returned_state, "the-code").await;
 
-    assert_eq!(flow.pending_count(), 0);
+    assert_eq!(flow.pending_count().await.unwrap(), 0);
     let error = flow
         .complete(&store, &returned_state, "the-code")
         .await
