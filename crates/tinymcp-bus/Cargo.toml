@@ -23,6 +23,16 @@ serde_json = { workspace = true }
 # these definitions rather than a hand-kept copy. Off by default because a
 # host that only makes calls should not pay for it. Pure Rust, no transport.
 schemars = { workspace = true, optional = true }
+# Decoding a widget document a tool result embedded as a base64 `blob`, for
+# the pure tool-UI rules in `ui`. No dependencies of its own.
+base64 = { workspace = true }
+
+[dev-dependencies]
+# The WHATWG parser the `ui` link splitter must agree with: its differential
+# tests check every web link the splitter accepts against `url`'s reading.
+url = { workspace = true }
+# The pattern the `ui` URL scanner replaced, kept as the scanner's oracle.
+regex = { workspace = true }
 
 [features]
 default = []

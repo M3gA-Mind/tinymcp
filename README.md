@@ -199,10 +199,12 @@ Enable the `tools` feature to expose each server tool as a
 
 ## UI presentation for hosts
 
-Enable the `ui` feature for `tinymcp::ui`, the rules that turn one answered
-tool call into what a host shows for it. The vocabulary (`McpUiPresentation`,
-`UiLink`, `LinkClass`, `UiResource`, `WidgetCallPolicy`, `UiRendering`) is in
-`tinymcp_bus::ui`, so every host reads and writes the same metadata.
+`tinymcp_bus::ui` holds the rules that turn one answered tool call into what a
+host shows for it, beside the vocabulary (`McpUiPresentation`, `UiLink`,
+`LinkClass`, `UiResource`, `WidgetCallPolicy`, `UiRendering`), so every host
+reads and writes the same metadata. The rules are pure functions of the call's
+JSON, so a host applies them with the contract alone; the `ui` feature
+re-exports the same items as `tinymcp::ui` for library consumers.
 
 - **Widget template.** `resolve_presentation` takes a `UiCallView` (build one
   with `view_from_raw_result` or `view_from_envelope`) and reads the tool's
@@ -218,7 +220,10 @@ tool call into what a host shows for it. The vocabulary (`McpUiPresentation`,
 - **Links.** `classify_link` sorts a URL into `Web`, `Handoff` (`upi://`,
   `phonepe://`, `intent://`, any other app scheme), `Image` (image extensions,
   `/image/upload/` paths) or `Blocked` (`javascript:`, `data:`, `file:`, host
-  schemes). `extract_links` surfaces at most five web and handoff links.
+  schemes). `extract_links` surfaces at most five web and handoff links. A web
+  link is `Web` only when its host and path split cleanly; userinfo,
+  backslashes, IDN or percent-encoded hosts, IPv6 and non-canonical IPv4
+  hosts, bad ports and dot segments are `Blocked`.
 - **Widget tool calls.** `widget_call_policy` refuses calls from host-supplied
   pages and to tools whose `_meta.ui.visibility` excludes `app`, runs a tool
   annotated `readOnlyHint: true`, and asks the user for anything else.

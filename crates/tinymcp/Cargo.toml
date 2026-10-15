@@ -60,8 +60,6 @@ anyhow = { workspace = true, optional = true }
 # path, not only the optional `tinytools::Tool` adapter.
 url = { workspace = true }
 urlencoding = { workspace = true }
-# Finding URLs in tool results, for the `ui` feature's link extraction.
-regex = { workspace = true, optional = true }
 
 [[example]]
 name = "verify_module"
@@ -107,8 +105,9 @@ server-http = ["dep:axum", "dep:tokio-stream", "tokio/net"]
 tools = ["dep:async-trait", "dep:anyhow"]
 # Tool-provided UI for hosts (`tinymcp::ui`): widget template resolution,
 # widget document checks, link classification, and the widget tool-call and
-# rendering policy. Off by default; a host that renders tool UI turns it on.
-ui = ["dep:regex"]
+# rendering policy. The rules live in `tinymcp_bus::ui`, which a host can take
+# without this crate; this feature only re-exports them here. Off by default.
+ui = []
 
 [lints]
 workspace = true
