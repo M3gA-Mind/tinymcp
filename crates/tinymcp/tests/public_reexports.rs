@@ -1,5 +1,7 @@
 //! Pins the crate-root paths a host imports the contract types from.
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use tinymcp::{
     CONTRACT_VERSION, MCP_CALL_RESULT_KIND, McpAuthChallenge, McpCallError, McpCallOutcome,
     RegistryFreshness,
