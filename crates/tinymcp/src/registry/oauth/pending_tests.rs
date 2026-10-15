@@ -1,6 +1,8 @@
 //! The default in-memory pending store, and the redacted shape a host
 //! persists.
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use super::*;
 
 fn parked(started_at: u64) -> PendingAuthorization {
