@@ -72,7 +72,10 @@ document checks, link classification and extraction, the widget tool-call and
 rendering policy) from `tinymcp::ui` into `ui`, so a host renders tool UI
 without linking the module crate. `tinymcp::ui` re-exports them. Link
 classification splits `http(s)` hosts by hand, fail-closed, instead of with a
-URL parser. No member was added or removed.
+URL parser. No member was added or removed. Behaviour change (fail-closed):
+`http(s)` links with userinfo, IDN/punycode or %-encoded hosts, IPv6,
+non-canonical IPv4, bad ports or dot segments are now `Blocked` (previously
+`Web`).
 
 Library consumers bring implementation extension traits into scope for moved
 DTO methods. Contract-only hosts call the compiled module. See
