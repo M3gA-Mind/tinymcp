@@ -357,3 +357,54 @@ async fn desktop_flow_keeps_the_default_clients() {
             .is_none()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Refusing an internal server URL itself
+// ---------------------------------------------------------------------------
+
+/// The flow probes the server URL from the host before anything else, so a
+/// guarded flow checks that URL like the endpoints the server advertises:
+/// a user-supplied server address must not reach an internal service.
+#[tokio::test]
+async fn a_guarded_flow_refuses_an_internal_server_url_before_probing_it() {
+    let (endpoint, state) = authority_with_challenge().await;
+    let store = store_with_remote(&endpoint);
+    let flow = flow().require_public_endpoints();
+
+    let begun = flow
+        .begin(&store, "srv-1", "https://host.test/cb")
+        .await
+        .expect_err("a loopback server url");
+    let detected = flow
+        .detect(&store, "srv-1")
+        .await
+        .expect_err("a loopback server url");
+
+    for error in [begun, detected] {
+        assert!(
+            error.to_string().contains("MCP endpoint refused"),
+            "{error}"
+        );
+    }
+    assert_eq!(state.registrations.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn the_public_endpoint_guard_is_usable_by_a_host() {
+    let plain = crate::registry::guard_public_endpoint("http://example.com/mcp", "MCP")
+        .await
+        .expect_err("plain http");
+    let internal = crate::registry::guard_public_endpoint("https://169.254.169.254/mcp", "MCP")
+        .await
+        .expect_err("the metadata address");
+    let pinned = crate::registry::guard_public_endpoint("https://93.184.215.14/mcp", "MCP")
+        .await
+        .expect("a public literal address");
+
+    assert!(plain.to_string().contains("must use https"), "{plain}");
+    assert!(
+        internal.to_string().contains("disallowed address"),
+        "{internal}"
+    );
+    assert_eq!(pinned.len(), 1);
+}

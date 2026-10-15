@@ -154,8 +154,10 @@ impl OAuthFlow {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::UnknownServer`] when there is no such install, and
-    /// [`Error::Store`] when it cannot be read. A store failure is *not*
+    /// Returns [`Error::UnknownServer`] when there is no such install,
+    /// [`Error::Store`] when it cannot be read, and, under
+    /// [`Self::require_public_endpoints`], [`Error::MalformedResponse`] or
+    /// [`Error::EndpointResolution`] when the server's own URL is refused. A store failure is *not*
     /// collapsed into "open": reporting a server as needing nothing when the
     /// lookup failed would show the user a state that was never checked.
     pub async fn detect<S>(&self, store: &S, server_id: &str) -> Result<AuthDetection>
