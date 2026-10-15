@@ -2,8 +2,8 @@
 
 Shared serialized MCP vocabulary, fixed tool declarations, errors, method names
 and contract version. The implementation re-exports the same definitions.
-Normal/build dependency closures contain only serialization/schema utilities,
-including with all features enabled. No optional runtime, transport, native or
+Normal/build dependency closures contain only serialization/schema utilities
+and `base64`, including with all features enabled. No optional runtime, transport, native or
 TinyTools dependency belongs here.
 
 DTO constructors, fixed catalog/schema declarations and serde helpers are
@@ -66,6 +66,16 @@ Contract 1.24 carries each tool's `_meta` on `McpTool`, so `ListTools`,
 `resources/read` contents verbatim, refuse anything above `MAX_RESOURCE_BYTES`
 with `ResourceTooLarge`, and redact the server's known credentials from the
 contents' text and `_meta`.
+
+Contract 1.25 moves the pure tool-UI rules (template resolution, widget
+document checks, link classification and extraction, the widget tool-call and
+rendering policy) from `tinymcp::ui` into `ui`, so a host renders tool UI
+without linking the module crate. `tinymcp::ui` re-exports them. Link
+classification splits `http(s)` hosts by hand, fail-closed, instead of with a
+URL parser. No member was added or removed. Behaviour change (fail-closed):
+`http(s)` links with userinfo, IDN/punycode or %-encoded hosts, IPv6,
+non-canonical IPv4, bad ports or dot segments are now `Blocked` (previously
+`Web`).
 
 Library consumers bring implementation extension traits into scope for moved
 DTO methods. Contract-only hosts call the compiled module. See
