@@ -204,7 +204,11 @@ impl OAuthFlow {
     /// Returns [`Error::AuthDiscovery`] when the server advertises no
     /// authorization server, or none offers everything the flow needs, [`Error::MalformedResponse`] when
     /// registration answers with something unusable, plus whatever the
-    /// transport returns.
+    /// transport returns. Under [`Self::require_public_endpoints`], also
+    /// [`Error::MalformedResponse`] when the server's own URL or an endpoint
+    /// it advertises is refused (not `https`, or internal), and
+    /// [`Error::EndpointResolution`] when a host cannot be resolved; both
+    /// before anything is registered.
     pub async fn begin<S>(&self, store: &S, server_id: &str, redirect_uri: &str) -> Result<String>
     where
         S: OAuthCredentialStore + ?Sized,
