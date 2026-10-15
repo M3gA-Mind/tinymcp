@@ -70,7 +70,8 @@ contents' text and `_meta`.
 Contract 1.25 keeps a listed tool's `annotations` on `McpRemoteTool`
 (`readOnlyHint`, `destructiveHint`, …), with `McpRemoteTool::is_read_only`,
 so a host can tell a tool that only reads from one that changes something
-before it calls it. The field is optional and omitted when absent.
+before it calls it. The field is optional and omitted when absent, and
+`StaticScrubTools` scrubs it like the rest of a tool's metadata.
 
 Library consumers bring implementation extension traits into scope for moved
 DTO methods. Contract-only hosts call the compiled module. See
