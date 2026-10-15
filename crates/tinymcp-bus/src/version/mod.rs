@@ -34,8 +34,10 @@
 /// (`require_identifier`, `ServerDetail::server_json`, `explain_not_connected`) that
 /// hosts previously copied; no member was added or removed. 1.24 adds tool
 /// `_meta` on `McpTool` and the `ReadResource` and `StaticReadResource`
-/// members. 1.25 moves the pure tool-UI rules into `ui`; no member was added
-/// or removed.
+/// members. 1.25 moves the pure tool-UI rules into `ui`, where link
+/// classification refuses any `http(s)` shape its splitter cannot match
+/// exactly (userinfo, IDN, IPv6, non-canonical IPv4); no member was added or
+/// removed.
 pub const CONTRACT_VERSION: (u32, u32) = (1, 25);
 
 /// Returns whether a host holding [`CONTRACT_VERSION`] can bind to a module
