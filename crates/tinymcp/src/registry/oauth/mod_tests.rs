@@ -20,6 +20,7 @@ use axum::{Json, Router};
 use serde_json::{Value, json};
 
 use super::flow::{DEFAULT_CLIENT_NAME, OAuthFlow};
+use super::pending::{MemoryPendingStore, PendingAuthorization, PendingAuthorizationStore};
 use super::tokens::{OAUTH_BUNDLE_KEY, refresh_if_expired};
 use super::types::{AuthKind, TokenResponse};
 use crate::Error;
@@ -561,7 +562,10 @@ async fn completing_with_an_unknown_state_is_refused() {
 
 #[tokio::test]
 async fn a_fresh_flow_has_nothing_parked() {
-    assert_eq!(OAuthFlow::new(None).unwrap().pending_count().await.unwrap(), 0);
+    assert_eq!(
+        OAuthFlow::new(None).unwrap().pending_count().await.unwrap(),
+        0
+    );
 }
 
 // ---------------------------------------------------------------------------

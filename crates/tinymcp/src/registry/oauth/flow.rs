@@ -10,8 +10,8 @@ use sha2::{Digest, Sha256};
 
 use super::credentials::OAuthCredentialStore;
 use super::endpoint_guard::{guard_endpoint, guarded_client};
-use super::tokens::{due_refresh, exchange_refresh, oauth_failure_reason, persist, post_form};
 use super::pending::{MemoryPendingStore, PendingAuthorization, PendingAuthorizationStore};
+use super::tokens::{due_refresh, exchange_refresh, oauth_failure_reason, persist, post_form};
 use super::types::{AuthDetection, TokenResponse};
 use crate::error::{Error, Result};
 use crate::transport::http::McpHttpClient;

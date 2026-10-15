@@ -66,7 +66,10 @@ fn expiry_is_measured_from_when_it_was_parked() {
     let at = 10_000;
     assert!(!parked(at).expired_at(at + PENDING_TTL_SECS));
     assert!(parked(at).expired_at(at + PENDING_TTL_SECS + 1));
-    assert!(!parked(at).expired_at(0), "a clock behind the entry is not expiry");
+    assert!(
+        !parked(at).expired_at(0),
+        "a clock behind the entry is not expiry"
+    );
 }
 
 #[test]

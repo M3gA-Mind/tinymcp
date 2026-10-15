@@ -114,8 +114,15 @@ async fn the_server_a_pending_state_belongs_to_can_be_read_before_completing() {
         .unwrap();
     let state = authorize_param(&url, "state").unwrap();
 
-    assert_eq!(flow.pending_server(&state).await.unwrap().as_deref(), Some(TENANT_SERVER));
-    assert_eq!(flow.pending_count().await.unwrap(), 1, "peeking does not consume");
+    assert_eq!(
+        flow.pending_server(&state).await.unwrap().as_deref(),
+        Some(TENANT_SERVER)
+    );
+    assert_eq!(
+        flow.pending_count().await.unwrap(),
+        1,
+        "peeking does not consume"
+    );
     assert_eq!(flow.pending_server("never-issued").await.unwrap(), None);
 }
 
@@ -441,14 +448,16 @@ async fn an_expired_authorization_in_a_lazy_store_is_refused() {
         fn take<'a>(
             &'a self,
             state: &'a str,
-        ) -> futures_util::future::BoxFuture<'a, crate::Result<Option<PendingAuthorization>>> {
+        ) -> futures_util::future::BoxFuture<'a, crate::Result<Option<PendingAuthorization>>>
+        {
             Box::pin(std::future::ready(Ok(self.0.lock().remove(state))))
         }
 
         fn peek<'a>(
             &'a self,
             state: &'a str,
-        ) -> futures_util::future::BoxFuture<'a, crate::Result<Option<PendingAuthorization>>> {
+        ) -> futures_util::future::BoxFuture<'a, crate::Result<Option<PendingAuthorization>>>
+        {
             Box::pin(std::future::ready(Ok(self.0.lock().get(state).cloned())))
         }
 
@@ -482,6 +491,9 @@ async fn an_expired_authorization_in_a_lazy_store_is_refused() {
         .await
         .expect_err("expired");
 
-    assert!(matches!(error, Error::MalformedResponse { .. }), "{error:?}");
+    assert!(
+        matches!(error, Error::MalformedResponse { .. }),
+        "{error:?}"
+    );
     assert_eq!(authority.exchanges.load(Ordering::SeqCst), 0);
 }

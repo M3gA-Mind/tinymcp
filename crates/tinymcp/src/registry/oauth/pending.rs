@@ -101,7 +101,11 @@ pub trait PendingAuthorizationStore: Send + Sync + std::fmt::Debug {
     /// # Errors
     ///
     /// Whatever the store reports when it cannot be written.
-    fn park<'a>(&'a self, state: &'a str, pending: PendingAuthorization) -> BoxFuture<'a, Result<()>>;
+    fn park<'a>(
+        &'a self,
+        state: &'a str,
+        pending: PendingAuthorization,
+    ) -> BoxFuture<'a, Result<()>>;
 
     /// Removes and returns the entry parked under `state`, or `None` when there
     /// is none.
@@ -156,7 +160,11 @@ impl MemoryPendingStore {
 }
 
 impl PendingAuthorizationStore for MemoryPendingStore {
-    fn park<'a>(&'a self, state: &'a str, pending: PendingAuthorization) -> BoxFuture<'a, Result<()>> {
+    fn park<'a>(
+        &'a self,
+        state: &'a str,
+        pending: PendingAuthorization,
+    ) -> BoxFuture<'a, Result<()>> {
         self.pruned().insert(state.to_string(), pending);
         Box::pin(std::future::ready(Ok(())))
     }
