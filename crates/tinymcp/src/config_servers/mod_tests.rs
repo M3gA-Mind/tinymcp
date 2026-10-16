@@ -798,3 +798,37 @@ async fn every_operation_on_a_server_that_was_never_declared_is_unknown() {
         assert!(matches!(error, Error::UnknownServer { .. }), "{error:?}");
     }
 }
+
+fn stdio_server(name: &str, trusted: bool) -> McpServerConfig {
+    McpServerConfig {
+        name: name.into(),
+        command: "/bin/cat".into(),
+        operator_trusted: trusted,
+        ..McpServerConfig::default()
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn an_untrusted_stdio_server_is_refused_without_a_sandbox_and_a_trusted_one_starts() {
+    let registry = registry_of(vec![
+        stdio_server("untrusted", false),
+        stdio_server("trusted", true),
+    ]);
+    let error = registry.list_tools("untrusted").await.unwrap_err();
+    assert!(error.to_string().contains("without a sandbox"), "{error}");
+    // `cat` echoes the handshake back, which is not a valid reply; reaching
+    // that point proves the trusted server started rather than being refused.
+    let error = registry.list_tools("trusted").await.unwrap_err();
+    assert!(!error.to_string().contains("without a sandbox"), "{error}");
+}
+
+#[test]
+fn the_operator_trust_flag_is_part_of_the_server_fingerprint() {
+    let untrusted = registry_of(vec![stdio_server("s", false)]);
+    let trusted = registry_of(vec![stdio_server("s", true)]);
+    assert_ne!(
+        untrusted.get("s").unwrap().fingerprint(),
+        trusted.get("s").unwrap().fingerprint()
+    );
+}

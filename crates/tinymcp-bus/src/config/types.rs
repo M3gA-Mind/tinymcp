@@ -51,6 +51,48 @@ pub struct McpClientConfig {
     /// `None` means connect directly.
     #[serde(default)]
     pub proxy: Option<McpProxyConfig>,
+    /// The jail every stdio server runs in, unless it is operator-trusted.
+    ///
+    /// `None` means no sandbox is available: a stdio server that is not
+    /// [`McpServerConfig::operator_trusted`] (and every registry-installed
+    /// one) is refused rather than started unconfined.
+    #[serde(default)]
+    pub stdio_sandbox: Option<StdioSandboxConfig>,
+}
+
+/// The jail a host grants stdio MCP servers.
+///
+/// The module starts each server through the `TinyBox` bus contract with these
+/// grants, requiring the backend to enforce them. A backend that cannot is a
+/// refusal, never a weaker launch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct StdioSandboxConfig {
+    /// Existing absolute directory: the server's writable root and the jail's
+    /// workspace. A server's working directory must lie inside it.
+    pub workspace: String,
+    /// Existing absolute paths the server may read and execute, such as its
+    /// runtime (`/usr`, a Node install).
+    #[serde(default)]
+    pub read_only: Vec<String>,
+    /// Existing absolute paths the server may also write.
+    #[serde(default)]
+    pub read_write: Vec<String>,
+    /// Absolute paths the server may neither read nor write (credential
+    /// stores).
+    #[serde(default)]
+    pub deny_read: Vec<String>,
+    /// Whether the server may use the network. MCP servers commonly call
+    /// APIs, so this is on by default.
+    #[serde(default = "default_true")]
+    pub allow_net: bool,
+    /// Whether the server may start child processes (`npx` does).
+    #[serde(default = "default_true")]
+    pub allow_subprocess: bool,
+    /// Require the backend to meet the untrusted-code isolation floor. On by
+    /// default; a host turns it off only for a backend it has judged enough.
+    #[serde(default = "default_true")]
+    pub require_process_isolation: bool,
 }
 
 impl Default for McpClientConfig {
@@ -61,6 +103,7 @@ impl Default for McpClientConfig {
             client_identity: McpClientIdentityConfig::default(),
             registry_auth: McpRegistryAuthConfig::default(),
             proxy: None,
+            stdio_sandbox: None,
         }
     }
 }
@@ -168,6 +211,11 @@ pub struct McpServerConfig {
     /// This list wins over [`Self::allowed_tools`].
     #[serde(default)]
     pub disallowed_tools: Vec<String>,
+    /// The operator vouches for this stdio server, so it starts as an ordinary
+    /// child process without the jail. Off by default; only the host's own
+    /// configuration should set it, never a catalog or a model.
+    #[serde(default)]
+    pub operator_trusted: bool,
     /// Per-request timeout, in seconds.
     #[serde(default = "default_timeout_secs")]
     pub timeout_secs: u64,
@@ -246,6 +294,7 @@ impl Default for McpServerConfig {
             enabled: default_true(),
             allowed_tools: Vec::new(),
             disallowed_tools: Vec::new(),
+            operator_trusted: false,
             timeout_secs: default_timeout_secs(),
             auth: McpAuthConfig::None,
         }

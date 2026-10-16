@@ -137,6 +137,7 @@ async fn a_stdio_server_answers_meta_and_resources_too() {
             name: "ui".into(),
             command: "/bin/sh".into(),
             args: vec!["-c".into(), script],
+            operator_trusted: true,
             ..McpServerConfig::default()
         },
         McpClientIdentityConfig::default(),

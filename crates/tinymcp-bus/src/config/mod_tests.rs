@@ -4,7 +4,7 @@
 
 use super::{
     ConfiguredToolCallRequest, McpAuthConfig, McpClientConfig, McpServerConfig,
-    OpenConfiguredRequest, OpenConfiguredResponse, TransitionStatus,
+    OpenConfiguredRequest, OpenConfiguredResponse, StdioSandboxConfig, TransitionStatus,
 };
 use serde_json::json;
 
@@ -42,6 +42,7 @@ fn configured_open_keeps_directory_and_client_config_together_on_the_wire() {
                     "enabled": true,
                     "allowed_tools": [],
                     "disallowed_tools": [],
+                    "operator_trusted": false,
                     "timeout_secs": 30,
                     "auth": { "kind": "bearer_token", "token": "credential" }
                 }],
@@ -55,7 +56,8 @@ fn configured_open_keeps_directory_and_client_config_together_on_the_wire() {
                     "mcp_official_base": null,
                     "mcp_official_token": null
                 },
-                "proxy": null
+                "proxy": null,
+                "stdio_sandbox": null
             }
         })
     );
@@ -137,4 +139,28 @@ fn configured_open_returns_an_opaque_cleanup_transition() {
         serde_json::to_value(TransitionStatus::Complete).unwrap(),
         json!("complete")
     );
+}
+
+#[test]
+fn stdio_servers_default_to_untrusted_and_the_client_to_no_sandbox() {
+    let config: McpClientConfig = serde_json::from_value(json!({
+        "servers": [{ "name": "files", "command": "npx" }]
+    }))
+    .unwrap();
+    assert_eq!(config.stdio_sandbox, None);
+    assert!(!config.servers[0].operator_trusted);
+    assert_eq!(McpClientConfig::default().stdio_sandbox, None);
+}
+
+#[test]
+fn the_stdio_sandbox_defaults_to_net_subprocess_and_the_isolation_floor() {
+    let sandbox: StdioSandboxConfig =
+        serde_json::from_value(json!({ "workspace": "/work/mcp" })).unwrap();
+    assert!(sandbox.allow_net && sandbox.allow_subprocess);
+    assert!(sandbox.require_process_isolation);
+    assert!(sandbox.read_only.is_empty() && sandbox.deny_read.is_empty());
+    assert!(serde_json::from_value::<StdioSandboxConfig>(json!({})).is_err());
+    let trusted: McpServerConfig =
+        serde_json::from_value(json!({ "command": "npx", "operator_trusted": true })).unwrap();
+    assert!(trusted.operator_trusted);
 }

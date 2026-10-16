@@ -263,15 +263,11 @@ impl DirectoryOpener {
         };
 
         let reset_root = if is_root {
-            let default_client = McpClientConfig::default();
             Some(Arc::new(
-                McpService::new(&ModuleConfig {
-                    data_dir: None,
-                    client: default_client,
-                })?
-                .with_maintenance(self.supervisor.clone())
-                .await
-                .with_directory_opener(Arc::clone(self)),
+                self.new_service(None, McpClientConfig::default())?
+                    .with_maintenance(self.supervisor.clone())
+                    .await
+                    .with_directory_opener(Arc::clone(self)),
             ))
         } else {
             None
@@ -546,6 +542,17 @@ impl DirectoryOpener {
         })
     }
 
+    /// A service whose stdio servers start through this opener's bus
+    /// connection: in the jail when the client configures one.
+    fn new_service(
+        &self,
+        data_dir: Option<PathBuf>,
+        client: McpClientConfig,
+    ) -> Result<McpService> {
+        let stdio = crate::tinybus_module::stdio_launchers(Some(&self.connection), &client);
+        McpService::new_with_stdio(&ModuleConfig { data_dir, client }, stdio)
+    }
+
     async fn configured_service(
         &self,
         dir: &Path,
@@ -553,12 +560,10 @@ impl DirectoryOpener {
         is_root: bool,
         root_opener: Option<Arc<Self>>,
     ) -> Result<Arc<McpService>> {
-        let mut service = McpService::new(&ModuleConfig {
-            data_dir: Some(dir.to_path_buf()),
-            client: client.clone(),
-        })?
-        .with_maintenance(self.supervisor.clone())
-        .await;
+        let mut service = self
+            .new_service(Some(dir.to_path_buf()), client.clone())?
+            .with_maintenance(self.supervisor.clone())
+            .await;
         if is_root {
             let opener = root_opener.ok_or_else(|| {
                 Error::invalid_argument("the root opener is not available for reconfiguration")

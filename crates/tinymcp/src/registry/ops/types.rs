@@ -70,6 +70,16 @@ impl McpRegistry {
         })
     }
 
+    /// The same registry starting stdio servers through `stdio`.
+    ///
+    /// Without it every installed stdio server is refused: an installed
+    /// server is never operator-trusted, so it needs a sandbox to start in.
+    #[must_use]
+    pub fn with_stdio(mut self, stdio: crate::transport::stdio::jailed::StdioLaunchers) -> Self {
+        self.connections = self.connections.with_stdio(stdio);
+        self
+    }
+
     /// The store, for a caller that needs it directly.
     #[must_use]
     pub fn store(&self) -> &Store {
@@ -898,7 +908,8 @@ impl McpRegistry {
                 env.into_iter().collect(),
                 None,
                 &self.identity,
-            );
+            )
+            .with_spawner(self.connections.stdio().for_server(false));
             client.initialize().await?;
             let tools = client.list_tools().await?;
             let _ = client.close_session().await;
