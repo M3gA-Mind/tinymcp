@@ -132,7 +132,7 @@ async fn invoke<Reply: DeserializeOwned>(
 /// [`invoke`], optionally over the confidential route.
 ///
 /// Arguments travel as a positional array: nothing for `()`, otherwise the one
-/// argument, which is how every TinyBox member is declared.
+/// argument, which is how every `TinyBox` member is declared.
 async fn invoke_with<Reply: DeserializeOwned>(
     bus: &dyn JailBus,
     member: &'static str,
