@@ -620,17 +620,17 @@ fn a_freshly_written_entry_hits() {
 #[test]
 fn writing_the_same_key_replaces_the_previous_body() {
     let store = store();
-    store.cache("key", "first").unwrap();
-    store.cache("key", "second").unwrap();
+    store.cache("key", r#""first""#).unwrap();
+    store.cache("key", r#""second""#).unwrap();
 
-    assert_eq!(store.cached("key").unwrap().as_deref(), Some("second"));
+    assert_eq!(store.cached("key").unwrap().as_deref(), Some(r#""second""#));
 }
 
 #[test]
 fn an_entry_older_than_the_lifetime_misses() {
     // Backdated directly, so the test does not have to wait ten minutes.
     let store = store();
-    store.cache("key", "stale").unwrap();
+    store.cache("key", r#""stale""#).unwrap();
 
     age_cache(&store, 11);
 
@@ -645,37 +645,37 @@ fn age_cache(store: &Store, minutes: i64) {
 #[test]
 fn a_stale_read_returns_an_entry_past_its_lifetime() {
     let store = store();
-    store.cache("key", "old").unwrap();
+    store.cache("key", r#""old""#).unwrap();
     age_cache(&store, 60 * 24);
 
     assert_eq!(store.cached("key").unwrap(), None);
-    assert_eq!(store.cached_stale("key").unwrap().as_deref(), Some("old"));
+    assert_eq!(store.cached_stale("key").unwrap().as_deref(), Some(r#""old""#));
     assert_eq!(store.cached_stale("other").unwrap(), None);
 }
 
 #[test]
 fn a_prefix_read_returns_matching_entries_newest_first() {
     let store = store();
-    store.cache("browse:1", "older").unwrap();
+    store.cache("browse:1", r#""older""#).unwrap();
     age_cache(&store, 30);
-    store.cache("browse:2", "newer").unwrap();
-    store.cache("search:x:1", "unrelated").unwrap();
+    store.cache("browse:2", r#""newer""#).unwrap();
+    store.cache("search:x:1", r#""unrelated""#).unwrap();
 
     assert_eq!(
         store.cached_with_prefix("browse:").unwrap(),
-        vec!["newer".to_string(), "older".to_string()]
+        vec![r#""newer""#.to_string(), r#""older""#.to_string()]
     );
 }
 
 #[test]
 fn a_prefix_read_treats_like_wildcards_literally() {
     let store = store();
-    store.cache("a_b:1", "literal").unwrap();
-    store.cache("axb:1", "wildcard match").unwrap();
+    store.cache("a_b:1", r#""literal""#).unwrap();
+    store.cache("axb:1", r#""wildcard match""#).unwrap();
 
     assert_eq!(
         store.cached_with_prefix("a_b:").unwrap(),
-        vec!["literal".to_string()]
+        vec![r#""literal""#.to_string()]
     );
     assert_eq!(
         store.cached_with_prefix("nothing:").unwrap(),
@@ -686,9 +686,9 @@ fn a_prefix_read_treats_like_wildcards_literally() {
 #[test]
 fn cache_keys_are_independent() {
     let store = store();
-    store.cache("a", "first").unwrap();
+    store.cache("a", r#""first""#).unwrap();
 
-    assert_eq!(store.cached("a").unwrap().as_deref(), Some("first"));
+    assert_eq!(store.cached("a").unwrap().as_deref(), Some(r#""first""#));
     assert_eq!(store.cached("b").unwrap(), None);
 }
 
@@ -896,7 +896,7 @@ fn a_fresh_claim_without_its_server_is_in_flight_not_stale() {
         json!({
             "qualified_name": "@test/server",
             "server_id": "in-flight",
-            "claimed_at": super::now_ms(),
+            "claimed_ms": super::now_ms(),
         }),
     );
     assert!(

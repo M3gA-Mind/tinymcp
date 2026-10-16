@@ -2081,7 +2081,7 @@ fn every_browse_page_shares_the_browse_prefix_and_no_search_page_does() {
 fn a_local_match_skips_cached_pages_that_do_not_decode() {
     let store = store();
     store
-        .cache(&search_cache_key("", 1, 20), "not json")
+        .cache(&search_cache_key("", 1, 20), r#""not an envelope""#)
         .unwrap();
     store
         .cache(
@@ -2263,7 +2263,7 @@ fn a_detail_offering_no_way_to_connect_is_not_matched() {
     store
         .cache(
             &format!("{}io.example/zzq-broken", super::DETAIL_CACHE_PREFIX),
-            "not json",
+            r#""not a detail""#,
         )
         .unwrap();
 
