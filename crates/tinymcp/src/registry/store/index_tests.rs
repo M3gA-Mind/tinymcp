@@ -263,7 +263,7 @@ fn a_sync_state_that_cannot_be_read_fails_the_page_and_the_finish() {
     let store = store();
     store.put_raw(
         crate::storage::REGISTRY_INDEX_STATE,
-        &hex_digest(SOURCE.as_bytes()),
+        &crate::storage::doc_id(&[SOURCE]).unwrap(),
         serde_json::json!({"unexpected": true}),
     );
     assert!(

@@ -23,7 +23,7 @@ use super::types::Store;
 use crate::Error;
 use crate::storage::{
     CACHE_KEY_SECRET, ENV_SECRET_PREFIX, REGISTRY_CACHE, SERVER_NAMES, SERVERS, StoragePorts,
-    TOOL_CACHE,
+    TOOL_CACHE, doc_id,
 };
 use tinymcp_bus::{CommandKind, InstalledServer, McpTool, Transport};
 
@@ -106,7 +106,7 @@ fn persisted_tool_cache_fingerprints_are_keyed_and_stable_after_reopen() {
         .put_cached_tools("static:weather", &fingerprint, &tools)
         .unwrap();
 
-    let id = super::hex_digest(b"static:weather");
+    let id = doc_id(&["static:weather"]).unwrap();
     let persisted = store.get_raw(TOOL_CACHE, &id).unwrap();
     let persisted = persisted["fingerprint"].as_str().unwrap().to_string();
     assert_ne!(persisted, fingerprint);
@@ -200,7 +200,7 @@ fn tool_cache_rejects_corrupt_json() {
     let fingerprint = store.keyed_cache_fingerprint("f");
     store.put_raw(
         TOOL_CACHE,
-        &super::hex_digest(b"srv-1"),
+        &doc_id(&["srv-1"]).unwrap(),
         json!({"server_key": "srv-1", "fingerprint": fingerprint, "tools": "bad", "cached_at": 1}),
     );
     assert!(store.cached_tools("srv-1", "f").is_err());
@@ -850,7 +850,7 @@ fn deleting_a_server_releases_its_qualified_name() {
     );
     assert!(
         store
-            .get_raw(SERVER_NAMES, &super::hex_digest(b"@test/server"))
+            .get_raw(SERVER_NAMES, &doc_id(&["@test/server"]).unwrap())
             .is_some()
     );
 
@@ -858,7 +858,7 @@ fn deleting_a_server_releases_its_qualified_name() {
 
     assert!(
         store
-            .get_raw(SERVER_NAMES, &super::hex_digest(b"@test/server"))
+            .get_raw(SERVER_NAMES, &doc_id(&["@test/server"]).unwrap())
             .is_none()
     );
     assert!(
@@ -875,7 +875,7 @@ fn a_claim_whose_server_is_gone_is_taken_over() {
     let store = store();
     store.put_raw(
         SERVER_NAMES,
-        &super::hex_digest(b"@test/server"),
+        &doc_id(&["@test/server"]).unwrap(),
         json!({"qualified_name": "@test/server", "server_id": "ghost", "claimed_at": 1}),
     );
     assert!(
@@ -892,7 +892,7 @@ fn a_fresh_claim_without_its_server_is_in_flight_not_stale() {
     let store = store();
     store.put_raw(
         SERVER_NAMES,
-        &super::hex_digest(b"@test/server"),
+        &doc_id(&["@test/server"]).unwrap(),
         json!({
             "qualified_name": "@test/server",
             "server_id": "in-flight",
