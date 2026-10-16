@@ -31,3 +31,5 @@ module declares it as an optional dependency.
 `StdioSpawner` gained `spawn_process`, which returns a `StdioProcess` (pipes plus
 a handle). Its default wraps `spawn`, so existing spawners are unchanged. A
 spawner whose server is not a child of this process overrides it.
+
+The jailed launcher is covered by `transport/stdio/jailed_tests.rs`.
