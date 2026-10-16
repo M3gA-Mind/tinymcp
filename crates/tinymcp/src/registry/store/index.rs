@@ -1,9 +1,9 @@
 //! The local copy of an upstream catalog, for searching without asking it.
 //!
-//! Two collections. `mcp_registry_index` holds one document per server: the
+//! Two collections. `mcp.registry_index` holds one document per server: the
 //! upstream's own record, plus a lowercased label and description to match a
 //! query against, and the words (with their prefixes) the port's text search
-//! indexes. `mcp_registry_index_state` holds one row per catalog: which base URL
+//! indexes. `mcp.registry_index_state` holds one row per catalog: which base URL
 //! the rows came from, where an unfinished sync stopped, and when the last sync
 //! finished.
 //!
