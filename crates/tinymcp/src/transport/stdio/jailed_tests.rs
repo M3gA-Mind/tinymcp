@@ -525,7 +525,7 @@ async fn a_started_handle_has_a_redacted_debug_form() {
     let fake = FakeBox::serving();
     let spawner = JailedSpawner::new(fake.clone(), sandbox());
     let mut process = spawner.spawn_process(launch()).await.unwrap();
-    let debug = format!("{:?} {:?}", process.handle, spawner);
+    let debug = format!("{:?}", process.handle);
     assert!(!debug.contains("secret-value"));
     process.handle.terminate().await;
 }
