@@ -37,8 +37,11 @@
 /// members. 1.25 moves the pure tool-UI rules into `ui`; no member was added
 /// or removed. Behaviour change (fail-closed): `http(s)` links with userinfo,
 /// IDN/punycode or %-encoded hosts, IPv6, non-canonical IPv4, bad ports or dot
-/// segments are now `Blocked` (previously `Web`).
-pub const CONTRACT_VERSION: (u32, u32) = (1, 25);
+/// segments are now `Blocked` (previously `Web`). 1.26 adds
+/// `McpClientConfig::stdio_sandbox` and `McpServerConfig::operator_trusted`:
+/// a stdio server runs in the host's jail, or unconfined only when the operator
+/// trusts it; with neither it is refused.
+pub const CONTRACT_VERSION: (u32, u32) = (1, 26);
 
 /// Returns whether a host holding [`CONTRACT_VERSION`] can bind to a module
 /// reporting `module`.
