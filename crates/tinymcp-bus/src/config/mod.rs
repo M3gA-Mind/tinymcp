@@ -30,7 +30,7 @@ mod types;
 pub use types::{
     ConfiguredToolCallRequest, HttpHeader, McpAuthConfig, McpClientConfig, McpClientIdentityConfig,
     McpProxyConfig, McpRegistryAuthConfig, McpServerConfig, OpenConfiguredRequest,
-    OpenConfiguredResponse, StaticServerSummary, TransitionStatus,
+    OpenConfiguredResponse, StaticServerSummary, StdioSandboxConfig, TransitionStatus,
 };
 
 #[cfg(test)]
