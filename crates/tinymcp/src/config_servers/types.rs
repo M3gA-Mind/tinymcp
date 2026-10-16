@@ -10,6 +10,7 @@ use serde_json::Value;
 use crate::error::{Error, Result};
 use crate::transport::http::McpHttpClient;
 use crate::transport::stdio::McpStdioClient;
+use crate::transport::stdio::jailed::StdioLaunchers;
 use tinymcp_bus::{
     McpAuthConfig, McpAuthorizationContext, McpClientConfig, McpClientIdentityConfig,
     McpInitializeResult, McpProxyConfig, McpRemoteTool, McpResource, McpResourceContents,
