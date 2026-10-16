@@ -55,4 +55,6 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
     "https://github.com/tinyhumansai/tinytools",
     "https://github.com/tinyhumansai/tinystoragedrivers",
+    # The TinyBox bus contract (types only), for the jailed stdio launcher.
+    "https://github.com/tinyhumansai/tinybox",
 ]
