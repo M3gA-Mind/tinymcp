@@ -356,7 +356,7 @@ impl Store {
     ///
     /// Returns [`Error::Store`] when the lookup fails.
     pub(crate) fn is_catalog_server(&self, server_id: &str) -> Result<bool> {
-        let id = server_id.to_string();
+        let id = key(&[server_id])?;
         self.ports
             .run("reading catalog provenance", move |ports| async move {
                 Ok(ports
@@ -402,7 +402,7 @@ impl Store {
     ///
     /// Returns [`Error::Store`] when the query fails.
     pub fn find_server(&self, server_id: &str) -> Result<Option<InstalledServer>> {
-        let id = server_id.to_string();
+        let id = key(&[server_id])?;
         let found = self
             .ports
             .run("looking a server up", move |ports| async move {
@@ -454,17 +454,20 @@ impl Store {
     /// Returns [`Error::Store`] when the delete fails.
     pub fn delete_server(&self, server_id: &str) -> Result<bool> {
         let id = server_id.to_string();
+        let server_key = key(&[server_id])?;
         self.ports
             .run("deleting a server", move |ports| async move {
                 let documents = ports.documents;
-                let existing = documents.get(SERVERS, &id).await?;
-                let removed = documents.delete(SERVERS, &id, Precondition::None).await?;
+                let existing = documents.get(SERVERS, &server_key).await?;
+                let removed = documents
+                    .delete(SERVERS, &server_key, Precondition::None)
+                    .await?;
                 // The tool cache is keyed by the same identifier but carries no
                 // link to the server (static servers share the collection), so it
                 // goes by hand. An uninstalled server must not keep surfacing
                 // tools.
                 documents
-                    .delete(TOOL_CACHE, &hex_digest(id.as_bytes()), Precondition::None)
+                    .delete(TOOL_CACHE, &server_key, Precondition::None)
                     .await?;
                 ports.secrets.delete(&env_secret_name(&id)).await?;
                 if let Some(name) = existing
@@ -472,7 +475,7 @@ impl Store {
                     .and_then(|row| row.doc.get("qualified_name"))
                     .and_then(Value::as_str)
                 {
-                    let claim_id = hex_digest(name.as_bytes());
+                    let claim_id = doc_id(&[name])?;
                     // Only the claim this install holds; another install of the
                     // same name may have taken it over.
                     let claim = documents
@@ -561,33 +564,18 @@ impl Store {
         server_id: &str,
         change: impl Fn(&mut ServerDoc) + Send + 'static,
     ) -> Result<()> {
-        let id = server_id.to_string();
+        let id = key(&[server_id])?;
         self.ports.run(action, move |ports| async move {
-            for _ in 0..UPDATE_ATTEMPTS {
-                let Some(found) = ports.documents.get(SERVERS, &id).await? else {
-                    return Ok(());
-                };
-                let mut doc: ServerDoc =
-                    serde_json::from_value(found.doc.clone()).map_err(|error| {
-                        tinystoragedrivers_core::StorageError::serialization(error.to_string())
-                    })?;
-                change(&mut doc);
-                let value = serde_json::to_value(doc).map_err(|error| {
-                    tinystoragedrivers_core::StorageError::serialization(error.to_string())
-                })?;
-                match ports
-                    .documents
-                    .put(SERVERS, &id, value, found.unchanged())
-                    .await
-                {
-                    Ok(_) => return Ok(()),
-                    Err(error) if error.kind() == ErrorKind::Conflict => {}
-                    Err(error) => return Err(error),
-                }
-            }
-            Err(tinystoragedrivers_core::StorageError::conflict(
-                "the server row kept changing under the update",
-            ))
+            Repo::<ServerDoc>::new(&ports.documents, SERVERS)?
+                .with_options(write_options())
+                .update(&id, |current| {
+                    Ok(current.map(|mut doc| {
+                        change(&mut doc);
+                        doc
+                    }))
+                })
+                .await
+                .map(|_| ())
         })
     }
 
