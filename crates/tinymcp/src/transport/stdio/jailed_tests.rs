@@ -612,20 +612,78 @@ async fn reads_are_confidential_too() {
     process.handle.terminate().await;
 }
 
+/// Answers everything, except that the first `KillStdio` never returns.
+#[derive(Debug, Default)]
+struct StallsFirstKill {
+    calls: Mutex<Vec<&'static str>>,
+}
+
+impl JailBus for StallsFirstKill {
+    fn call(
+        &self,
+        member: &'static str,
+        args: Value,
+        _confidential: bool,
+    ) -> BoxFuture<'_, Result<Value, JailBusError>> {
+        Box::pin(async move {
+            let first_kill = {
+                let mut calls = self.calls.lock().unwrap();
+                let first = member == names::KILL_STDIO && !calls.contains(&names::KILL_STDIO);
+                if member != names::READ_STDIO {
+                    calls.push(member);
+                }
+                first
+            };
+            if first_kill {
+                return std::future::pending().await;
+            }
+            let args = args.get(0).cloned().unwrap_or(Value::Null);
+            match member {
+                m if m == names::CAPABILITIES => Ok(json!({
+                    "contract_version": tinybox_bus::CONTRACT_VERSION,
+                    "create_backends": [], "exec_backends": [], "spawn_backends": []
+                })),
+                m if m == names::RESERVE => Ok(json!("reserved")),
+                m if m == names::CREATE => Ok(json!({
+                    "resource": args["resource"], "backend": "passthrough",
+                    "state": "running", "published_ports": []
+                })),
+                m if m == names::START_STDIO => Ok(json!({
+                    "resource": args["resource"], "process": args["process"]
+                })),
+                m if m == names::READ_STDIO => {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                    Ok(json!({
+                        "stdout": [], "stderr": [], "stdout_closed": false,
+                        "stderr_closed": false, "status": {"running": true}
+                    }))
+                }
+                _ => Ok(Value::Null),
+            }
+        })
+    }
+}
+
 #[tokio::test]
 async fn a_cancelled_close_still_releases_the_server_on_drop() {
-    let fake = FakeBox::serving();
-    let spawner = JailedSpawner::new(fake.clone(), sandbox());
+    let bus = Arc::new(StallsFirstKill::default());
+    let spawner = JailedSpawner::new(bus.clone(), sandbox());
     let mut process = spawner.spawn_process(launch()).await.unwrap();
-    // Cancel terminate before its release can finish.
-    let cancelled = tokio::time::timeout(Duration::ZERO, process.handle.terminate()).await;
-    let _ = cancelled;
+    let cancelled =
+        tokio::time::timeout(Duration::from_millis(100), process.handle.terminate()).await;
+    assert!(cancelled.is_err(), "the first KillStdio never answers");
     drop(process);
     tokio::time::timeout(Duration::from_secs(5), async {
-        while !fake.members().contains(&names::CLOSE) {
+        while bus.calls.lock().unwrap().last() != Some(&names::CLOSE) {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
-    .expect("the drop fallback cleaned up");
+    .expect("the drop fallback killed and closed the server");
+    let calls = bus.calls.lock().unwrap();
+    assert_eq!(
+        calls.iter().filter(|m| **m == names::KILL_STDIO).count(),
+        2,
+        "the cancelled kill was retried by the drop"
+    );
 }
