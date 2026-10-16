@@ -898,7 +898,8 @@ impl McpRegistry {
                 env.into_iter().collect(),
                 None,
                 &self.identity,
-            );
+            )
+            .with_spawner(self.connections.stdio().for_server(false));
             client.initialize().await?;
             let tools = client.list_tools().await?;
             let _ = client.close_session().await;

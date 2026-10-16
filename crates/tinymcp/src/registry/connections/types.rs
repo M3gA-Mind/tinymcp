@@ -136,13 +136,30 @@ impl Connection {
 pub struct Connections {
     live: RwLock<HashMap<String, Arc<Connection>>>,
     failures: RwLock<HashMap<String, ConnectFailure>>,
+    /// How stdio servers start. Registry-installed servers are never
+    /// operator-trusted, so with no sandbox here they are refused.
+    stdio: StdioLaunchers,
 }
 
 impl Connections {
-    /// An empty map.
+    /// An empty map. Stdio servers are refused until a sandbox is supplied
+    /// with [`Self::with_stdio`].
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The same map starting stdio servers through `stdio`.
+    #[must_use]
+    pub fn with_stdio(mut self, stdio: StdioLaunchers) -> Self {
+        self.stdio = stdio;
+        self
+    }
+
+    /// How stdio servers start.
+    #[must_use]
+    pub fn stdio(&self) -> &StdioLaunchers {
+        &self.stdio
     }
 
     /// Brings a server up and caches what it advertises.
@@ -334,13 +351,15 @@ impl Connections {
             .filter(|(name, _)| !super::dial::is_internal_key(name))
             .collect();
 
+        // An installed server is third-party code: never operator-trusted.
         let client = McpStdioClient::new(
             server.command.clone(),
             server.args.clone(),
             env,
             None,
             identity,
-        );
+        )
+        .with_spawner(self.stdio.for_server(false));
         client.initialize().await?;
 
         Ok(ActiveClient::Stdio(Box::new(client)))
