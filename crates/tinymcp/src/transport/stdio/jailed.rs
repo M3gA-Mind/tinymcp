@@ -211,6 +211,13 @@ impl JailedSpawner {
             ));
         }
         let resource: ResourceId = invoke(bus, names::RESERVE, ReserveRequest::Resource).await?;
+        // Covers a launch dropped mid-await; the error branches below close
+        // inline (so the caller sees the cleanup done) and then disarm it.
+        let mut guard = ResourceGuard {
+            bus: self.bus.clone(),
+            resource: resource.clone(),
+            armed: true,
+        };
         let created: Result<tinybox_bus::ResourceInfo, _> = invoke(
             bus,
             names::CREATE,
@@ -225,16 +232,17 @@ impl JailedSpawner {
         if let Err(error) = created {
             // The reservation is not left behind by a refused or malformed Create.
             let _: Result<(), _> = invoke(bus, names::CLOSE, &resource).await;
+            guard.armed = false;
             return Err(error);
         }
-        match self.start(&resource, launch).await {
-            Ok(process) => Ok(process),
-            Err(error) => {
-                // Nothing runs; the resource must not outlive the refusal.
-                let _: Result<(), _> = invoke(bus, names::CLOSE, &resource).await;
-                Err(error)
-            }
+        let started = self.start(&resource, launch).await;
+        if started.is_err() {
+            // Nothing runs; the resource must not outlive the refusal.
+            let _: Result<(), _> = invoke(bus, names::CLOSE, &resource).await;
         }
+        // On success the handle owns the cleanup from here.
+        guard.armed = false;
+        started
     }
 
     async fn start(

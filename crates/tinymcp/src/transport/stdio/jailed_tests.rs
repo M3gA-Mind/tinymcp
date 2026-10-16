@@ -392,7 +392,7 @@ async fn only_an_operator_trusted_server_gets_the_direct_spawn() {
 }
 
 #[tokio::test]
-async fn only_the_start_that_carries_the_environment_is_confidential() {
+async fn the_environment_and_the_messages_sent_to_the_server_are_confidential() {
     let fake = FakeBox::serving();
     let spawner = JailedSpawner::new(fake.clone(), sandbox());
     let mut process = spawner.spawn_process(launch()).await.unwrap();
@@ -528,4 +528,68 @@ async fn a_started_handle_has_a_redacted_debug_form() {
     let debug = format!("{:?}", process.handle);
     assert!(!debug.contains("secret-value"));
     process.handle.terminate().await;
+}
+
+/// Parks a call forever, as a bus whose reply never comes.
+#[derive(Debug, Default)]
+struct Stalled {
+    calls: Mutex<Vec<&'static str>>,
+}
+
+impl JailBus for Stalled {
+    fn call(
+        &self,
+        member: &'static str,
+        args: Value,
+        _confidential: bool,
+    ) -> BoxFuture<'_, Result<Value, JailBusError>> {
+        Box::pin(async move {
+            self.calls.lock().unwrap().push(member);
+            let _ = args;
+            match member {
+                m if m == names::CAPABILITIES => Ok(json!({
+                    "contract_version": tinybox_bus::CONTRACT_VERSION,
+                    "create_backends": [], "exec_backends": [], "spawn_backends": []
+                })),
+                m if m == names::RESERVE => Ok(json!("reserved")),
+                m if m == names::CREATE => std::future::pending().await,
+                _ => Ok(Value::Null),
+            }
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_launch_dropped_while_create_is_pending_still_closes_its_reservation() {
+    let bus = Arc::new(Stalled::default());
+    let spawner = JailedSpawner::new(bus.clone(), sandbox());
+    let launching =
+        tokio::time::timeout(Duration::from_millis(100), spawner.spawn_process(launch()));
+    assert!(launching.await.is_err(), "the Create never answers");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while bus.calls.lock().unwrap().last() != Some(&names::CLOSE) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the abandoned reservation was closed");
+}
+
+#[test]
+fn dropping_a_handle_with_no_runtime_still_releases_the_server() {
+    let fake = FakeBox::serving();
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let spawner = JailedSpawner::new(fake.clone(), sandbox());
+    let process = runtime.block_on(spawner.spawn_process(launch())).unwrap();
+    // Dropped on a plain thread: there is no current runtime to spawn on.
+    std::thread::spawn(move || drop(process)).join().unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while fake.members().last() != Some(&names::CLOSE) {
+        assert!(std::time::Instant::now() < deadline, "cleanup never ran");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(fake.members().contains(&names::KILL_STDIO));
 }
