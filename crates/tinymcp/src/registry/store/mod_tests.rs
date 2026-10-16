@@ -22,8 +22,8 @@ use tinystoragedrivers_core::Filter;
 use super::types::Store;
 use crate::Error;
 use crate::storage::{
-    CACHE_KEY_SECRET, ENV_SECRET_PREFIX, REGISTRY_CACHE, SERVER_NAMES, SERVERS, StoragePorts,
-    TOOL_CACHE, doc_id,
+    CACHE_KEY_SECRET, ENV_SECRET_PREFIX, REGISTRY_CACHE, SCHEMA_VERSION, SERVER_NAMES, SERVERS,
+    StoragePorts, TOOL_CACHE, doc_id,
 };
 use tinymcp_bus::{CommandKind, InstalledServer, McpTool, Transport};
 
@@ -990,7 +990,11 @@ fn concurrent_updates_to_one_server_all_land() {
 // ---------------------------------------------------------------------------
 
 /// The metadata the driver recorded for a document.
-fn meta_of(ports: &StoragePorts, collection: &'static str, id: &str) -> tinystoragedrivers_core::Meta {
+fn meta_of(
+    ports: &StoragePorts,
+    collection: &'static str,
+    id: &str,
+) -> tinystoragedrivers_core::Meta {
     let id = id.to_string();
     ports
         .run("reading metadata", move |ports| async move {
@@ -1013,10 +1017,7 @@ fn an_installed_server_is_stored_with_ms_times_and_the_declared_schema() {
     assert_eq!(doc["last_connected_ms"], 1_700_000_100_000_i64);
     assert!(doc.get("installed_at").is_none());
     assert!(doc.get("last_connected_at").is_none());
-    assert_eq!(
-        meta_of(&ports, SERVERS, "srv-1").schema,
-        crate::storage::storage_schema_version()
-    );
+    assert_eq!(meta_of(&ports, SERVERS, "srv-1").schema, SCHEMA_VERSION);
     assert_eq!(store.get_server("srv-1").unwrap(), server);
 }
 
@@ -1034,10 +1035,7 @@ fn touching_the_last_connection_keeps_the_declared_schema() {
             .last_connected_at
             .is_some()
     );
-    assert_eq!(
-        meta_of(&ports, SERVERS, "srv-1").schema,
-        crate::storage::storage_schema_version()
-    );
+    assert_eq!(meta_of(&ports, SERVERS, "srv-1").schema, SCHEMA_VERSION);
 }
 
 #[test]
@@ -1070,7 +1068,7 @@ fn a_cached_response_is_stored_as_a_json_body_not_a_string() {
 fn a_response_that_is_not_json_is_refused() {
     let store = store();
     let error = store.cache("browse:1", "not json").unwrap_err();
-    assert!(matches!(error, Error::Serialization(_)), "{error:?}");
+    assert!(matches!(error, Error::Serialization { .. }), "{error:?}");
     assert_eq!(store.cached("browse:1").unwrap(), None);
 }
 

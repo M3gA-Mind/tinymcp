@@ -49,8 +49,8 @@ pub use provider::{
 };
 pub use schema::{AUDIT_STREAM, OWNER, storage_schema};
 pub(crate) use schema::{
-    REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE, SERVER_NAMES, SERVERS, TOOL_CACHE,
-    doc_id, write_options,
+    REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE, SCHEMA_VERSION, SERVER_NAMES, SERVERS,
+    TOOL_CACHE, doc_id, write_options,
 };
 
 #[cfg(all(test, feature = "module"))]
