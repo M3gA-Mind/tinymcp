@@ -14,7 +14,7 @@ use tinystoragedrivers_core::schema::{SourceRecord, Step, TargetRecord};
 
 use super::schema::{
     AUDIT_STREAM, REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE, SERVER_NAMES, SERVERS,
-    TOOL_CACHE, id,
+    TOOL_CACHE, doc_id,
 };
 
 /// The version the steps read.
@@ -122,7 +122,7 @@ fn server(
 ) -> tinystoragedrivers_core::Result<Option<(String, Value)>> {
     rename(&mut body, "installed_at", "installed_ms");
     rename(&mut body, "last_connected_at", "last_connected_ms");
-    Ok(Some((id(&[&record.id])?, Value::Object(body))))
+    Ok(Some((doc_id(&[&record.id])?, Value::Object(body))))
 }
 
 /// A name claim: keyed by the qualified name it holds. A claim from before
@@ -139,7 +139,7 @@ fn claim(
         .and_then(|value| value.as_i64())
         .unwrap_or(0);
     body.insert("claimed_ms".to_owned(), Value::from(claimed));
-    Ok(Some((id(&[&name])?, Value::Object(body))))
+    Ok(Some((doc_id(&[&name])?, Value::Object(body))))
 }
 
 fn cached_response(
@@ -153,7 +153,7 @@ fn cached_response(
         return Ok(None);
     }
     rename(&mut body, "cached_at", "cached_ms");
-    Ok(Some((id(&[&key])?, Value::Object(body))))
+    Ok(Some((doc_id(&[&key])?, Value::Object(body))))
 }
 
 fn cached_tools(
@@ -164,7 +164,7 @@ fn cached_tools(
         return Ok(None);
     };
     rename(&mut body, "cached_at", "cached_ms");
-    Ok(Some((id(&[&key])?, Value::Object(body))))
+    Ok(Some((doc_id(&[&key])?, Value::Object(body))))
 }
 
 fn index_row(
@@ -181,7 +181,7 @@ fn index_row(
         return Ok(None);
     }
     rename(&mut body, "synced_at", "synced_ms");
-    Ok(Some((id(&[&source, &name])?, Value::Object(body))))
+    Ok(Some((doc_id(&[&source, &name])?, Value::Object(body))))
 }
 
 fn index_state(
@@ -193,7 +193,7 @@ fn index_state(
     };
     rename(&mut body, "started_at", "started_ms");
     rename(&mut body, "synced_at", "synced_ms");
-    Ok(Some((id(&[&source])?, Value::Object(body))))
+    Ok(Some((doc_id(&[&source])?, Value::Object(body))))
 }
 
 #[cfg(test)]

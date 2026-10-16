@@ -12,7 +12,7 @@ use tinystoragedrivers_core::{
 use crate::error::{Error, Result};
 use crate::storage::{
     CACHE_KEY_SECRET, ENV_SECRET_PREFIX, REGISTRY_CACHE, SERVER_NAMES, SERVERS, StoragePorts,
-    TOOL_CACHE, id, write_options,
+    TOOL_CACHE, doc_id, write_options,
 };
 use crate::{CommandKindExt, TransportExt};
 use tinymcp_bus::{CommandKind, InstalledServer, Transport};
@@ -136,8 +136,9 @@ const CLAIM_LEASE_MS: i64 = 60_000;
 #[derive(Debug, Serialize, Deserialize)]
 struct CacheDoc {
     cache_key: String,
-    body_json: String,
-    cached_at: i64,
+    /// The upstream response, as the JSON it is.
+    body: Value,
+    cached_ms: i64,
 }
 
 impl Store {

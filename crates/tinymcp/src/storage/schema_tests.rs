@@ -67,9 +67,9 @@ fn the_declared_indexes_use_v2_field_names() {
 
 #[test]
 fn ids_are_escaped_keys() {
-    assert_eq!(id(&["@acme/files"]).unwrap(), "@acme%2Ffiles");
-    assert_eq!(id(&["official", "@a/b"]).unwrap(), "official/@a%2Fb");
-    assert!(id(&[""]).is_err());
+    assert_eq!(doc_id(&["@acme/files"]).unwrap(), "@acme%2Ffiles");
+    assert_eq!(doc_id(&["official", "@a/b"]).unwrap(), "official/@a%2Fb");
+    assert!(doc_id(&[""]).is_err());
 }
 
 #[test]

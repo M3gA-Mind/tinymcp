@@ -111,7 +111,7 @@ pub(crate) fn write_options() -> WriteOptions {
 /// # Errors
 ///
 /// Returns the storage error for an empty key.
-pub(crate) fn id(parts: &[&str]) -> tinystoragedrivers_core::Result<String> {
+pub(crate) fn doc_id(parts: &[&str]) -> tinystoragedrivers_core::Result<String> {
     Key::of(parts).map(|key| key.as_str().to_owned())
 }
 
