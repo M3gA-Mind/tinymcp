@@ -283,7 +283,8 @@ impl Store {
                         if documents
                             .get(SERVERS, &doc_id(&[&holder])?)
                             .await?
-                            .is_some() {
+                            .is_some()
+                        {
                             return Ok(false);
                         }
                         // Within its lease the holder may simply not have
@@ -319,8 +320,15 @@ impl Store {
                     })
                 };
                 if let Err(error) = documents
-                    .put_with(SERVERS, &server_key, doc, Precondition::Absent, write_options())
-                    .await {
+                    .put_with(
+                        SERVERS,
+                        &server_key,
+                        doc,
+                        Precondition::Absent,
+                        write_options(),
+                    )
+                    .await
+                {
                     // Release only a claim that is still ours, at the version
                     // we read, so a racing installer's takeover survives.
                     if let Ok(held) = documents.get(SERVER_NAMES, &claim_id).await
@@ -647,7 +655,9 @@ impl Store {
     ///
     /// Returns [`Error::Store`] when the query fails.
     pub(crate) fn cached_stale(&self, cache_key: &str) -> Result<Option<String>> {
-        Ok(self.read_cache(cache_key)?.map(|entry| entry.body.to_string()))
+        Ok(self
+            .read_cache(cache_key)?
+            .map(|entry| entry.body.to_string()))
     }
 
     fn read_cache(&self, cache_key: &str) -> Result<Option<CacheDoc>> {
@@ -717,7 +727,13 @@ impl Store {
             .run("writing to the browse cache", move |ports| async move {
                 ports
                     .documents
-                    .put_with(REGISTRY_CACHE, &id, doc, Precondition::None, write_options())
+                    .put_with(
+                        REGISTRY_CACHE,
+                        &id,
+                        doc,
+                        Precondition::None,
+                        write_options(),
+                    )
                     .await
                     .map(|_| ())
             })
