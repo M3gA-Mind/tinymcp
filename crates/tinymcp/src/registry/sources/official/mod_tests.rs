@@ -1635,7 +1635,7 @@ async fn switchable_registry() -> (String, Arc<Switchable>) {
 fn expire_cache(store: &Store) {
     store.age_collection(
         crate::storage::REGISTRY_CACHE,
-        &["cached_at"],
+        &["cached_ms"],
         24 * 60 * 60 * 1_000,
     );
 }

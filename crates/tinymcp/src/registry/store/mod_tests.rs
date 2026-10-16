@@ -639,7 +639,7 @@ fn an_entry_older_than_the_lifetime_misses() {
 
 /// Moves every cached entry `minutes` into the past.
 fn age_cache(store: &Store, minutes: i64) {
-    store.age_collection(REGISTRY_CACHE, &["cached_at"], minutes * 60 * 1_000);
+    store.age_collection(REGISTRY_CACHE, &["cached_ms"], minutes * 60 * 1_000);
 }
 
 #[test]

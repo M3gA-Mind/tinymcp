@@ -32,10 +32,10 @@ fn names(hits: &[IndexHit]) -> Vec<&str> {
 
 /// Moves every timestamp of the index back by a day.
 fn age(store: &Store) {
-    store.age_collection(crate::storage::REGISTRY_INDEX, &["synced_at"], 86_400_000);
+    store.age_collection(crate::storage::REGISTRY_INDEX, &["synced_ms"], 86_400_000);
     store.age_collection(
         crate::storage::REGISTRY_INDEX_STATE,
-        &["synced_at"],
+        &["synced_ms"],
         86_400_000,
     );
 }
@@ -58,7 +58,7 @@ fn a_sync_records_each_page_and_its_cursor() {
     assert_eq!(state.cursor.as_deref(), Some("2"));
     assert_eq!(state.pages, 1);
     assert!(state.in_progress());
-    assert_eq!(state.synced_at, None);
+    assert_eq!(state.synced_ms, None);
 }
 
 #[test]
@@ -72,7 +72,7 @@ fn finishing_a_sync_records_when_and_clears_the_resume_point() {
 
     let state = store.index_state(SOURCE).unwrap().unwrap();
     assert!(!state.in_progress());
-    assert!(state.synced_at.is_some());
+    assert!(state.synced_ms.is_some());
     assert_eq!(state.cursor, None);
     assert_eq!(state.pages, 0);
 }
@@ -118,7 +118,7 @@ fn restarting_on_the_same_catalog_keeps_the_last_finished_sync() {
             .index_state(SOURCE)
             .unwrap()
             .unwrap()
-            .synced_at
+            .synced_ms
             .is_some()
     );
 }
@@ -138,7 +138,7 @@ fn a_sync_of_a_different_catalog_drops_the_old_rows() {
 
     let state = store.index_state(SOURCE).unwrap().unwrap();
     assert_eq!(state.base_url, "https://elsewhere.test");
-    assert_eq!(state.synced_at, None);
+    assert_eq!(state.synced_ms, None);
     assert_eq!(
         names(&store.search_index(SOURCE, &[]).unwrap()),
         Vec::<&str>::new()

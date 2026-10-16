@@ -18,10 +18,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tinystoragedrivers_core::{Capability, DocumentStore, Filter, Precondition, Query, WriteOp};
 
-use super::tool_cache::hex_digest;
 use super::types::{Store, now_ms};
 use crate::error::Result;
-use crate::storage::{REGISTRY_INDEX, REGISTRY_INDEX_STATE};
+use crate::storage::{REGISTRY_INDEX, REGISTRY_INDEX_STATE, doc_id, write_options};
 
 /// How many index documents one batch writes.
 const BATCH: usize = 100;
@@ -63,16 +62,16 @@ pub(crate) struct IndexState {
     pub(crate) pages: u32,
     /// When the unfinished sync started, in Unix epoch milliseconds; `None`
     /// when no sync is unfinished.
-    pub(crate) started_at: Option<i64>,
+    pub(crate) started_ms: Option<i64>,
     /// When the last sync finished, in Unix epoch milliseconds; `None` when
     /// none has.
-    pub(crate) synced_at: Option<i64>,
+    pub(crate) synced_ms: Option<i64>,
 }
 
 impl IndexState {
     /// Whether a sync started and has not finished.
     pub(crate) const fn in_progress(&self) -> bool {
-        self.started_at.is_some()
+        self.started_ms.is_some()
     }
 }
 
@@ -83,8 +82,9 @@ struct IndexDoc {
     qualified_name: String,
     label: String,
     description: String,
-    record_json: String,
-    synced_at: i64,
+    /// The upstream's record for the server, as the JSON it is.
+    record: Value,
+    synced_ms: i64,
     search: String,
 }
 
@@ -98,13 +98,18 @@ struct StateDoc {
     #[serde(default)]
     pages: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    started_at: Option<i64>,
+    started_ms: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    synced_at: Option<i64>,
+    synced_ms: Option<i64>,
 }
 
-fn index_id(source: &str, qualified_name: &str) -> String {
-    hex_digest(format!("{source}\0{qualified_name}").as_bytes())
+fn index_id(source: &str, qualified_name: &str) -> Result<String> {
+    key(&[source, qualified_name])
+}
+
+/// The document id for `parts`, as a store error when it cannot be built.
+fn key(parts: &[&str]) -> Result<String> {
+    doc_id(parts).map_err(|source| crate::Error::store("building a document id", source))
 }
 
 /// The text a document is searched by: the words of the label and
@@ -138,7 +143,7 @@ impl Store {
     ///
     /// Returns [`crate::Error::Store`] when the query fails.
     pub(crate) fn index_state(&self, source: &str) -> Result<Option<IndexState>> {
-        let id = hex_digest(source.as_bytes());
+        let id = key(&[source])?;
         let found = self
             .ports
             .run("reading the index state", move |ports| async move {
@@ -151,8 +156,8 @@ impl Store {
                     base_url: state.base_url,
                     cursor: state.cursor,
                     pages: state.pages,
-                    started_at: state.started_at,
-                    synced_at: state.synced_at,
+                    started_ms: state.started_ms,
+                    synced_ms: state.synced_ms,
                 })
             })
             .transpose()
@@ -195,9 +200,9 @@ impl Store {
                     base_url,
                     cursor: None,
                     pages: 0,
-                    started_at: Some(now),
-                    synced_at: previous
-                        .and_then(|state| state.synced_at)
+                    started_ms: Some(now),
+                    synced_ms: previous
+                        .and_then(|state| state.synced_ms)
                         .filter(|_| same_catalog),
                 };
                 let value = serde_json::to_value(state).map_err(|error| {
@@ -234,7 +239,7 @@ impl Store {
                 label: row.label.clone(),
                 description: row.description.clone(),
                 record_json: row.record_json.clone(),
-                synced_at: now,
+                synced_ms: now,
                 search: search_text(&row.label, &row.description),
             };
             ops.push(WriteOp::Put {
@@ -294,19 +299,19 @@ impl Store {
                     serde_json::from_value(found.doc.clone()).map_err(|error| {
                         tinystoragedrivers_core::StorageError::serialization(error.to_string())
                     })?;
-                if let Some(started_at) = state.started_at {
+                if let Some(started_ms) = state.started_ms {
                     documents
                         .delete_where(
                             REGISTRY_INDEX,
                             &Filter::eq("source", source.clone())
-                                .and(Filter::lt("synced_at", started_at)),
+                                .and(Filter::lt("synced_ms", started_ms)),
                         )
                         .await?;
                 }
                 state.cursor = None;
                 state.pages = 0;
-                state.started_at = None;
-                state.synced_at = Some(now);
+                state.started_ms = None;
+                state.synced_ms = Some(now);
                 let value = serde_json::to_value(state).map_err(|error| {
                     tinystoragedrivers_core::StorageError::serialization(error.to_string())
                 })?;
