@@ -551,7 +551,7 @@ impl Store {
     pub fn touch_last_connected(&self, server_id: &str) -> Result<()> {
         let now = now_ms();
         self.update_server("recording a successful connection", server_id, move |doc| {
-            doc.last_connected_at = Some(now);
+            doc.last_connected_ms = Some(now);
         })
     }
 
@@ -562,7 +562,7 @@ impl Store {
         &self,
         action: &'static str,
         server_id: &str,
-        change: impl Fn(&mut ServerDoc) + Send + 'static,
+        change: impl Fn(&mut ServerDoc) + Send + Sync + 'static,
     ) -> Result<()> {
         let id = key(&[server_id])?;
         self.ports.run(action, move |ports| async move {

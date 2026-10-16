@@ -179,7 +179,7 @@ impl Store {
         self.ports
             .run("beginning an index sync", move |ports| async move {
                 let documents = ports.documents;
-                let id = hex_digest(source.as_bytes());
+                let id = doc_id(&[&source])?;
                 let previous = documents.get(REGISTRY_INDEX_STATE, &id).await?;
                 let previous: Option<StateDoc> = previous
                     .map(|row| serde_json::from_value(row.doc))
@@ -209,7 +209,13 @@ impl Store {
                     tinystoragedrivers_core::StorageError::serialization(error.to_string())
                 })?;
                 documents
-                    .put(REGISTRY_INDEX_STATE, &id, value, Precondition::None)
+                    .put_with(
+                        REGISTRY_INDEX_STATE,
+                        &id,
+                        value,
+                        Precondition::None,
+                        write_options(),
+                    )
                     .await
                     .map(|_| ())
             })
@@ -238,13 +244,13 @@ impl Store {
                 qualified_name: row.qualified_name.clone(),
                 label: row.label.clone(),
                 description: row.description.clone(),
-                record_json: row.record_json.clone(),
+                record: serde_json::from_str(&row.record_json)?,
                 synced_ms: now,
                 search: search_text(&row.label, &row.description),
             };
             ops.push(WriteOp::Put {
                 collection: REGISTRY_INDEX.to_string(),
-                id: index_id(source, &row.qualified_name),
+                id: index_id(source, &row.qualified_name)?,
                 doc: serde_json::to_value(doc)?,
                 precondition: Precondition::None,
             });
@@ -260,7 +266,7 @@ impl Store {
                     let chunk = std::mem::replace(&mut ops, rest);
                     write_chunk(documents.as_ref(), chunk, atomic).await?;
                 }
-                let id = hex_digest(source.as_bytes());
+                let id = doc_id(&[&source])?;
                 let Some(found) = documents.get(REGISTRY_INDEX_STATE, &id).await? else {
                     return Ok(());
                 };
@@ -274,7 +280,13 @@ impl Store {
                     tinystoragedrivers_core::StorageError::serialization(error.to_string())
                 })?;
                 documents
-                    .put(REGISTRY_INDEX_STATE, &id, value, found.unchanged())
+                    .put_with(
+                        REGISTRY_INDEX_STATE,
+                        &id,
+                        value,
+                        found.unchanged(),
+                        write_options(),
+                    )
                     .await
                     .map(|_| ())
             })
@@ -291,7 +303,7 @@ impl Store {
         self.ports
             .run("finishing an index sync", move |ports| async move {
                 let documents = ports.documents;
-                let id = hex_digest(source.as_bytes());
+                let id = doc_id(&[&source])?;
                 let Some(found) = documents.get(REGISTRY_INDEX_STATE, &id).await? else {
                     return Ok(());
                 };
@@ -316,7 +328,13 @@ impl Store {
                     tinystoragedrivers_core::StorageError::serialization(error.to_string())
                 })?;
                 documents
-                    .put(REGISTRY_INDEX_STATE, &id, value, found.unchanged())
+                    .put_with(
+                        REGISTRY_INDEX_STATE,
+                        &id,
+                        value,
+                        found.unchanged(),
+                        write_options(),
+                    )
                     .await
                     .map(|_| ())
             })
@@ -370,7 +388,7 @@ impl Store {
             hits.push(IndexHit {
                 in_label: terms.iter().all(|term| row.label.contains(term.as_str())),
                 qualified_name: row.qualified_name,
-                record_json: row.record_json,
+                record_json: row.record.to_string(),
             });
         }
         Ok(hits)
@@ -394,7 +412,9 @@ async fn write_chunk(
             precondition,
         } = op
         {
-            documents.put(&collection, &id, doc, precondition).await?;
+            documents
+                .put_with(&collection, &id, doc, precondition, write_options())
+                .await?;
         }
     }
     Ok(())
