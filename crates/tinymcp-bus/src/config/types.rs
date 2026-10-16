@@ -294,6 +294,7 @@ impl Default for McpServerConfig {
             enabled: default_true(),
             allowed_tools: Vec::new(),
             disallowed_tools: Vec::new(),
+            operator_trusted: false,
             timeout_secs: default_timeout_secs(),
             auth: McpAuthConfig::None,
         }
