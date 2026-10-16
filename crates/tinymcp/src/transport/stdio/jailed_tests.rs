@@ -605,7 +605,6 @@ async fn reads_are_confidential_too() {
     let spawner = JailedSpawner::new(fake.clone(), sandbox());
     let mut process = spawner.spawn_process(launch()).await.unwrap();
     // The fake does not record reads in `calls`, so ask for one directly.
-    use tokio::io::AsyncReadExt;
     let mut byte = [0_u8; 1];
     let _ = tokio::time::timeout(Duration::from_millis(100), process.stdout.read(&mut byte)).await;
     assert!(fake.state.lock().unwrap().confidential_reads > 0);
