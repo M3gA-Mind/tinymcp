@@ -8,7 +8,7 @@
 //!
 //! # Names
 //!
-//! Every name starts with the owner `mcp`. Documents use bare snake_case
+//! Every name starts with the owner `mcp`. Documents use bare `snake_case`
 //! bodies, times are epoch milliseconds in `*_ms` fields, and ids are built
 //! with `Key::of`, so a qualified name such as `@acme/files` is stored as
 //! `@acme%2Ffiles` and never needs a digest to be a safe id.
@@ -95,9 +95,7 @@ pub fn storage_schema() -> Schema {
         )
         .collection(REGISTRY_INDEX_STATE, SCHEMA_VERSION, ScopeClass::Module)
         .stream(AUDIT_STREAM, ScopeClass::Module);
-    migrate::steps()
-        .into_iter()
-        .fold(schema, |schema, step| schema.step(step))
+    migrate::steps().into_iter().fold(schema, Schema::step)
 }
 
 /// The options every document write carries: the body version.

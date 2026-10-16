@@ -257,62 +257,8 @@ impl Store {
                 if !existing.items.is_empty() {
                     return Ok(false);
                 }
-                match documents
-                    .put_with(
-                        SERVER_NAMES,
-                        &claim_id,
-                        claim.clone(),
-                        Precondition::Absent,
-                        write_options(),
-                    )
-                    .await
-                {
-                    Ok(_) => {}
-                    Err(error) if error.kind() == ErrorKind::Conflict => {
-                        // A claim whose server is gone (a crash between the
-                        // two writes) is stale: take it over once.
-                        let Some(held) = documents.get(SERVER_NAMES, &claim_id).await? else {
-                            return Ok(false);
-                        };
-                        let holder = held
-                            .doc
-                            .get("server_id")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_string();
-                        if documents
-                            .get(SERVERS, &doc_id(&[&holder])?)
-                            .await?
-                            .is_some()
-                        {
-                            return Ok(false);
-                        }
-                        // Within its lease the holder may simply not have
-                        // written its server yet: it is in flight, not stale.
-                        let claimed_ms = held
-                            .doc
-                            .get("claimed_ms")
-                            .and_then(Value::as_i64)
-                            .unwrap_or(0);
-                        if now_ms().saturating_sub(claimed_ms) < CLAIM_LEASE_MS {
-                            return Ok(false);
-                        }
-                        match documents
-                            .put_with(
-                                SERVER_NAMES,
-                                &claim_id,
-                                claim,
-                                held.unchanged(),
-                                write_options(),
-                            )
-                            .await
-                        {
-                            Ok(_) => {}
-                            Err(error) if error.kind() == ErrorKind::Conflict => return Ok(false),
-                            Err(error) => return Err(error),
-                        }
-                    }
-                    Err(error) => return Err(error),
+                if !acquire_claim(documents.as_ref(), &claim_id, claim).await? {
+                    return Ok(false);
                 }
                 let owns_claim = |held: Option<tinystoragedrivers_core::Versioned<Value>>| {
                     held.filter(|claim| {
@@ -737,6 +683,70 @@ impl Store {
                     .await
                     .map(|_| ())
             })
+    }
+}
+
+/// Writes the claim on a qualified name. Returns whether this caller holds it.
+///
+/// A claim whose server is gone (a crash between the two writes) is stale and
+/// is taken over once, but only after its lease: within it the holder may
+/// simply not have written its server yet.
+async fn acquire_claim(
+    documents: &dyn tinystoragedrivers_core::DocumentStore,
+    claim_id: &str,
+    claim: Value,
+) -> tinystoragedrivers_core::Result<bool> {
+    match documents
+        .put_with(
+            SERVER_NAMES,
+            claim_id,
+            claim.clone(),
+            Precondition::Absent,
+            write_options(),
+        )
+        .await
+    {
+        Ok(_) => return Ok(true),
+        Err(error) if error.kind() != ErrorKind::Conflict => return Err(error),
+        Err(_) => {}
+    }
+    let Some(held) = documents.get(SERVER_NAMES, claim_id).await? else {
+        return Ok(false);
+    };
+    let holder = held
+        .doc
+        .get("server_id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if documents
+        .get(SERVERS, &doc_id(&[&holder])?)
+        .await?
+        .is_some()
+    {
+        return Ok(false);
+    }
+    let claimed_ms = held
+        .doc
+        .get("claimed_ms")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    if now_ms().saturating_sub(claimed_ms) < CLAIM_LEASE_MS {
+        return Ok(false);
+    }
+    match documents
+        .put_with(
+            SERVER_NAMES,
+            claim_id,
+            claim,
+            held.unchanged(),
+            write_options(),
+        )
+        .await
+    {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == ErrorKind::Conflict => Ok(false),
+        Err(error) => Err(error),
     }
 }
 
