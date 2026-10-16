@@ -23,10 +23,16 @@ struct State {
     start_error: Option<&'static str>,
     contract: Option<(u32, u32)>,
     next: u32,
-    /// Replies the fake "server" produces for each line written to it.
-    respond: bool,
+    behavior: Behavior,
     /// Members called over the confidential route.
     confidential: Vec<&'static str>,
+}
+
+/// What the fake does differently from a plain, silent module.
+#[derive(Debug, Default)]
+struct Behavior {
+    /// Reply as an MCP server to each line written to it.
+    respond: bool,
     /// Make `Create` fail.
     create_error: bool,
     /// Report stdout closed while stderr stays open.
@@ -42,7 +48,7 @@ struct FakeBox {
 impl FakeBox {
     fn serving() -> Arc<Self> {
         let fake = Self::default();
-        fake.state.lock().unwrap().respond = true;
+        fake.state.lock().unwrap().behavior.respond = true;
         Arc::new(fake)
     }
     fn members(&self) -> Vec<&'static str> {
@@ -84,7 +90,7 @@ impl JailBus for FakeBox {
                 let mut state = self.state.lock().unwrap();
                 let out: Vec<u8> = state.stdout.drain(..).collect();
                 let closed = state.closed && state.stdout.is_empty();
-                let stdout_closed = closed || state.stdout_only_closed;
+                let stdout_closed = closed || state.behavior.stdout_only_closed;
                 return Ok(json!({
                     "stdout": out, "stderr": [], "stdout_closed": stdout_closed,
                     "stderr_closed": closed, "status": {"running": !closed}
@@ -104,7 +110,7 @@ impl JailBus for FakeBox {
                     state.next += 1;
                     Ok(json!(format!("id-{}", state.next)))
                 }
-                m if m == names::CREATE && state.create_error => Err(JailBusError {
+                m if m == names::CREATE && state.behavior.create_error => Err(JailBusError {
                     name: Some(tinybox_bus::INVALID_FILE_PATH.into()),
                     message: "bad workspace".into(),
                 }),
@@ -126,7 +132,7 @@ impl JailBus for FakeBox {
                 m if m == names::WRITE_STDIO => {
                     let data: Vec<u8> = serde_json::from_value(args["data"].clone()).unwrap();
                     state.written.extend_from_slice(&data);
-                    if state.respond {
+                    if state.behavior.respond {
                         let text = String::from_utf8_lossy(&data).into_owned();
                         for line in text.lines() {
                             let request: Value = serde_json::from_str(line).unwrap();
@@ -296,7 +302,7 @@ async fn dropping_a_started_server_releases_it_in_the_background() {
 #[tokio::test]
 async fn client_writes_are_forwarded_and_end_of_input_closes_stdin() {
     let fake = FakeBox::serving();
-    fake.state.lock().unwrap().respond = false;
+    fake.state.lock().unwrap().behavior.respond = false;
     let spawner = JailedSpawner::new(fake.clone(), sandbox());
     let mut process = spawner.spawn_process(launch()).await.unwrap();
     process.stdin.write_all(b"ping\n").await.unwrap();
@@ -400,7 +406,7 @@ async fn only_the_start_that_carries_the_environment_is_confidential() {
 #[tokio::test]
 async fn a_failed_create_closes_the_reserved_resource() {
     let fake = FakeBox::serving();
-    fake.state.lock().unwrap().create_error = true;
+    fake.state.lock().unwrap().behavior.create_error = true;
     let spawner = JailedSpawner::new(fake.clone(), sandbox());
     let error = spawner.spawn_process(launch()).await.unwrap_err();
     assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
@@ -412,11 +418,11 @@ async fn a_failed_create_closes_the_reserved_resource() {
 #[tokio::test]
 async fn the_reader_ends_when_stdout_closes_even_if_stderr_stays_open() {
     let fake = FakeBox::serving();
-    fake.state.lock().unwrap().respond = false;
+    fake.state.lock().unwrap().behavior.respond = false;
     let spawner = JailedSpawner::new(fake.clone(), sandbox());
     let mut process = spawner.spawn_process(launch()).await.unwrap();
     // The fake reports both streams closed together; make only stdout close.
-    fake.state.lock().unwrap().stdout_only_closed = true;
+    fake.state.lock().unwrap().behavior.stdout_only_closed = true;
     let mut rest = Vec::new();
     tokio::time::timeout(
         Duration::from_secs(5),
