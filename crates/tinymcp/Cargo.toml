@@ -23,6 +23,8 @@ crate-type = ["rlib", "cdylib"]
 # rather than two, and so `tinymcp::GreetRequest` and
 # `tinymcp_bus::GreetRequest` are the same type.
 tinymcp-bus = { workspace = true }
+# The TinyBox contract for the jailed stdio launcher; see the workspace entry.
+tinybox-bus = { workspace = true }
 # Only the `TinyBus` adapter needs these, and only a `cdylib` build needs the
 # adapter. A host taking this crate as an ordinary library calls the API
 # directly and should not link a bus to do it — see the `module` feature.
