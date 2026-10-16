@@ -26,6 +26,8 @@ struct State {
     behavior: Behavior,
     /// Members called over the confidential route.
     confidential: Vec<&'static str>,
+    /// Reads called over the confidential route (reads are not in `calls`).
+    confidential_reads: usize,
 }
 
 /// What the fake does differently from a plain, silent module.
@@ -85,6 +87,9 @@ impl JailBus for FakeBox {
             assert!(args.is_array(), "arguments travel positionally");
             let args = args.get(0).cloned().unwrap_or(Value::Null);
             if member == names::READ_STDIO {
+                if confidential {
+                    self.state.lock().unwrap().confidential_reads += 1;
+                }
                 // Long-poll like the module: wait briefly for output.
                 let _ = tokio::time::timeout(Duration::from_millis(20), self.wake.notified()).await;
                 let mut state = self.state.lock().unwrap();
@@ -592,4 +597,35 @@ fn dropping_a_handle_with_no_runtime_still_releases_the_server() {
         std::thread::sleep(Duration::from_millis(10));
     }
     assert!(fake.members().contains(&names::KILL_STDIO));
+}
+
+#[tokio::test]
+async fn reads_are_confidential_too() {
+    let fake = FakeBox::serving();
+    let spawner = JailedSpawner::new(fake.clone(), sandbox());
+    let mut process = spawner.spawn_process(launch()).await.unwrap();
+    // The fake does not record reads in `calls`, so ask for one directly.
+    use tokio::io::AsyncReadExt;
+    let mut byte = [0_u8; 1];
+    let _ = tokio::time::timeout(Duration::from_millis(100), process.stdout.read(&mut byte)).await;
+    assert!(fake.state.lock().unwrap().confidential_reads > 0);
+    process.handle.terminate().await;
+}
+
+#[tokio::test]
+async fn a_cancelled_close_still_releases_the_server_on_drop() {
+    let fake = FakeBox::serving();
+    let spawner = JailedSpawner::new(fake.clone(), sandbox());
+    let mut process = spawner.spawn_process(launch()).await.unwrap();
+    // Cancel terminate before its release can finish.
+    let cancelled = tokio::time::timeout(Duration::ZERO, process.handle.terminate()).await;
+    let _ = cancelled;
+    drop(process);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !fake.members().contains(&names::CLOSE) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the drop fallback cleaned up");
 }
