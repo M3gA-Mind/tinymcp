@@ -255,6 +255,8 @@ impl McpTransportClient {
 pub struct McpServerRegistry {
     by_name: BTreeMap<String, McpServerDefinition>,
     order: Vec<String>,
+    /// How stdio servers start; see [`Self::from_config_with`].
+    stdio: StdioLaunchers,
 }
 
 impl McpServerRegistry {
@@ -272,7 +274,24 @@ impl McpServerRegistry {
     /// constructed, which in practice means a malformed proxy or an unusable
     /// TLS configuration — conditions that would affect every server, not one.
     pub fn from_config(config: &McpClientConfig) -> Result<Self> {
-        let mut registry = Self::default();
+        Self::from_config_with(config, StdioLaunchers::new())
+    }
+
+    /// [`Self::from_config`], starting stdio servers through `stdio`.
+    ///
+    /// A server marked [`McpServerConfig::operator_trusted`] starts as an
+    /// ordinary child process. Any other stdio server starts in the sandbox
+    /// `stdio` carries, and is refused when there is none, so
+    /// [`Self::from_config`] alone starts only trusted servers.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::from_config`].
+    pub fn from_config_with(config: &McpClientConfig, stdio: StdioLaunchers) -> Result<Self> {
+        let mut registry = Self {
+            stdio,
+            ..Self::default()
+        };
         if !config.enabled {
             return Ok(registry);
         }
@@ -620,7 +639,7 @@ impl McpServerRegistry {
             timeout_secs: server.timeout_secs,
             auth: server.auth.clone(),
             source,
-            client: Arc::new(build_transport(server, identity, proxy)?),
+            client: Arc::new(build_transport(server, identity, proxy, &self.stdio)?),
             fingerprint: static_fingerprint(server),
         });
 
@@ -670,6 +689,7 @@ fn build_transport(
     server: &McpServerConfig,
     identity: &McpClientIdentityConfig,
     proxy: Option<&McpProxyConfig>,
+    stdio: &StdioLaunchers,
 ) -> Result<McpTransportClient> {
     let command = server.command.trim();
 
@@ -695,7 +715,8 @@ fn build_transport(
         env,
         server.cwd.as_ref().map(PathBuf::from),
         identity,
-    ))))
+    )
+    .with_spawner(stdio.for_server(server.operator_trusted)))))
 }
 
 /// Trims tool names, drops empties, and removes duplicates.
@@ -726,6 +747,7 @@ fn static_fingerprint(server: &McpServerConfig) -> String {
         server.command.trim().to_string(),
         server.args.join("\0"),
         server.cwd.clone().unwrap_or_default(),
+        server.operator_trusted.to_string(),
         env_keys.join("\0"),
         auth_parts[0].clone(),
         allowed.join("\0"),

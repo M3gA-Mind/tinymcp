@@ -14,6 +14,7 @@ use crate::registry::Store;
 use crate::registry::oauth::{OAuthFlow, refresh_if_expired};
 use crate::transport::http::McpHttpClient;
 use crate::transport::stdio::McpStdioClient;
+use crate::transport::stdio::jailed::StdioLaunchers;
 use tinymcp_bus::{
     ConnStatus, ConnectedServerOverview, InstalledServer, McpAuthConfig, McpClientIdentityConfig,
     McpProxyConfig, McpResource, McpResourceContents, McpServerToolResult, McpTool, Transport,
