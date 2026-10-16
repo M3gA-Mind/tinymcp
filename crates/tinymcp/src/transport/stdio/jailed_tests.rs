@@ -11,6 +11,7 @@ use crate::transport::stdio::McpStdioClient;
 use serde_json::json;
 use std::collections::VecDeque;
 use std::sync::Mutex;
+use std::time::Duration;
 use tinymcp_bus::{LATEST_PROTOCOL_VERSION, McpClientIdentityConfig};
 
 #[derive(Debug, Default)]
