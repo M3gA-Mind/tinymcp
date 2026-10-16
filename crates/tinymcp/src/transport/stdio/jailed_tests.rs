@@ -80,7 +80,7 @@ impl JailBus for FakeBox {
                     Ok(json!(format!("id-{}", state.next)))
                 }
                 m if m == names::CREATE => Ok(json!({
-                    "resource": args[0]["resource"], "backend": "passthrough",
+                    "resource": args["resource"], "backend": "passthrough",
                     "state": "running", "published_ports": []
                 })),
                 m if m == names::START_STDIO => {
@@ -91,12 +91,12 @@ impl JailBus for FakeBox {
                         });
                     }
                     Ok(json!({
-                        "resource": args[0]["resource"], "process": args[0]["process"]
+                        "resource": args["resource"], "process": args["process"]
                     }))
                 }
                 m if m == names::WRITE_STDIO => {
                     let data: Vec<u8> =
-                        serde_json::from_value(args[0]["data"].clone()).unwrap();
+                        serde_json::from_value(args["data"].clone()).unwrap();
                     state.written.extend_from_slice(&data);
                     if state.respond {
                         let text = String::from_utf8_lossy(&data).into_owned();
@@ -176,10 +176,10 @@ async fn a_handshake_runs_through_the_jail_with_the_hosts_grants() {
             names::START_STDIO
         ]
     );
-    let create = &fake.args(names::CREATE)[0][0];
+    let create = &fake.args(names::CREATE)[0];
     assert_eq!(create["backend"], "passthrough");
     assert_eq!(create["workspace"], json!({"Directory": "/work/mcp"}));
-    let start = &fake.args(names::START_STDIO)[0][0];
+    let start = &fake.args(names::START_STDIO)[0];
     assert_eq!(start["jail"]["enforcement"], "enforced");
     assert_eq!(start["jail"]["read_only"], json!(["/usr"]));
     assert_eq!(start["jail"]["read_write"], json!(["/work/mcp/cache"]));
@@ -199,7 +199,7 @@ async fn launch_arguments_reach_the_jailed_start_unchanged() {
     let fake = FakeBox::serving();
     let spawner = JailedSpawner::new(fake.clone(), sandbox());
     let mut process = spawner.spawn_process(launch()).await.unwrap();
-    let start = &fake.args(names::START_STDIO)[0][0];
+    let start = &fake.args(names::START_STDIO)[0];
     assert_eq!(start["argv"], json!(["/usr/bin/server", "--stdio"]));
     assert_eq!(start["cwd"], "/work/mcp/run");
     assert_eq!(start["env"], json!({"TOKEN": "secret-value"}));
