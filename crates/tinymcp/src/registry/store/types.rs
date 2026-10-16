@@ -634,8 +634,8 @@ impl Store {
     pub fn cached(&self, cache_key: &str) -> Result<Option<String>> {
         Ok(self
             .read_cache(cache_key)?
-            .filter(|entry| now_ms() - entry.cached_at < CACHE_TTL_MS)
-            .map(|entry| entry.body_json))
+            .filter(|entry| now_ms() - entry.cached_ms < CACHE_TTL_MS)
+            .map(|entry| entry.body.to_string()))
     }
 
     /// A cached browse response, however old.
@@ -647,11 +647,11 @@ impl Store {
     ///
     /// Returns [`Error::Store`] when the query fails.
     pub(crate) fn cached_stale(&self, cache_key: &str) -> Result<Option<String>> {
-        Ok(self.read_cache(cache_key)?.map(|entry| entry.body_json))
+        Ok(self.read_cache(cache_key)?.map(|entry| entry.body.to_string()))
     }
 
     fn read_cache(&self, cache_key: &str) -> Result<Option<CacheDoc>> {
-        let id = hex_digest(cache_key.as_bytes());
+        let id = key(&[cache_key])?;
         let found = self
             .ports
             .run("reading the browse cache", move |ports| async move {
@@ -690,7 +690,7 @@ impl Store {
         for row in rows {
             let entry: CacheDoc = serde_json::from_value(row.doc)?;
             if entry.cache_key.starts_with(prefix) {
-                bodies.push(entry.body_json);
+                bodies.push(entry.body.to_string());
             }
         }
         Ok(bodies)
@@ -700,23 +700,24 @@ impl Store {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Store`] when the write fails.
+    /// Returns [`Error::Serialization`] when `body_json` is not JSON, and
+    /// [`Error::Store`] when the write fails.
     pub fn cache(&self, cache_key: &str, body_json: &str) -> Result<()> {
         self.write_cache(cache_key, body_json, now_ms())
     }
 
-    fn write_cache(&self, cache_key: &str, body_json: &str, cached_at: i64) -> Result<()> {
-        let id = hex_digest(cache_key.as_bytes());
+    fn write_cache(&self, cache_key: &str, body_json: &str, cached_ms: i64) -> Result<()> {
+        let id = key(&[cache_key])?;
         let doc = serde_json::to_value(CacheDoc {
             cache_key: cache_key.to_string(),
-            body_json: body_json.to_string(),
-            cached_at,
+            body: serde_json::from_str(body_json)?,
+            cached_ms,
         })?;
         self.ports
             .run("writing to the browse cache", move |ports| async move {
                 ports
                     .documents
-                    .put(REGISTRY_CACHE, &id, doc, Precondition::None)
+                    .put_with(REGISTRY_CACHE, &id, doc, Precondition::None, write_options())
                     .await
                     .map(|_| ())
             })
