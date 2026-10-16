@@ -3116,7 +3116,7 @@ async fn configured_tool_call_uses_the_services_sandbox_not_an_empty_launcher_se
     );
 
     // With no sandbox the same call is refused before any launch.
-    let bare = service();
+    let bare = McpService::new(&ModuleConfig::default()).expect("the service builds");
     let reply = ok(
         &bare,
         names::methods::CONFIGURED_TOOL_CALL,
