@@ -433,3 +433,99 @@ async fn the_reader_ends_when_stdout_closes_even_if_stderr_stays_open() {
     .unwrap();
     process.handle.terminate().await;
 }
+
+/// A stand-in `TinyBox` served on an in-process broker, to drive the real
+/// bus-backed [`BusJail`].
+struct ServedBox;
+
+#[tinybus::interface(name = "ai.tinyhumans.tinybox.Box")]
+impl ServedBox {
+    async fn capabilities(&self) -> tinybus::Result<tinybox_bus::ModuleCapabilities> {
+        std::future::ready(Ok(tinybox_bus::ModuleCapabilities {
+            contract_version: tinybox_bus::CONTRACT_VERSION,
+            create_backends: vec!["passthrough".into()],
+            exec_backends: Vec::new(),
+            spawn_backends: Vec::new(),
+        }))
+        .await
+    }
+
+    async fn reserve(
+        &self,
+        _request: tinybox_bus::ReserveRequest,
+    ) -> tinybus::Result<tinybox_bus::ResourceId> {
+        std::future::ready(Err(tinybus::Error::MethodFailed {
+            name: tinybox_bus::UNSUPPORTED_OPERATION.into(),
+            message: "no jail here".into(),
+        }))
+        .await
+    }
+}
+
+#[cfg(feature = "module")]
+#[tokio::test]
+async fn the_bus_backed_jail_calls_tinybox_and_keeps_its_error_names() {
+    use tinybus::broker::Broker;
+    use tinybus::transport::memory::MemoryBus;
+    let bus = MemoryBus::new();
+    Broker::new().spawn(bus.clone());
+    let serving = tinybus::Connection::connect(bus.connect().await.unwrap())
+        .await
+        .unwrap();
+    serving
+        .serve_at(tinybox_bus::OBJECT_PATH.try_into().unwrap(), ServedBox)
+        .await
+        .unwrap();
+    serving.request_name(tinybox_bus::INTERFACE).await.unwrap();
+    let client = tinybus::Connection::connect(bus.connect().await.unwrap())
+        .await
+        .unwrap();
+    let jail = BusJail::connect(&client).unwrap();
+
+    let reply = jail
+        .call(names::CAPABILITIES, json!([]), false)
+        .await
+        .unwrap();
+    assert_eq!(
+        reply["contract_version"],
+        json!([
+            tinybox_bus::CONTRACT_VERSION.0,
+            tinybox_bus::CONTRACT_VERSION.1
+        ])
+    );
+
+    let refused = jail
+        .call(names::RESERVE, json!(["Resource"]), false)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        refused.name.as_deref(),
+        Some(tinybox_bus::UNSUPPORTED_OPERATION)
+    );
+
+    // Credential-bearing calls need an attested destination; an in-process
+    // stand-in is not one, so the confidential route refuses instead of
+    // quietly sending the environment the ordinary way.
+    let unattested = jail
+        .call(names::START_STDIO, json!([{}]), true)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        unattested.name.as_deref(),
+        Some("ai.tinyhumans.tinybus.Error.NotAttested")
+    );
+
+    let spawner = JailedSpawner::new(Arc::new(jail), sandbox());
+    let error = spawner.spawn_process(launch()).await.unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+}
+
+#[tokio::test]
+async fn a_started_handle_has_a_redacted_debug_form() {
+    let fake = FakeBox::serving();
+    let spawner = JailedSpawner::new(fake.clone(), sandbox());
+    let mut process = spawner.spawn_process(launch()).await.unwrap();
+    let debug = format!("{:?} {:?}", process.handle, spawner);
+    assert!(!debug.contains("secret-value"));
+    process.handle.terminate().await;
+}
