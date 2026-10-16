@@ -25,7 +25,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tinybox_bus::{
     CreateRequest, JailEnforcement, NativeJailConfig, ProcessRef, ReserveRequest, ResourceId,
-    StdioChunk, StdioReadRequest, StdioStartRequest, StdioStatus, StdioWriteRequest, Workspace,
+    StdioChunk, StdioReadRequest, StdioStartRequest, StdioWriteRequest, Workspace,
     names,
 };
 use tinymcp_bus::StdioSandboxConfig;

@@ -1807,6 +1807,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "tinybox-bus"
+version = "0.1.35"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "tinybus"
 version = "0.1.5"
 dependencies = [
@@ -1865,6 +1872,7 @@ dependencies = [
  "sha2 0.11.0",
  "tempfile",
  "thiserror",
+ "tinybox-bus",
  "tinybus",
  "tinybus-module",
  "tinymcp-bus",

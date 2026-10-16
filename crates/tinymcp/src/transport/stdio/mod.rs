@@ -190,13 +190,18 @@ pub struct McpStdioClient {
     cached_tools: parking_lot::Mutex<HashMap<String, McpRemoteTool>>,
 }
 
-/// A running child and the pipes to it.
-#[derive(Debug)]
+/// A running server and the pipes to it.
 struct StdioSession {
     handle: Box<dyn StdioHandle>,
     stdin: Box<dyn AsyncWrite + Send + Unpin>,
     stdout: BufReader<Box<dyn AsyncRead + Send + Unpin>>,
     initialize: McpInitializeResult,
+}
+
+impl std::fmt::Debug for StdioSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StdioSession").finish_non_exhaustive()
+    }
 }
 
 impl McpStdioClient {
