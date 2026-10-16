@@ -47,10 +47,12 @@ pub use ports::StoragePorts;
 pub use provider::{
     MemoryProvider, StorageProvider, install_provider, installed_provider, provider_installed,
 };
+#[cfg(test)]
+pub(crate) use schema::SCHEMA_VERSION;
 pub use schema::{AUDIT_STREAM, OWNER, storage_schema};
 pub(crate) use schema::{
-    REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE, SCHEMA_VERSION, SERVER_NAMES, SERVERS,
-    TOOL_CACHE, doc_id, write_options,
+    REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE, SERVER_NAMES, SERVERS, TOOL_CACHE,
+    doc_id, write_options,
 };
 
 #[cfg(all(test, feature = "module"))]
