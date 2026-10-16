@@ -42,12 +42,12 @@ mod schema;
 
 #[cfg(feature = "module")]
 pub use bus::BusProvider;
-pub use grant::{
-    AUDIT_STREAM, CACHE_KEY_SECRET, ENV_SECRET_PREFIX, StorageGrant, collection_specs, grant,
+pub use grant::{CACHE_KEY_SECRET, ENV_SECRET_PREFIX, StorageGrant, collection_specs, grant};
+pub(crate) use schema::{
+    REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE, SERVER_NAMES, SERVERS, TOOL_CACHE, id,
+    write_options,
 };
-pub(crate) use grant::{
-    REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE, SERVER_NAMES, SERVERS, TOOL_CACHE,
-};
+pub use schema::{AUDIT_STREAM, OWNER, storage_schema};
 pub use ports::StoragePorts;
 pub use provider::{
     MemoryProvider, StorageProvider, install_provider, installed_provider, provider_installed,

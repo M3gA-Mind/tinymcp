@@ -10,6 +10,7 @@ use tinystoragedrivers_core::{
 };
 
 use super::*;
+use crate::storage::schema::{SCHEMA_VERSION, storage_schema};
 
 /// A memory backend holding v1 data, and the registry that migrates it.
 struct Fixture {
