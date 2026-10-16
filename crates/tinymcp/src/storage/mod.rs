@@ -35,8 +35,10 @@ mod bus;
 #[cfg(test)]
 mod failing;
 mod grant;
+mod migrate;
 mod ports;
 mod provider;
+mod schema;
 
 #[cfg(feature = "module")]
 pub use bus::BusProvider;
