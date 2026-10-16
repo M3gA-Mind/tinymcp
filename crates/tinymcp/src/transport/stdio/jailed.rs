@@ -340,9 +340,7 @@ async fn pump_stdout(bus: Arc<dyn JailBus>, target: ProcessRef, mut pipe: Duplex
             max_bytes: 0,
             wait_ms: READ_WAIT_MS,
         };
-        // Replies hold tool results, so they are confidential as well.
-        let chunk: StdioChunk =
-            match invoke_with(bus.as_ref(), names::READ_STDIO, request, true).await {
+        let chunk: StdioChunk = match invoke(bus.as_ref(), names::READ_STDIO, request).await {
             Ok(chunk) => chunk,
             Err(_) => break,
         };
@@ -358,6 +356,45 @@ async fn pump_stdout(bus: Arc<dyn JailBus>, target: ProcessRef, mut pipe: Duplex
     }
     // End of file for the client's reader.
     let _ = pipe.shutdown().await;
+}
+
+/// Runs `cleanup` to completion without a caller to wait for it: on the current
+/// runtime when there is one, otherwise on a short-lived thread of its own.
+///
+/// Cleanup after the runtime is gone is best-effort (the bus connection may be
+/// closed with it); what it must not do is silently never run.
+fn run_detached(cleanup: impl std::future::Future<Output = ()> + Send + 'static) {
+    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+        runtime.spawn(cleanup);
+        return;
+    }
+    std::thread::spawn(move || {
+        if let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            runtime.block_on(cleanup);
+        }
+    });
+}
+
+/// Closes a reserved resource unless ownership moved to a [`JailedHandle`],
+/// including when the launch future is dropped mid-await.
+struct ResourceGuard {
+    bus: Arc<dyn JailBus>,
+    resource: ResourceId,
+    armed: bool,
+}
+
+impl Drop for ResourceGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let (bus, resource) = (self.bus.clone(), self.resource.clone());
+            run_detached(async move {
+                let _: Result<(), _> = invoke(bus.as_ref(), names::CLOSE, &resource).await;
+            });
+        }
+    }
 }
 
 /// Ends a jailed server: kill the group, release the handle, close the
@@ -397,10 +434,8 @@ impl Drop for JailedHandle {
         for task in &self.tasks {
             task.abort();
         }
-        if !self.released
-            && let Ok(runtime) = tokio::runtime::Handle::try_current()
-        {
-            runtime.spawn(release(self.bus.clone(), self.target.clone()));
+        if !self.released {
+            run_detached(release(self.bus.clone(), self.target.clone()));
         }
     }
 }
