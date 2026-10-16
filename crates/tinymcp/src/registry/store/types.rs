@@ -189,12 +189,12 @@ impl Store {
     /// identifier is already taken.
     pub fn insert_server(&self, server: &InstalledServer) -> Result<()> {
         let doc = serde_json::to_value(ServerDoc::encode(server, false))?;
-        let id = server.server_id.clone();
+        let id = key(&[&server.server_id])?;
         self.ports
             .run("inserting a server", move |ports| async move {
                 ports
                     .documents
-                    .put(SERVERS, &id, doc, Precondition::Absent)
+                    .put_with(SERVERS, &id, doc, Precondition::Absent, write_options())
                     .await
                     .map(|_| ())
             })
@@ -241,6 +241,8 @@ impl Store {
             claimed_ms: now_ms(),
         })?;
         let id = server.server_id.clone();
+        let server_key = key(&[&server.server_id])?;
+        let claim_id = key(&[&server.qualified_name])?;
         let name = server.qualified_name.clone();
         self.ports
             .run("inserting a server if absent", move |ports| async move {
@@ -255,9 +257,14 @@ impl Store {
                 if !existing.items.is_empty() {
                     return Ok(false);
                 }
-                let claim_id = hex_digest(name.as_bytes());
                 match documents
-                    .put(SERVER_NAMES, &claim_id, claim.clone(), Precondition::Absent)
+                    .put_with(
+                        SERVER_NAMES,
+                        &claim_id,
+                        claim.clone(),
+                        Precondition::Absent,
+                        write_options(),
+                    )
                     .await
                 {
                     Ok(_) => {}
@@ -273,7 +280,10 @@ impl Store {
                             .and_then(Value::as_str)
                             .unwrap_or_default()
                             .to_string();
-                        if documents.get(SERVERS, &holder).await?.is_some() {
+                        if documents
+                            .get(SERVERS, &doc_id(&[&holder])?)
+                            .await?
+                            .is_some() {
                             return Ok(false);
                         }
                         // Within its lease the holder may simply not have
@@ -287,7 +297,13 @@ impl Store {
                             return Ok(false);
                         }
                         match documents
-                            .put(SERVER_NAMES, &claim_id, claim, held.unchanged())
+                            .put_with(
+                                SERVER_NAMES,
+                                &claim_id,
+                                claim,
+                                held.unchanged(),
+                                write_options(),
+                            )
                             .await
                         {
                             Ok(_) => {}
@@ -302,7 +318,9 @@ impl Store {
                         claim.doc.get("server_id").and_then(Value::as_str) == Some(id.as_str())
                     })
                 };
-                if let Err(error) = documents.put(SERVERS, &id, doc, Precondition::Absent).await {
+                if let Err(error) = documents
+                    .put_with(SERVERS, &server_key, doc, Precondition::Absent, write_options())
+                    .await {
                     // Release only a claim that is still ours, at the version
                     // we read, so a racing installer's takeover survives.
                     if let Ok(held) = documents.get(SERVER_NAMES, &claim_id).await
@@ -321,7 +339,9 @@ impl Store {
                 let still_ours = owns_claim(documents.get(SERVER_NAMES, &claim_id).await?);
                 if still_ours.is_none() {
                     tracing::debug!(server_id = %id, "install claim taken over; backing out");
-                    documents.delete(SERVERS, &id, Precondition::None).await?;
+                    documents
+                        .delete(SERVERS, &server_key, Precondition::None)
+                        .await?;
                     return Ok(false);
                 }
                 Ok(true)
@@ -713,6 +733,11 @@ impl Store {
                     .map(|_| ())
             })
     }
+}
+
+/// The document id for `parts`, as a store error when it cannot be built.
+fn key(parts: &[&str]) -> Result<String> {
+    doc_id(parts).map_err(|source| Error::store("building a document id", source))
 }
 
 fn decode_server(doc: Value) -> Result<InstalledServer> {
