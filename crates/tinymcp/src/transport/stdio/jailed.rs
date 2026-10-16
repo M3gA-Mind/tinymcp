@@ -348,10 +348,13 @@ async fn pump_stdout(bus: Arc<dyn JailBus>, target: ProcessRef, mut pipe: Duplex
             max_bytes: 0,
             wait_ms: READ_WAIT_MS,
         };
-        let chunk: StdioChunk = match invoke(bus.as_ref(), names::READ_STDIO, request).await {
-            Ok(chunk) => chunk,
-            Err(_) => break,
-        };
+        // Replies carry tool results and resource contents, so the read is
+        // confidential as well.
+        let chunk: StdioChunk =
+            match invoke_with(bus.as_ref(), names::READ_STDIO, request, true).await {
+                Ok(chunk) => chunk,
+                Err(_) => break,
+            };
         // Standard error is not protocol and is discarded, as for a direct child.
         if !chunk.stdout.is_empty() && pipe.write_all(&chunk.stdout).await.is_err() {
             return;
@@ -428,11 +431,13 @@ async fn release(bus: Arc<dyn JailBus>, target: ProcessRef) {
 impl StdioHandle for JailedHandle {
     fn terminate(&mut self) -> BoxFuture<'_, ()> {
         Box::pin(async move {
-            self.released = true;
             for task in &self.tasks {
                 task.abort();
             }
             release(self.bus.clone(), self.target.clone()).await;
+            // Only now: a close cancelled mid-await leaves this unset, so the
+            // drop still runs the cleanup.
+            self.released = true;
         })
     }
 }
