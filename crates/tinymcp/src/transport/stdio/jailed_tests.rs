@@ -25,6 +25,12 @@ struct State {
     next: u32,
     /// Replies the fake "server" produces for each line written to it.
     respond: bool,
+    /// Members called over the confidential route.
+    confidential: Vec<&'static str>,
+    /// Make `Create` fail.
+    create_error: bool,
+    /// Report stdout closed while stderr stays open.
+    stdout_only_closed: bool,
 }
 
 #[derive(Debug, Default)]
@@ -73,13 +79,17 @@ impl JailBus for FakeBox {
                 let mut state = self.state.lock().unwrap();
                 let out: Vec<u8> = state.stdout.drain(..).collect();
                 let closed = state.closed && state.stdout.is_empty();
+                let stdout_closed = closed || state.stdout_only_closed;
                 return Ok(json!({
-                    "stdout": out, "stderr": [], "stdout_closed": closed,
+                    "stdout": out, "stderr": [], "stdout_closed": stdout_closed,
                     "stderr_closed": closed, "status": {"running": !closed}
                 }));
             }
             let mut state = self.state.lock().unwrap();
             state.calls.push((member, args.clone()));
+            if confidential {
+                state.confidential.push(member);
+            }
             match member {
                 m if m == names::CAPABILITIES => Ok(json!({
                     "contract_version": state.contract.unwrap_or(tinybox_bus::CONTRACT_VERSION),
@@ -89,6 +99,10 @@ impl JailBus for FakeBox {
                     state.next += 1;
                     Ok(json!(format!("id-{}", state.next)))
                 }
+                m if m == names::CREATE && state.create_error => Err(JailBusError {
+                    name: Some(tinybox_bus::INVALID_FILE_PATH.into()),
+                    message: "bad workspace".into(),
+                }),
                 m if m == names::CREATE => Ok(json!({
                     "resource": args["resource"], "backend": "passthrough",
                     "state": "running", "published_ports": []
@@ -363,5 +377,48 @@ async fn only_an_operator_trusted_server_gets_the_direct_spawn() {
         })
         .await
         .unwrap();
+    process.handle.terminate().await;
+}
+
+#[tokio::test]
+async fn only_the_start_that_carries_the_environment_is_confidential() {
+    let fake = FakeBox::serving();
+    let spawner = JailedSpawner::new(fake.clone(), sandbox());
+    let mut process = spawner.spawn_process(launch()).await.unwrap();
+    assert_eq!(
+        fake.state.lock().unwrap().confidential,
+        [names::START_STDIO]
+    );
+    process.handle.terminate().await;
+}
+
+#[tokio::test]
+async fn a_failed_create_closes_the_reserved_resource() {
+    let fake = FakeBox::serving();
+    fake.state.lock().unwrap().create_error = true;
+    let spawner = JailedSpawner::new(fake.clone(), sandbox());
+    let error = spawner.spawn_process(launch()).await.unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+    let members = fake.members();
+    assert_eq!(members.last(), Some(&names::CLOSE));
+    assert!(!members.contains(&names::START_STDIO));
+}
+
+#[tokio::test]
+async fn the_reader_ends_when_stdout_closes_even_if_stderr_stays_open() {
+    let fake = FakeBox::serving();
+    fake.state.lock().unwrap().respond = false;
+    let spawner = JailedSpawner::new(fake.clone(), sandbox());
+    let mut process = spawner.spawn_process(launch()).await.unwrap();
+    // The fake reports both streams closed together; make only stdout close.
+    fake.state.lock().unwrap().stdout_only_closed = true;
+    let mut rest = Vec::new();
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        process.stdout.read_to_end(&mut rest),
+    )
+    .await
+    .expect("stdout reaches end of file without stderr closing")
+    .unwrap();
     process.handle.terminate().await;
 }

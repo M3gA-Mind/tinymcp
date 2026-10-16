@@ -114,9 +114,25 @@ async fn invoke<Reply: DeserializeOwned>(
     member: &'static str,
     args: impl Serialize,
 ) -> Result<Reply, std::io::Error> {
-    let args = serde_json::to_value(args).map_err(std::io::Error::other)?;
+    invoke_with(bus, member, args, false).await
+}
+
+/// [`invoke`], optionally over the confidential route.
+///
+/// Arguments travel as a positional array: nothing for `()`, otherwise the one
+/// argument, which is how every TinyBox member is declared.
+async fn invoke_with<Reply: DeserializeOwned>(
+    bus: &dyn JailBus,
+    member: &'static str,
+    args: impl Serialize,
+    confidential: bool,
+) -> Result<Reply, std::io::Error> {
+    let args = match serde_json::to_value(args).map_err(std::io::Error::other)? {
+        Value::Null => Value::Array(Vec::new()),
+        one => Value::Array(vec![one]),
+    };
     let reply = bus
-        .call(member, args)
+        .call(member, args, confidential)
         .await
         .map_err(|error| refusal(&error))?;
     serde_json::from_value(reply).map_err(|error| {
@@ -194,7 +210,11 @@ impl JailedSpawner {
             },
         )
         .await;
-        created?;
+        if let Err(error) = created {
+            // The reservation is not left behind by a refused or malformed Create.
+            let _: Result<(), _> = invoke(bus, names::CLOSE, &resource).await;
+            return Err(error);
+        }
         match self.start(&resource, launch).await {
             Ok(process) => Ok(process),
             Err(error) => {
@@ -220,7 +240,9 @@ impl JailedSpawner {
         let mut argv = vec![launch.program.to_string_lossy().into_owned()];
         argv.extend(launch.args);
         let env: BTreeMap<String, String> = launch.env.into_iter().collect();
-        let target: ProcessRef = invoke(
+        // The environment carries the server's credentials, so this is the
+        // call that must not travel on the ordinary route.
+        let target: ProcessRef = invoke_with(
             bus,
             names::START_STDIO,
             StdioStartRequest {
@@ -231,6 +253,7 @@ impl JailedSpawner {
                 env,
                 jail: self.jail(),
             },
+            true,
         )
         .await?;
         tracing::debug!("started a jailed stdio server");
@@ -310,7 +333,9 @@ async fn pump_stdout(bus: Arc<dyn JailBus>, target: ProcessRef, mut pipe: Duplex
         if !chunk.stdout.is_empty() && pipe.write_all(&chunk.stdout).await.is_err() {
             return;
         }
-        if chunk.stdout_closed && chunk.stderr_closed {
+        // Standard output is the protocol channel: once it ends nothing more
+        // can arrive, whether or not the child keeps standard error open.
+        if chunk.stdout_closed {
             break;
         }
     }
