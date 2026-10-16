@@ -172,7 +172,7 @@ async fn a_handshake_runs_through_the_jail_with_the_hosts_grants() {
     )
     .with_spawner(spawner);
     client.initialize().await.expect("handshake over the jail");
-    assert!(client.list_tools().await.unwrap().is_empty());
+    assert_eq!(client.list_tools().await.unwrap().len(), 0);
 
     let members = fake.members();
     assert_eq!(
@@ -299,7 +299,7 @@ async fn client_writes_are_forwarded_and_end_of_input_closes_stdin() {
     .await
     .expect("stdout reaches end of file")
     .unwrap();
-    assert!(rest.is_empty());
+    assert_eq!(rest.len(), 0);
     process.handle.terminate().await;
 }
 
