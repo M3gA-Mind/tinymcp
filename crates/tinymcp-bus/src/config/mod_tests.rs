@@ -42,6 +42,7 @@ fn configured_open_keeps_directory_and_client_config_together_on_the_wire() {
                     "enabled": true,
                     "allowed_tools": [],
                     "disallowed_tools": [],
+                    "operator_trusted": false,
                     "timeout_secs": 30,
                     "auth": { "kind": "bearer_token", "token": "credential" }
                 }],
@@ -55,7 +56,8 @@ fn configured_open_keeps_directory_and_client_config_together_on_the_wire() {
                     "mcp_official_base": null,
                     "mcp_official_token": null
                 },
-                "proxy": null
+                "proxy": null,
+                "stdio_sandbox": null
             }
         })
     );
