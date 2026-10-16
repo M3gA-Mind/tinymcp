@@ -287,3 +287,32 @@ fn a_term_inside_a_word_still_finds_its_row() {
     let hits = store.search_index(SOURCE, &terms(&["ack"])).unwrap();
     assert_eq!(names(&hits), ["a/slack"]);
 }
+
+#[test]
+fn an_index_row_is_stored_with_an_object_record_and_a_synced_time() {
+    let store = store();
+    store.begin_index_sync(SOURCE, BASE).unwrap();
+    store
+        .store_index_page(SOURCE, &[row("a/one", "a/one one", "first")], None)
+        .unwrap();
+
+    let doc = store
+        .get_raw(crate::storage::REGISTRY_INDEX, "mcp_official/a%2Fone")
+        .unwrap();
+    assert_eq!(doc["record"], serde_json::json!({"name": "a/one"}));
+    assert!(doc["synced_ms"].as_i64().unwrap() > 0);
+    assert!(doc.get("record_json").is_none());
+    let state = store
+        .get_raw(crate::storage::REGISTRY_INDEX_STATE, SOURCE)
+        .unwrap();
+    assert!(state["started_ms"].as_i64().unwrap() > 0);
+}
+
+#[test]
+fn an_index_row_whose_record_is_not_json_is_refused() {
+    let store = store();
+    store.begin_index_sync(SOURCE, BASE).unwrap();
+    let mut bad = row("a/one", "a/one one", "first");
+    bad.record_json = "not json".to_string();
+    assert!(store.store_index_page(SOURCE, &[bad], None).is_err());
+}

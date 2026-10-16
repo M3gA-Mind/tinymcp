@@ -984,3 +984,104 @@ fn concurrent_updates_to_one_server_all_land() {
     assert!(server.last_connected_at.is_some());
     assert_eq!(server.config, Some(json!({"k": 1})));
 }
+
+// ---------------------------------------------------------------------------
+// The v2 stored form
+// ---------------------------------------------------------------------------
+
+/// The metadata the driver recorded for a document.
+fn meta_of(ports: &StoragePorts, collection: &'static str, id: &str) -> tinystoragedrivers_core::Meta {
+    let id = id.to_string();
+    ports
+        .run("reading metadata", move |ports| async move {
+            ports.documents.get(collection, &id).await
+        })
+        .unwrap()
+        .expect("the document exists")
+        .meta
+}
+
+#[test]
+fn an_installed_server_is_stored_with_ms_times_and_the_declared_schema() {
+    let (ports, store) = shared();
+    let mut server = stdio_server("srv-1");
+    server.last_connected_at = Some(1_700_000_100_000);
+    store.insert_server(&server).unwrap();
+
+    let doc = store.get_raw(SERVERS, "srv-1").unwrap();
+    assert_eq!(doc["installed_ms"], 1_700_000_000_000_i64);
+    assert_eq!(doc["last_connected_ms"], 1_700_000_100_000_i64);
+    assert!(doc.get("installed_at").is_none());
+    assert!(doc.get("last_connected_at").is_none());
+    assert_eq!(
+        meta_of(&ports, SERVERS, "srv-1").schema,
+        crate::storage::storage_schema_version()
+    );
+    assert_eq!(store.get_server("srv-1").unwrap(), server);
+}
+
+#[test]
+fn touching_the_last_connection_keeps_the_declared_schema() {
+    let (ports, store) = shared();
+    store.insert_server(&stdio_server("srv-1")).unwrap();
+
+    store.touch_last_connected("srv-1").unwrap();
+
+    assert!(
+        store
+            .get_server("srv-1")
+            .unwrap()
+            .last_connected_at
+            .is_some()
+    );
+    assert_eq!(
+        meta_of(&ports, SERVERS, "srv-1").schema,
+        crate::storage::storage_schema_version()
+    );
+}
+
+#[test]
+fn a_name_claim_is_keyed_by_the_escaped_qualified_name() {
+    let store = store();
+    assert!(
+        store
+            .insert_server_if_absent(&stdio_server("srv-1"))
+            .unwrap()
+    );
+
+    let claim = store.get_raw(SERVER_NAMES, "@test%2Fserver").unwrap();
+    assert_eq!(claim["server_id"], "srv-1");
+    assert!(claim["claimed_ms"].as_i64().unwrap() > 0);
+    assert!(claim.get("claimed_at").is_none());
+}
+
+#[test]
+fn a_cached_response_is_stored_as_a_json_body_not_a_string() {
+    let store = store();
+    store.cache("browse:1", r#"{"servers":[1]}"#).unwrap();
+
+    let doc = store.get_raw(REGISTRY_CACHE, "browse:1").unwrap();
+    assert_eq!(doc["body"], json!({"servers": [1]}));
+    assert!(doc["cached_ms"].as_i64().unwrap() > 0);
+    assert!(doc.get("body_json").is_none());
+}
+
+#[test]
+fn a_response_that_is_not_json_is_refused() {
+    let store = store();
+    let error = store.cache("browse:1", "not json").unwrap_err();
+    assert!(matches!(error, Error::Serialization(_)), "{error:?}");
+    assert_eq!(store.cached("browse:1").unwrap(), None);
+}
+
+#[test]
+fn cached_tools_are_stored_with_a_cached_time_under_the_escaped_server_key() {
+    let store = store();
+    store
+        .put_cached_tools("static:weather", "definition", &[McpTool::new("search")])
+        .unwrap();
+
+    let doc = store.get_raw(TOOL_CACHE, "static:weather").unwrap();
+    assert!(doc["cached_ms"].as_i64().unwrap() > 0);
+    assert!(doc.get("cached_at").is_none());
+}
