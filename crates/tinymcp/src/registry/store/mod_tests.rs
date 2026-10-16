@@ -201,7 +201,7 @@ fn tool_cache_rejects_corrupt_json() {
     store.put_raw(
         TOOL_CACHE,
         &doc_id(&["srv-1"]).unwrap(),
-        json!({"server_key": "srv-1", "fingerprint": fingerprint, "tools": "bad", "cached_at": 1}),
+        json!({"server_key": "srv-1", "fingerprint": fingerprint, "tools": "bad", "cached_ms": 1}),
     );
     assert!(store.cached_tools("srv-1", "f").is_err());
 }
@@ -649,7 +649,10 @@ fn a_stale_read_returns_an_entry_past_its_lifetime() {
     age_cache(&store, 60 * 24);
 
     assert_eq!(store.cached("key").unwrap(), None);
-    assert_eq!(store.cached_stale("key").unwrap().as_deref(), Some(r#""old""#));
+    assert_eq!(
+        store.cached_stale("key").unwrap().as_deref(),
+        Some(r#""old""#)
+    );
     assert_eq!(store.cached_stale("other").unwrap(), None);
 }
 
@@ -708,7 +711,7 @@ fn seed_original_record(store: &Store) {
             "display_name": "Old Server",
             "command_kind": "node",
             "command": "npx",
-            "installed_at": 1000,
+            "installed_ms": 1000,
         }),
     );
 }
