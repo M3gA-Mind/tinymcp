@@ -23,7 +23,7 @@ The launcher (`transport::stdio::jailed::JailedSpawner`) reserves a passthrough
 resource over the workspace, starts the server with `StartStdio`, and pumps its
 stdin and stdout over `WriteStdio` and `ReadStdio` (standard error is discarded,
 as for a direct child). Closing the session, or dropping it, calls `KillStdio`
-and `Close`. The module reaches `TinyBox` only through `tinybox-bus`; the
+and `Close`. `StartStdio` carries the server's environment (credentials), so it is sent over the bus's confidential route and fails when that delivery is unavailable. The module reaches `TinyBox` only through `tinybox-bus`; the
 module declares it as an optional dependency.
 
 ## Seam

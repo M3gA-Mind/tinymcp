@@ -71,8 +71,13 @@ impl JailBus for FakeBox {
         &self,
         member: &'static str,
         args: Value,
+        confidential: bool,
     ) -> BoxFuture<'_, Result<Value, JailBusError>> {
         Box::pin(async move {
+            // Positional array in, as the bus delivers it; the fake works on
+            // the single argument.
+            assert!(args.is_array(), "arguments travel positionally");
+            let args = args.get(0).cloned().unwrap_or(Value::Null);
             if member == names::READ_STDIO {
                 // Long-poll like the module: wait briefly for output.
                 let _ = tokio::time::timeout(Duration::from_millis(20), self.wake.notified()).await;
