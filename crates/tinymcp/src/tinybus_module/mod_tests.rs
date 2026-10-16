@@ -3064,3 +3064,69 @@ fn stdio_launchers_need_a_configured_sandbox_and_a_reachable_bus() {
     // A sandbox with no bus to reach TinyBox is not a sandbox: refuse.
     assert!(!super::stdio_launchers(None, &configured).has_sandbox());
 }
+
+#[derive(Debug, Default)]
+struct RecordingSpawner(std::sync::Mutex<Vec<String>>);
+
+impl crate::transport::stdio::StdioSpawner for RecordingSpawner {
+    fn spawn(
+        &self,
+        launch: crate::transport::stdio::StdioLaunch,
+    ) -> futures_util::future::BoxFuture<'_, std::io::Result<tokio::process::Child>> {
+        self.0
+            .lock()
+            .unwrap()
+            .push(launch.program.display().to_string());
+        Box::pin(async {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "recorded and refused",
+            ))
+        })
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn configured_tool_call_uses_the_services_sandbox_not_an_empty_launcher_set() {
+    use crate::transport::stdio::jailed::StdioLaunchers;
+    let spawner = std::sync::Arc::new(RecordingSpawner::default());
+    let service = McpService::new_with_stdio(
+        &ModuleConfig::default(),
+        StdioLaunchers::sandboxed(spawner.clone()),
+    )
+    .expect("the service builds");
+    let reply = ok(
+        &service,
+        names::methods::CONFIGURED_TOOL_CALL,
+        json!([{
+            "server": { "name": "files", "command": "/bin/sh", "enabled": true },
+            "tool": "list",
+            "arguments": {}
+        }]),
+    )
+    .await;
+    let call: tinymcp_bus::ClassifiedStaticToolCall =
+        serde_json::from_value(reply).expect("classified call reply");
+    assert!(!call.outcome.ok);
+    assert_eq!(
+        spawner.0.lock().unwrap().len(),
+        1,
+        "an untrusted one-shot server is started through the configured sandbox"
+    );
+
+    // With no sandbox the same call is refused before any launch.
+    let bare = service();
+    let reply = ok(
+        &bare,
+        names::methods::CONFIGURED_TOOL_CALL,
+        json!([{
+            "server": { "name": "files", "command": "/bin/sh", "enabled": true },
+            "tool": "list",
+            "arguments": {}
+        }]),
+    )
+    .await;
+    let call: tinymcp_bus::ClassifiedStaticToolCall = serde_json::from_value(reply).unwrap();
+    assert!(!call.outcome.ok);
+}
