@@ -3043,3 +3043,24 @@ async fn a_module_without_a_data_directory_runs_without_host_storage() {
         .unwrap();
     assert!(error.to_string().contains("host storage"), "{error}");
 }
+
+#[test]
+fn stdio_launchers_need_a_configured_sandbox_and_a_reachable_bus() {
+    use tinymcp_bus::StdioSandboxConfig;
+    let none = McpClientConfig::default();
+    assert!(!super::stdio_launchers(None, &none).has_sandbox());
+    let configured = McpClientConfig {
+        stdio_sandbox: Some(StdioSandboxConfig {
+            workspace: "/work".into(),
+            read_only: Vec::new(),
+            read_write: Vec::new(),
+            deny_read: Vec::new(),
+            allow_net: true,
+            allow_subprocess: true,
+            require_process_isolation: true,
+        }),
+        ..McpClientConfig::default()
+    };
+    // A sandbox with no bus to reach TinyBox is not a sandbox: refuse.
+    assert!(!super::stdio_launchers(None, &configured).has_sandbox());
+}
