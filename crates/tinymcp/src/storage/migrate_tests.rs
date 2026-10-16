@@ -147,7 +147,7 @@ fn a_v1_server_moves_to_the_v2_collection_with_ms_time_fields() {
     assert_eq!(moved.doc["catalog_managed"], true);
     assert_eq!(moved.doc["args"], json!(["-y", "files"]));
     assert_eq!(moved.meta.schema, SCHEMA_VERSION);
-    assert!(fixture.all("mcp_servers").is_empty());
+    assert_eq!(fixture.all("mcp_servers").len(), 0);
 }
 
 #[test]
@@ -198,7 +198,7 @@ fn a_name_claim_is_keyed_by_the_qualified_name_and_keeps_its_time() {
     // A claim that predates the time reads as long expired.
     let old = fixture.get(SERVER_NAMES, "@acme%2Fold").unwrap();
     assert_eq!(old.doc["claimed_ms"], 0);
-    assert!(fixture.all("mcp_server_names").is_empty());
+    assert_eq!(fixture.all("mcp_server_names").len(), 0);
 }
 
 #[test]
@@ -239,7 +239,7 @@ fn a_cached_response_that_is_not_json_is_dropped_rather_than_blocking_the_step()
 
     assert!(fixture.get(REGISTRY_CACHE, "k").is_none());
     assert!(fixture.get(REGISTRY_CACHE, "ok").is_some());
-    assert!(fixture.all("mcp_registry_cache").is_empty());
+    assert_eq!(fixture.all("mcp_registry_cache").len(), 0);
 }
 
 #[test]
@@ -331,7 +331,7 @@ fn the_audit_stream_moves_in_order_under_its_v2_name() {
     fixture.migrate();
 
     assert_eq!(fixture.stream(AUDIT_STREAM), entries);
-    assert!(fixture.stream("mcp_audit").is_empty());
+    assert_eq!(fixture.stream("mcp_audit").len(), 0);
 }
 
 #[test]
