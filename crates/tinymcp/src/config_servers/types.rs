@@ -710,14 +710,16 @@ fn build_transport(
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
 
-    Ok(McpTransportClient::Stdio(Box::new(McpStdioClient::new(
-        command,
-        server.args.clone(),
-        env,
-        server.cwd.as_ref().map(PathBuf::from),
-        identity,
-    )
-    .with_spawner(stdio.for_server(server.operator_trusted)))))
+    Ok(McpTransportClient::Stdio(Box::new(
+        McpStdioClient::new(
+            command,
+            server.args.clone(),
+            env,
+            server.cwd.as_ref().map(PathBuf::from),
+            identity,
+        )
+        .with_spawner(stdio.for_server(server.operator_trusted)),
+    )))
 }
 
 /// Trims tool names, drops empties, and removes duplicates.

@@ -102,6 +102,31 @@ pub(super) async fn bus_provider(
     Ok(Arc::new(provider))
 }
 
+/// How `client`'s stdio servers start, given the bus `connection` to `TinyBox`.
+///
+/// A configured sandbox becomes a jailed launcher over `connection`. With no
+/// sandbox configured, or none reachable, the result starts only
+/// operator-trusted servers: the missing jail is a refusal, never a fallback.
+pub(super) fn stdio_launchers(
+    connection: Option<&Connection>,
+    client: &tinymcp_bus::McpClientConfig,
+) -> crate::transport::stdio::jailed::StdioLaunchers {
+    use crate::transport::stdio::jailed::{BusJail, JailedSpawner, StdioLaunchers};
+    let Some(sandbox) = client.stdio_sandbox.clone() else {
+        return StdioLaunchers::new();
+    };
+    let bus = connection.map(BusJail::connect);
+    match bus {
+        Some(Ok(bus)) => {
+            StdioLaunchers::sandboxed(Arc::new(JailedSpawner::new(Arc::new(bus), sandbox)))
+        }
+        _ => {
+            tracing::warn!("a stdio sandbox is configured but the sandbox module is not reachable");
+            StdioLaunchers::new()
+        }
+    }
+}
+
 /// [`setup`] over whatever storage provider is installed already.
 pub(super) async fn setup_over_installed_storage(
     connection: Connection,
@@ -109,7 +134,7 @@ pub(super) async fn setup_over_installed_storage(
 ) -> TinyBusResult<()> {
     let supervisor = SupervisorConfig::default();
     let service = Arc::new(
-        McpService::new(&config)
+        McpService::new_with_stdio(&config, stdio_launchers(Some(&connection), &config.client))
             .map_err(|error| tinybus::Error::failed(format!("tinymcp could not start: {error}")))?
             .with_maintenance(supervisor.clone())
             .await
@@ -227,7 +252,8 @@ export_module! {
     ],
     signals = [],
     requires = [],
-    optional = [],
+    // The sandbox module, used only when the host configures a stdio sandbox.
+    optional = ["ai.tinyhumans.tinybox.Box"],
     // Not lazy: a host that loaded this module wants its servers connected, and
     // deferring the load would defer that until the first call — by which point
     // an agent has already been told it has no tools. `setup` starts the boot

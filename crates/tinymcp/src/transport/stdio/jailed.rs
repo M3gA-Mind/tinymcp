@@ -25,8 +25,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tinybox_bus::{
     CreateRequest, JailEnforcement, NativeJailConfig, ProcessRef, ReserveRequest, ResourceId,
-    StdioChunk, StdioReadRequest, StdioStartRequest, StdioWriteRequest, Workspace,
-    names,
+    StdioChunk, StdioReadRequest, StdioStartRequest, StdioWriteRequest, Workspace, names,
 };
 use tinymcp_bus::StdioSandboxConfig;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
@@ -55,7 +54,8 @@ pub struct JailBusError {
 /// bus-backed implementation is a proxy to `ai.tinyhumans.tinybox.Box`.
 pub trait JailBus: Send + Sync + std::fmt::Debug {
     /// Calls `member` with `args` and returns the reply.
-    fn call(&self, member: &'static str, args: Value) -> BoxFuture<'_, Result<Value, JailBusError>>;
+    fn call(&self, member: &'static str, args: Value)
+    -> BoxFuture<'_, Result<Value, JailBusError>>;
 }
 
 /// [`JailBus`] over a `TinyBus` connection to the `TinyBox` module.
@@ -85,7 +85,11 @@ impl BusJail {
 
 #[cfg(feature = "module")]
 impl JailBus for BusJail {
-    fn call(&self, member: &'static str, args: Value) -> BoxFuture<'_, Result<Value, JailBusError>> {
+    fn call(
+        &self,
+        member: &'static str,
+        args: Value,
+    ) -> BoxFuture<'_, Result<Value, JailBusError>> {
         Box::pin(async move {
             self.proxy
                 .call::<Value>(member, args)
@@ -113,7 +117,9 @@ async fn invoke<Reply: DeserializeOwned>(
     let args = serde_json::to_value(args).map_err(std::io::Error::other)?;
     let reply = bus.call(member, args).await.map_err(refusal)?;
     serde_json::from_value(reply).map_err(|error| {
-        std::io::Error::other(format!("unexpected {member} reply from the sandbox: {error}"))
+        std::io::Error::other(format!(
+            "unexpected {member} reply from the sandbox: {error}"
+        ))
     })
 }
 
@@ -129,7 +135,10 @@ fn refusal(error: JailBusError) -> std::io::Error {
         } else {
             std::io::ErrorKind::Other
         },
-        format!("the sandbox refused or failed the request: {}", error.message),
+        format!(
+            "the sandbox refused or failed the request: {}",
+            error.message
+        ),
     )
 }
 
@@ -170,8 +179,7 @@ impl JailedSpawner {
                 "the sandbox module is too old for jailed stdio",
             ));
         }
-        let resource: ResourceId =
-            invoke(bus, names::RESERVE, ReserveRequest::Resource).await?;
+        let resource: ResourceId = invoke(bus, names::RESERVE, ReserveRequest::Resource).await?;
         let created: Result<tinybox_bus::ResourceInfo, _> = invoke(
             bus,
             names::CREATE,
@@ -418,4 +426,3 @@ impl StdioLaunchers {
 #[cfg(test)]
 #[path = "jailed_tests.rs"]
 mod tests;
-

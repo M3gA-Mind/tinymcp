@@ -265,10 +265,13 @@ impl DirectoryOpener {
         let reset_root = if is_root {
             let default_client = McpClientConfig::default();
             Some(Arc::new(
-                McpService::new(&ModuleConfig {
-                    data_dir: None,
-                    client: default_client,
-                })?
+                McpService::new_with_stdio(
+                    &ModuleConfig {
+                        data_dir: None,
+                        client: default_client.clone(),
+                    },
+                    crate::tinybus_module::stdio_launchers(Some(&self.connection), &default_client),
+                )?
                 .with_maintenance(self.supervisor.clone())
                 .await
                 .with_directory_opener(Arc::clone(self)),
@@ -553,10 +556,13 @@ impl DirectoryOpener {
         is_root: bool,
         root_opener: Option<Arc<Self>>,
     ) -> Result<Arc<McpService>> {
-        let mut service = McpService::new(&ModuleConfig {
-            data_dir: Some(dir.to_path_buf()),
-            client: client.clone(),
-        })?
+        let mut service = McpService::new_with_stdio(
+            &ModuleConfig {
+                data_dir: Some(dir.to_path_buf()),
+                client: client.clone(),
+            },
+            crate::tinybus_module::stdio_launchers(Some(&self.connection), client),
+        )?
         .with_maintenance(self.supervisor.clone())
         .await;
         if is_root {

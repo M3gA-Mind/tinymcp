@@ -40,7 +40,13 @@ impl FakeBox {
         Arc::new(fake)
     }
     fn members(&self) -> Vec<&'static str> {
-        self.state.lock().unwrap().calls.iter().map(|c| c.0).collect()
+        self.state
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .map(|c| c.0)
+            .collect()
     }
     fn args(&self, member: &str) -> Vec<Value> {
         self.state
@@ -55,7 +61,11 @@ impl FakeBox {
 }
 
 impl JailBus for FakeBox {
-    fn call(&self, member: &'static str, args: Value) -> BoxFuture<'_, Result<Value, JailBusError>> {
+    fn call(
+        &self,
+        member: &'static str,
+        args: Value,
+    ) -> BoxFuture<'_, Result<Value, JailBusError>> {
         Box::pin(async move {
             if member == names::READ_STDIO {
                 // Long-poll like the module: wait briefly for output.
@@ -95,8 +105,7 @@ impl JailBus for FakeBox {
                     }))
                 }
                 m if m == names::WRITE_STDIO => {
-                    let data: Vec<u8> =
-                        serde_json::from_value(args["data"].clone()).unwrap();
+                    let data: Vec<u8> = serde_json::from_value(args["data"].clone()).unwrap();
                     state.written.extend_from_slice(&data);
                     if state.respond {
                         let text = String::from_utf8_lossy(&data).into_owned();
@@ -283,10 +292,13 @@ async fn client_writes_are_forwarded_and_end_of_input_closes_stdin() {
     assert_eq!(fake.state.lock().unwrap().written, b"ping\n");
     // The fake reports end of file once stdin closed, so the reader ends.
     let mut rest = Vec::new();
-    tokio::time::timeout(Duration::from_secs(5), process.stdout.read_to_end(&mut rest))
-        .await
-        .expect("stdout reaches end of file")
-        .unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        process.stdout.read_to_end(&mut rest),
+    )
+    .await
+    .expect("stdout reaches end of file")
+    .unwrap();
     assert!(rest.is_empty());
     process.handle.terminate().await;
 }
@@ -310,7 +322,11 @@ async fn an_untrusted_server_uses_the_sandbox_and_never_the_direct_spawn() {
     let launchers =
         StdioLaunchers::sandboxed(Arc::new(JailedSpawner::new(fake.clone(), sandbox())));
     assert!(launchers.has_sandbox());
-    let mut process = launchers.for_server(false).spawn_process(launch()).await.unwrap();
+    let mut process = launchers
+        .for_server(false)
+        .spawn_process(launch())
+        .await
+        .unwrap();
     assert!(fake.members().contains(&names::START_STDIO));
     process.handle.terminate().await;
 }
@@ -331,7 +347,10 @@ async fn only_an_operator_trusted_server_gets_the_direct_spawn() {
         })
         .await
         .unwrap();
-    assert!(fake.members().is_empty(), "a trusted server bypasses the jail");
+    assert!(
+        fake.members().is_empty(),
+        "a trusted server bypasses the jail"
+    );
     process.handle.terminate().await;
     // With no sandbox at all, trust still starts it directly.
     let mut process = StdioLaunchers::new()

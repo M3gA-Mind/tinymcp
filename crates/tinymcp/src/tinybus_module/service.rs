@@ -14,6 +14,7 @@ use crate::config_servers::McpServerRegistry;
 use crate::error::Result;
 use crate::processing::bound_mcp_tool_result;
 use crate::registry::{McpRegistry, SecretRef, Store, SupervisorConfig};
+use crate::transport::stdio::jailed::StdioLaunchers;
 use tinybus::Connection;
 use tinymcp_bus::{
     AuthDetection, ClassifiedStaticToolCall, ConfigApplyReport, ConfigApplyResponse,
@@ -108,13 +109,15 @@ impl McpService {
         };
         let (store, audit) = (Store::open(ports.clone())?, AuditStore::open(ports)?);
 
-        let dynamic = Arc::new(McpRegistry::new(
-            store,
-            config.client.registry_auth.clone(),
-            config.client.client_identity.clone(),
-            config.client.proxy.clone(),
-        )?
-        .with_stdio(stdio.clone()));
+        let dynamic = Arc::new(
+            McpRegistry::new(
+                store,
+                config.client.registry_auth.clone(),
+                config.client.client_identity.clone(),
+                config.client.proxy.clone(),
+            )?
+            .with_stdio(stdio.clone()),
+        );
 
         let static_servers = McpServerRegistry::from_config_with(&config.client, stdio)?;
 
