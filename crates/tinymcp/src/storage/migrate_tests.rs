@@ -5,8 +5,8 @@
 use serde_json::{Value, json};
 use tinystoragedrivers_core::schema::{MigrateOptions, MigrationReport, Registry};
 use tinystoragedrivers_core::{
-    Blocking, CollectionSpec, DocumentStoreExt as _, Filter, MemoryStorage, Precondition, Query,
-    Scope, ScopedStorage, StorageBackend, StreamStore as _, Versioned,
+    CollectionSpec, DocumentStoreExt as _, Filter, MemoryStorage, Precondition, Query, Scope,
+    ScopedStorage, StorageBackend, Versioned,
 };
 
 use super::*;
@@ -14,17 +14,19 @@ use crate::storage::schema::{SCHEMA_VERSION, storage_schema};
 
 /// A memory backend holding v1 data, and the registry that migrates it.
 struct Fixture {
-    blocking: Blocking,
+    blocking: tokio::runtime::Runtime,
     storage: ScopedStorage,
     registry: Registry,
 }
 
 impl Fixture {
     fn new() -> Self {
-        let blocking = Blocking::new().unwrap();
+        let blocking = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
         let backend = MemoryStorage::new();
         let registry = Registry::compose([storage_schema()]).unwrap();
-        blocking.run(registry.prepare(&backend)).unwrap().unwrap();
+        blocking.block_on(registry.prepare(&backend)).unwrap();
         let scope = Scope::local().module("tinymcp").unwrap();
         let storage = backend.for_scope(&scope).unwrap();
         Self {
@@ -40,7 +42,7 @@ impl Fixture {
         let collection = collection.to_string();
         let id = id.to_string();
         self.blocking
-            .run(async move {
+            .block_on(async move {
                 documents
                     .ensure_collection(&CollectionSpec::new(&collection))
                     .await?;
@@ -48,7 +50,6 @@ impl Fixture {
                     .put(&collection, &id, body, Precondition::None)
                     .await
             })
-            .unwrap()
             .unwrap();
     }
 
@@ -57,20 +58,18 @@ impl Fixture {
         let name = name.to_string();
         let entries = entries.to_vec();
         self.blocking
-            .run(async move {
+            .block_on(async move {
                 for entry in entries {
                     streams.append(&name, entry).await?;
                 }
-                Ok(())
+                Ok::<_, tinystoragedrivers_core::StorageError>(())
             })
-            .unwrap()
             .unwrap();
     }
 
     fn migrate(&self) -> MigrationReport {
         self.blocking
-            .run(self.registry.migrate(&self.storage, &MigrateOptions::new()))
-            .unwrap()
+            .block_on(self.registry.migrate(&self.storage, &MigrateOptions::new()))
             .unwrap()
     }
 
@@ -79,8 +78,7 @@ impl Fixture {
         let collection = collection.to_string();
         let id = id.to_string();
         self.blocking
-            .run(async move { documents.get(&collection, &id).await })
-            .unwrap()
+            .block_on(async move { documents.get(&collection, &id).await })
             .unwrap()
     }
 
@@ -88,8 +86,7 @@ impl Fixture {
         let documents = self.storage.documents().clone();
         let collection = collection.to_string();
         self.blocking
-            .run(async move { documents.query_all(&collection, &Query::all()).await })
-            .unwrap()
+            .block_on(async move { documents.query_all(&collection, &Query::all()).await })
             .unwrap()
     }
 
@@ -97,8 +94,7 @@ impl Fixture {
         let documents = self.storage.documents().clone();
         let collection = collection.to_string();
         self.blocking
-            .run(async move { documents.count(&collection, &filter).await })
-            .unwrap()
+            .block_on(async move { documents.count(&collection, &filter).await })
             .unwrap()
     }
 
@@ -106,13 +102,14 @@ impl Fixture {
         let streams = self.storage.streams().clone();
         let name = name.to_string();
         self.blocking
-            .run(async move {
+            .block_on(async move {
                 let len = streams.len(&name).await?;
                 let window = streams.read_window(&name, 0, 1024).await?;
                 assert_eq!(window.len() as u64, len);
-                Ok(window.into_iter().map(|entry| entry.value).collect())
+                Ok::<Vec<Value>, tinystoragedrivers_core::StorageError>(
+                    window.into_iter().map(|entry| entry.value).collect(),
+                )
             })
-            .unwrap()
             .unwrap()
     }
 }
@@ -182,12 +179,12 @@ fn a_name_claim_is_keyed_by_the_qualified_name_and_keeps_its_time() {
     let fixture = Fixture::new();
     fixture.legacy(
         "mcp_server_names",
-        &crate::registry::hex_digest(b"@acme/files"),
+        &crate::registry::store::hex_digest(b"@acme/files"),
         json!({"qualified_name": "@acme/files", "server_id": "srv-1", "claimed_at": 5_000}),
     );
     fixture.legacy(
         "mcp_server_names",
-        &crate::registry::hex_digest(b"@acme/old"),
+        &crate::registry::store::hex_digest(b"@acme/old"),
         json!({"qualified_name": "@acme/old", "server_id": "srv-0"}),
     );
 

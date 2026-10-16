@@ -38,9 +38,12 @@ fn every_item_is_module_scoped_and_named_under_the_owner() {
 #[test]
 fn the_audit_log_is_a_declared_stream() {
     let schema = storage_schema();
-    assert!(schema.items.iter().any(
-        |item| matches!(item, Item::Stream { name, .. } if name == AUDIT_STREAM)
-    ));
+    assert!(
+        schema
+            .items
+            .iter()
+            .any(|item| matches!(item, Item::Stream { name, .. } if name == AUDIT_STREAM))
+    );
 }
 
 #[test]
@@ -54,7 +57,11 @@ fn the_declared_indexes_use_v2_field_names() {
             _ => None,
         })
         .unwrap();
-    let indexed: Vec<&str> = servers.indexes.iter().map(|index| index.name.as_str()).collect();
+    let indexed: Vec<&str> = servers
+        .indexes
+        .iter()
+        .map(|index| index.name.as_str())
+        .collect();
     assert_eq!(indexed, ["qualified_name", "installed_ms"]);
 }
 

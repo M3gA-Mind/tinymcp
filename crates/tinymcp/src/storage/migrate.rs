@@ -27,7 +27,10 @@ const LEGACY_AUDIT: &str = "mcp_audit";
 
 /// A document step's per-record rule: the new id and body, or `None` to drop
 /// the record.
-type Rewrite = fn(&SourceRecord, Map<String, Value>) -> tinystoragedrivers_core::Result<Option<(String, Value)>>;
+type Rewrite = fn(
+    &SourceRecord,
+    Map<String, Value>,
+) -> tinystoragedrivers_core::Result<Option<(String, Value)>>;
 
 /// Every step, in the order they run.
 pub(super) fn steps() -> Vec<Step> {
@@ -79,8 +82,8 @@ fn documents(id: &'static str, item: &'static str, legacy: &'static str, rewrite
                 continue;
             };
             if let Some((new_id, body)) = rewrite(&record, body)? {
-                let mut target = TargetRecord::new(item, new_id, body)
-                    .expires_ms(record.meta.expires_ms);
+                let mut target =
+                    TargetRecord::new(item, new_id, body).expires_ms(record.meta.expires_ms);
                 if record.meta.created_ms > 0 {
                     target = target.created_ms(record.meta.created_ms);
                 }

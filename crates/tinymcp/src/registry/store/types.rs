@@ -6,14 +6,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tinystoragedrivers_core::{
-    DocumentStoreExt as _, ErrorKind, Filter, Precondition, Query, Sort,
+    DocumentStoreExt as _, ErrorKind, Filter, Precondition, Query, Repo, Sort,
 };
 
-use super::tool_cache::hex_digest;
 use crate::error::{Error, Result};
 use crate::storage::{
     CACHE_KEY_SECRET, ENV_SECRET_PREFIX, REGISTRY_CACHE, SERVER_NAMES, SERVERS, StoragePorts,
-    TOOL_CACHE,
+    TOOL_CACHE, id, write_options,
 };
 use crate::{CommandKindExt, TransportExt};
 use tinymcp_bus::{CommandKind, InstalledServer, Transport};
@@ -22,9 +21,6 @@ const CACHE_FINGERPRINT_KEY_BYTES: usize = 32;
 
 /// How long a cached browse response stays fresh.
 const CACHE_TTL_MS: i64 = 10 * 60 * 1_000;
-
-/// How many times a read-modify-write retries after losing a race.
-const UPDATE_ATTEMPTS: usize = 8;
 
 /// Persistence for installed servers, their credentials, and the browse cache.
 ///
@@ -61,9 +57,9 @@ struct ServerDoc {
     env_keys: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     config: Option<Value>,
-    installed_at: i64,
+    installed_ms: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_connected_at: Option<i64>,
+    last_connected_ms: Option<i64>,
     #[serde(default)]
     transport: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -91,8 +87,8 @@ impl ServerDoc {
             args: server.args.clone(),
             env_keys: server.env_keys.clone(),
             config: server.config.clone(),
-            installed_at: server.installed_at,
-            last_connected_at: server.last_connected_at,
+            installed_ms: server.installed_at,
+            last_connected_ms: server.last_connected_at,
             transport: server.transport.dispatch_kind().to_string(),
             deployment_url: server.transport.deployment_url().map(ToString::to_string),
             enabled: server.enabled,
@@ -112,8 +108,8 @@ impl ServerDoc {
             args: self.args,
             env_keys: self.env_keys,
             config: self.config,
-            installed_at: self.installed_at,
-            last_connected_at: self.last_connected_at,
+            installed_at: self.installed_ms,
+            last_connected_at: self.last_connected_ms,
             transport: Transport::parse(&self.transport, self.deployment_url.as_deref()),
             enabled: self.enabled,
         }
@@ -129,7 +125,7 @@ struct NameClaim {
     /// counts as abandoned once it is older than [`CLAIM_LEASE_MS`]; a claim
     /// that predates this field reads as `0`, i.e. long expired.
     #[serde(default)]
-    claimed_at: i64,
+    claimed_ms: i64,
 }
 
 /// How long a claim may wait for its server row before another installer may
@@ -241,7 +237,7 @@ impl Store {
         let claim = serde_json::to_value(NameClaim {
             qualified_name: server.qualified_name.clone(),
             server_id: server.server_id.clone(),
-            claimed_at: now_ms(),
+            claimed_ms: now_ms(),
         })?;
         let id = server.server_id.clone();
         let name = server.qualified_name.clone();
@@ -281,12 +277,12 @@ impl Store {
                         }
                         // Within its lease the holder may simply not have
                         // written its server yet: it is in flight, not stale.
-                        let claimed_at = held
+                        let claimed_ms = held
                             .doc
-                            .get("claimed_at")
+                            .get("claimed_ms")
                             .and_then(Value::as_i64)
                             .unwrap_or(0);
-                        if now_ms().saturating_sub(claimed_at) < CLAIM_LEASE_MS {
+                        if now_ms().saturating_sub(claimed_ms) < CLAIM_LEASE_MS {
                             return Ok(false);
                         }
                         match documents
@@ -360,7 +356,7 @@ impl Store {
         let rows = self.ports.run("listing servers", |ports| async move {
             ports
                 .documents
-                .query_all(SERVERS, &Query::all().sort(Sort::asc("installed_at")))
+                .query_all(SERVERS, &Query::all().sort(Sort::asc("installed_ms")))
                 .await
         })?;
         rows.into_iter().map(|row| decode_server(row.doc)).collect()
@@ -416,7 +412,7 @@ impl Store {
                     .query(
                         SERVERS,
                         &Query::filter(Filter::eq("qualified_name", name))
-                            .sort(Sort::asc("installed_at"))
+                            .sort(Sort::asc("installed_ms"))
                             .limit(1),
                     )
                     .await
@@ -676,7 +672,7 @@ impl Store {
                         &Query::filter(
                             Filter::gte("cache_key", lower).and(Filter::lt("cache_key", upper)),
                         )
-                        .sort(Sort::desc("cached_at"))
+                        .sort(Sort::desc("cached_ms"))
                         .sort(Sort::asc("cache_key")),
                     )
                     .await
