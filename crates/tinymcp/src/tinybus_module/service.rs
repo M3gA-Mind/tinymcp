@@ -75,6 +75,31 @@ impl McpService {
         config: &ModuleConfig,
         provider: Arc<dyn crate::storage::StorageProvider>,
     ) -> Result<Self> {
+        Self::with_provider_and_stdio(config, provider, StdioLaunchers::new())
+    }
+
+    /// [`Self::new`], starting stdio servers through `stdio`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::new`].
+    pub fn new_with_stdio(config: &ModuleConfig, stdio: StdioLaunchers) -> Result<Self> {
+        Self::with_provider_and_stdio(config, crate::storage::installed_provider(), stdio)
+    }
+
+    /// [`Self::with_provider`], starting stdio servers through `stdio`.
+    ///
+    /// Without a sandbox in `stdio`, only servers the config marks
+    /// operator-trusted can start; installed servers never can.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::new`].
+    pub fn with_provider_and_stdio(
+        config: &ModuleConfig,
+        provider: Arc<dyn crate::storage::StorageProvider>,
+        stdio: StdioLaunchers,
+    ) -> Result<Self> {
         // No data directory means nothing to persist, which is the right shape
         // for a host that only wants its statically declared servers.
         let ports = match config.data_dir.as_deref() {
@@ -88,9 +113,10 @@ impl McpService {
             config.client.registry_auth.clone(),
             config.client.client_identity.clone(),
             config.client.proxy.clone(),
-        )?);
+        )?
+        .with_stdio(stdio.clone()));
 
-        let static_servers = McpServerRegistry::from_config(&config.client)?;
+        let static_servers = McpServerRegistry::from_config_with(&config.client, stdio)?;
 
         Ok(Self {
             dynamic,
