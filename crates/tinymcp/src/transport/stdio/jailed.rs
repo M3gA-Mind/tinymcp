@@ -319,7 +319,10 @@ async fn pump_stdin(bus: Arc<dyn JailBus>, target: ProcessRef, mut pipe: DuplexS
                     process: target.clone(),
                     data: buffer[..read].to_vec(),
                 };
-                let sent: Result<(), _> = invoke(bus.as_ref(), names::WRITE_STDIO, request).await;
+                // The request is an MCP message: tool arguments can carry
+                // credentials, so it travels the confidential route too.
+                let sent: Result<(), _> =
+                    invoke_with(bus.as_ref(), names::WRITE_STDIO, request, true).await;
                 if sent.is_err() {
                     // The child is gone; dropping the pipe turns the client's
                     // next write into a broken pipe.
@@ -337,7 +340,9 @@ async fn pump_stdout(bus: Arc<dyn JailBus>, target: ProcessRef, mut pipe: Duplex
             max_bytes: 0,
             wait_ms: READ_WAIT_MS,
         };
-        let chunk: StdioChunk = match invoke(bus.as_ref(), names::READ_STDIO, request).await {
+        // Replies hold tool results, so they are confidential as well.
+        let chunk: StdioChunk =
+            match invoke_with(bus.as_ref(), names::READ_STDIO, request, true).await {
             Ok(chunk) => chunk,
             Err(_) => break,
         };

@@ -38,6 +38,9 @@ pub struct McpService {
     /// persisted or installed — they exist because the host said so, and they
     /// change only when its configuration does.
     static_servers: McpServerRegistry,
+    /// How stdio servers start, for every registry this service builds
+    /// (including the one-shot registry of a configured call).
+    stdio: StdioLaunchers,
     audit: AuditStore,
     /// The storage provider this service was built over, so a state probe
     /// asks the same backend the service reads and writes.
@@ -119,11 +122,12 @@ impl McpService {
             .with_stdio(stdio.clone()),
         );
 
-        let static_servers = McpServerRegistry::from_config_with(&config.client, stdio)?;
+        let static_servers = McpServerRegistry::from_config_with(&config.client, stdio.clone())?;
 
         Ok(Self {
             dynamic,
             static_servers,
+            stdio,
             audit,
             provider,
             server_sessions: crate::server::bridge::ServerSessions::default(),
@@ -746,7 +750,7 @@ impl McpService {
             servers: vec![request.server],
             ..tinymcp_bus::McpClientConfig::default()
         };
-        let registry = match McpServerRegistry::from_config(&config) {
+        let registry = match McpServerRegistry::from_config_with(&config, self.stdio.clone()) {
             Ok(registry) => registry,
             Err(error) => {
                 let outcome = tinymcp_bus::McpCallOutcome::failed(
