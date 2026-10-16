@@ -35,20 +35,24 @@ mod bus;
 #[cfg(test)]
 mod failing;
 mod grant;
+mod migrate;
 mod ports;
 mod provider;
+mod schema;
 
 #[cfg(feature = "module")]
 pub use bus::BusProvider;
-pub use grant::{
-    AUDIT_STREAM, CACHE_KEY_SECRET, ENV_SECRET_PREFIX, StorageGrant, collection_specs, grant,
-};
-pub(crate) use grant::{
-    REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE, SERVER_NAMES, SERVERS, TOOL_CACHE,
-};
+pub use grant::{CACHE_KEY_SECRET, ENV_SECRET_PREFIX, StorageGrant, collection_specs, grant};
 pub use ports::StoragePorts;
 pub use provider::{
     MemoryProvider, StorageProvider, install_provider, installed_provider, provider_installed,
+};
+#[cfg(test)]
+pub(crate) use schema::SCHEMA_VERSION;
+pub use schema::{AUDIT_STREAM, OWNER, storage_schema};
+pub(crate) use schema::{
+    REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE, SERVER_NAMES, SERVERS, TOOL_CACHE,
+    doc_id, write_options,
 };
 
 #[cfg(all(test, feature = "module"))]
