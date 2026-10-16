@@ -1,10 +1,10 @@
-//! Starting stdio MCP servers inside TinyBox's native jail, over the bus.
+//! Starting stdio MCP servers inside `TinyBox`'s native jail, over the bus.
 //!
 //! [`JailedSpawner`] is a [`StdioSpawner`] whose servers do not run as children
 //! of this process. It reserves a passthrough resource whose workspace is the
 //! host's [`StdioSandboxConfig::workspace`], starts the server through the
 //! `StartStdio` member of the `TinyBox` bus contract with the host's grants, and
-//! pumps its stdin and stdout over `WriteStdio` / `ReadStdio`. TinyBox refuses
+//! pumps its stdin and stdout over `WriteStdio` / `ReadStdio`. `TinyBox` refuses
 //! when the backend cannot enforce the grants, and that refusal is the result:
 //! there is no fallback to an unconfined start.
 //!
@@ -41,7 +41,7 @@ const PIPE_BYTES: usize = 64 * 1024;
 /// Why a bus call failed: the member's stable error name, when it had one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JailBusError {
-    /// The stable error name TinyBox returned, such as
+    /// The stable error name `TinyBox` returned, such as
     /// `ai.tinyhumans.tinybox.Error.UnsupportedOperation`.
     pub name: Option<String>,
     /// A message without request content.
@@ -115,7 +115,10 @@ async fn invoke<Reply: DeserializeOwned>(
     args: impl Serialize,
 ) -> Result<Reply, std::io::Error> {
     let args = serde_json::to_value(args).map_err(std::io::Error::other)?;
-    let reply = bus.call(member, args).await.map_err(refusal)?;
+    let reply = bus
+        .call(member, args)
+        .await
+        .map_err(|error| refusal(&error))?;
     serde_json::from_value(reply).map_err(|error| {
         std::io::Error::other(format!(
             "unexpected {member} reply from the sandbox: {error}"
@@ -125,7 +128,7 @@ async fn invoke<Reply: DeserializeOwned>(
 
 /// A policy refusal is `PermissionDenied`, so callers can tell it from an I/O
 /// failure; anything else is `Other`.
-fn refusal(error: JailBusError) -> std::io::Error {
+fn refusal(error: &JailBusError) -> std::io::Error {
     let denied = error.name.as_deref().is_some_and(|name| {
         name == tinybox_bus::UNSUPPORTED_OPERATION || name == tinybox_bus::INVALID_FILE_PATH
     });

@@ -115,16 +115,11 @@ pub(super) fn stdio_launchers(
     let Some(sandbox) = client.stdio_sandbox.clone() else {
         return StdioLaunchers::new();
     };
-    let bus = connection.map(BusJail::connect);
-    match bus {
-        Some(Ok(bus)) => {
-            StdioLaunchers::sandboxed(Arc::new(JailedSpawner::new(Arc::new(bus), sandbox)))
-        }
-        _ => {
-            tracing::warn!("a stdio sandbox is configured but the sandbox module is not reachable");
-            StdioLaunchers::new()
-        }
+    if let Some(Ok(bus)) = connection.map(BusJail::connect) {
+        return StdioLaunchers::sandboxed(Arc::new(JailedSpawner::new(Arc::new(bus), sandbox)));
     }
+    tracing::warn!("a stdio sandbox is configured but the sandbox module is not reachable");
+    StdioLaunchers::new()
 }
 
 /// [`setup`] over whatever storage provider is installed already.
