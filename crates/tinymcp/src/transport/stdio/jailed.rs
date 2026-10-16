@@ -50,12 +50,21 @@ pub struct JailBusError {
 
 /// The one call surface the launcher needs from the `TinyBox` module.
 ///
-/// Arguments and results cross as JSON, which is how the bus carries them. A
-/// bus-backed implementation is a proxy to `ai.tinyhumans.tinybox.Box`.
+/// Arguments and results cross as JSON, which is how the bus carries them.
+/// `args` is the positional argument array. A bus-backed implementation is a
+/// proxy to `ai.tinyhumans.tinybox.Box`.
 pub trait JailBus: Send + Sync + std::fmt::Debug {
-    /// Calls `member` with `args` and returns the reply.
-    fn call(&self, member: &'static str, args: Value)
-    -> BoxFuture<'_, Result<Value, JailBusError>>;
+    /// Calls `member` with the positional `args` and returns the reply.
+    ///
+    /// `confidential` asks for the bus's confidential delivery, which only an
+    /// attested module receives. A call whose arguments carry credentials sets
+    /// it, and fails rather than falls back when delivery cannot be confidential.
+    fn call(
+        &self,
+        member: &'static str,
+        args: Value,
+        confidential: bool,
+    ) -> BoxFuture<'_, Result<Value, JailBusError>>;
 }
 
 /// [`JailBus`] over a `TinyBus` connection to the `TinyBox` module.
@@ -89,21 +98,24 @@ impl JailBus for BusJail {
         &self,
         member: &'static str,
         args: Value,
+        confidential: bool,
     ) -> BoxFuture<'_, Result<Value, JailBusError>> {
         Box::pin(async move {
-            self.proxy
-                .call::<Value>(member, args)
-                .await
-                .map_err(|error| match error {
-                    tinybus::Error::MethodFailed { name, message } => JailBusError {
-                        name: Some(name),
-                        message,
-                    },
-                    other => JailBusError {
-                        name: None,
-                        message: other.to_string(),
-                    },
-                })
+            let reply = if confidential {
+                self.proxy.call_confidential::<Value>(member, args).await
+            } else {
+                self.proxy.call::<Value>(member, args).await
+            };
+            reply.map_err(|error| match error {
+                tinybus::Error::MethodFailed { name, message } => JailBusError {
+                    name: Some(name),
+                    message,
+                },
+                other => JailBusError {
+                    name: None,
+                    message: other.to_string(),
+                },
+            })
         })
     }
 }
