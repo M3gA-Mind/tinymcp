@@ -9,6 +9,8 @@ cargo test --locked --workspace --all-features
 
 
 set -euo pipefail
+# Strict on default features only: the optional `storage` feature adds the storage
+# ports crate (tokio io-util/time, no runtime), and is exempt by not being checked here.
 forbidden="$(cargo tree -p tinymcp-bus -e normal,build --prefix none \
   | grep -Ei 'tinybus|tokio|reqwest|ureq|hyper|rusqlite|git2' || true)"
 if [ -n "$forbidden" ]; then

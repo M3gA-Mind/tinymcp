@@ -35,7 +35,6 @@ mod bus;
 #[cfg(test)]
 mod failing;
 mod grant;
-mod migrate;
 mod ports;
 mod provider;
 mod schema;
