@@ -1,23 +1,16 @@
 //! What the module declares it needs from storage.
+//!
+//! The collections and the stream come from [`storage_schema`], so the grant
+//! cannot drift from what the module declares. Only the secret names are
+//! listed here: a secret is not renamed by a migration step, and a name outside
+//! the `mcp/` owner prefix cannot be declared as a schema item.
 
 use serde::Serialize;
-use tinystoragedrivers_core::{CollectionSpec, IndexSpec};
+use tinystoragedrivers_core::CollectionSpec;
+use tinystoragedrivers_core::schema::Item;
 
-/// One document per installed server.
-pub(crate) const SERVERS: &str = "mcp_servers";
-/// Claims on qualified names, so installing one service twice is one install.
-pub(crate) const SERVER_NAMES: &str = "mcp_server_names";
-/// Upstream browse responses, with a timestamp.
-pub(crate) const REGISTRY_CACHE: &str = "mcp_registry_cache";
-/// Each server's last advertised tool list, keyed by a definition fingerprint.
-pub(crate) const TOOL_CACHE: &str = "mcp_tool_cache";
-/// The local copy of an upstream catalog, one document per server.
-pub(crate) const REGISTRY_INDEX: &str = "mcp_registry_index";
-/// Where each catalog's sync stands.
-pub(crate) const REGISTRY_INDEX_STATE: &str = "mcp_registry_index_state";
+use super::schema::storage_schema;
 
-/// The append-only stream of tool-write audit records.
-pub const AUDIT_STREAM: &str = "mcp_audit";
 /// Prefix of the secret holding one server's environment and OAuth values:
 /// the full name is this prefix plus the install identifier.
 pub const ENV_SECRET_PREFIX: &str = "mcp_client_env/";
@@ -41,18 +34,29 @@ pub struct StorageGrant {
     pub secrets: Vec<String>,
 }
 
-/// The module's storage grant.
+/// The module's storage grant, generated from [`storage_schema`].
 #[must_use]
 pub fn grant() -> StorageGrant {
+    let schema = storage_schema();
+    let mut collections = Vec::new();
+    let mut searchable = Vec::new();
+    let mut streams = Vec::new();
+    for item in schema.items {
+        match item {
+            Item::Collection { name, spec, .. } => {
+                if spec.search.is_some() {
+                    searchable.push(name.clone());
+                }
+                collections.push(name);
+            }
+            Item::Stream { name, .. } => streams.push(name),
+            Item::Blobs { .. } | Item::Secrets { .. } => {}
+        }
+    }
     StorageGrant {
-        collections: collection_specs()
-            .into_iter()
-            .map(|spec| spec.name)
-            .collect(),
-        // Index search reads the source's rows and filters by substring, so no
-        // collection needs full-text indexing from the backend.
-        searchable: Vec::new(),
-        streams: vec![AUDIT_STREAM.to_string()],
+        collections,
+        searchable,
+        streams,
         secrets: vec![
             format!("{ENV_SECRET_PREFIX}*"),
             CACHE_KEY_SECRET.to_string(),
@@ -63,14 +67,12 @@ pub fn grant() -> StorageGrant {
 /// The collections the module declares, with their indexes.
 #[must_use]
 pub fn collection_specs() -> Vec<CollectionSpec> {
-    vec![
-        CollectionSpec::new(SERVERS)
-            .index(IndexSpec::new("qualified_name", ["qualified_name"]))
-            .index(IndexSpec::new("installed_at", ["installed_at"])),
-        CollectionSpec::new(SERVER_NAMES),
-        CollectionSpec::new(REGISTRY_CACHE).index(IndexSpec::new("cache_key", ["cache_key"])),
-        CollectionSpec::new(TOOL_CACHE),
-        CollectionSpec::new(REGISTRY_INDEX).index(IndexSpec::new("source", ["source"])),
-        CollectionSpec::new(REGISTRY_INDEX_STATE),
-    ]
+    storage_schema()
+        .items
+        .into_iter()
+        .filter_map(|item| match item {
+            Item::Collection { spec, .. } => Some(spec),
+            _ => None,
+        })
+        .collect()
 }

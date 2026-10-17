@@ -92,3 +92,30 @@ fn the_declared_grant_covers_the_collections_a_store_creates() {
     }
     assert!(granted.streams.contains(&storage::AUDIT_STREAM.to_string()));
 }
+
+#[test]
+fn the_storage_schema_composes_and_the_grant_is_generated_from_it() {
+    use tinystoragedrivers_core::schema::{Item, Registry};
+
+    let schema = storage::storage_schema();
+    Registry::compose([schema.clone()]).expect("the module's schema composes on its own");
+
+    let mut collections = Vec::new();
+    let mut streams = Vec::new();
+    for item in &schema.items {
+        match item {
+            Item::Collection { name, .. } => collections.push(name.clone()),
+            Item::Stream { name, .. } => streams.push(name.clone()),
+            Item::Blobs { .. } | Item::Secrets { .. } => {}
+        }
+    }
+    let granted = storage::grant();
+    assert_eq!(granted.collections, collections);
+    assert_eq!(granted.streams, streams);
+    assert!(
+        collections
+            .iter()
+            .chain(&streams)
+            .all(|name| name.starts_with(&format!("{}.", storage::OWNER)))
+    );
+}
