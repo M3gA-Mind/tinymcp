@@ -26,6 +26,11 @@ schemars = { workspace = true, optional = true }
 # Decoding a widget document a tool result embedded as a base64 `blob`, for
 # the pure tool-UI rules in `ui`. No dependencies of its own.
 base64 = { workspace = true }
+# The storage *ports* only (`Schema`, `Step`, `CollectionSpec`): no driver and
+# no I/O. Its sole tokio features are io-util and time, so this adds no runtime
+# to a host that links the contract. Backs `storage::storage_schema`; optional,
+# enabled only by the `storage` feature so the default closure stays pure.
+tinystoragedrivers-core = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v1.0.0", default-features = false, optional = true }
 
 [dev-dependencies]
 # The WHATWG parser the `ui` link splitter must agree with: its differential
@@ -33,11 +38,16 @@ base64 = { workspace = true }
 url = { workspace = true }
 # The pattern the `ui` URL scanner replaced, kept as the scanner's oracle.
 regex = { workspace = true }
+# The migration tests run the steps over `MemoryStorage` on a current-thread runtime.
+tokio = { workspace = true, features = ["rt"] }
 
 [features]
 default = []
 # Derive `JsonSchema` on the configuration payloads. See `src/config/mod.rs`.
 schemars = ["dep:schemars"]
+# `storage::storage_schema` and its v1 to v2 migration steps. Off by default: the
+# only extra dependency is the storage ports crate (no driver, no I/O).
+storage = ["dep:tinystoragedrivers-core"]
 
 [lints]
 workspace = true

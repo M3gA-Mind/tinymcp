@@ -22,7 +22,7 @@ crate-type = ["rlib", "cdylib"]
 # Re-exported wholesale from `src/lib.rs` so a consumer takes one dependency
 # rather than two, and so `tinymcp::GreetRequest` and
 # `tinymcp_bus::GreetRequest` are the same type.
-tinymcp-bus = { workspace = true }
+tinymcp-bus = { workspace = true, features = ["storage"] }
 # The TinyBox contract for the jailed stdio launcher; see the workspace entry.
 tinybox-bus = { workspace = true }
 # Only the `TinyBus` adapter needs these, and only a `cdylib` build needs the

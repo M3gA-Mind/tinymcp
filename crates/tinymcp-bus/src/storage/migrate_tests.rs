@@ -179,12 +179,12 @@ fn a_name_claim_is_keyed_by_the_qualified_name_and_keeps_its_time() {
     let fixture = Fixture::new();
     fixture.legacy(
         "mcp_server_names",
-        &crate::registry::store::hex_digest(b"@acme/files"),
+        "legacy-claim-files",
         json!({"qualified_name": "@acme/files", "server_id": "srv-1", "claimed_at": 5_000}),
     );
     fixture.legacy(
         "mcp_server_names",
-        &crate::registry::store::hex_digest(b"@acme/old"),
+        "legacy-claim-old",
         json!({"qualified_name": "@acme/old", "server_id": "srv-0"}),
     );
 
