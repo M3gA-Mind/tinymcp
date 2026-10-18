@@ -304,3 +304,7 @@ impl<C: Retire> ClientTable<C> {
             .is_some_and(|current| Arc::ptr_eq(current, client))
     }
 }
+
+#[cfg(test)]
+#[path = "table_race_tests.rs"]
+mod tests;
