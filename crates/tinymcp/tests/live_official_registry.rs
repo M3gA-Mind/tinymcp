@@ -3,19 +3,70 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 use std::collections::BTreeMap;
+use std::io;
+use std::process::Stdio;
 use std::sync::Arc;
 
+use futures_util::future::BoxFuture;
 use serde_json::json;
 use tinymcp::registry::Store;
 use tinymcp::transport::stdio::jailed::StdioLaunchers;
-use tinymcp::transport::stdio::{DirectSpawner, StdioSpawner};
+use tinymcp::transport::stdio::{StdioLaunch, StdioSpawner};
 use tinymcp::{McpClientIdentityConfig, McpRegistry, McpRegistryAuthConfig};
+
+#[derive(Debug)]
+struct IsolatedSpawner;
+
+impl StdioSpawner for IsolatedSpawner {
+    fn spawn(&self, launch: StdioLaunch) -> BoxFuture<'_, io::Result<tokio::process::Child>> {
+        Box::pin(async move {
+            let mut command = tokio::process::Command::new(&launch.program);
+            command
+                .args(&launch.args)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .kill_on_drop(true)
+                .env_clear();
+            if let Some(cwd) = launch.cwd.as_ref() {
+                command.current_dir(cwd);
+            }
+            for (key, value) in &launch.env {
+                command.env(key, value);
+            }
+            command.spawn()
+        })
+    }
+}
 
 /// Searches the official registry, installs a package server, and calls one
 /// no-argument tool. Requires network access and `npx` on `PATH`.
 #[tokio::test]
 #[ignore = "live: official MCP registry and npm package server"]
 async fn live_official_registry_server_can_be_installed_connected_and_called() {
+    let scratch = tempfile::tempdir().expect("create isolated npm home");
+    let npm_cache = scratch.path().join("npm-cache");
+    std::fs::create_dir_all(&npm_cache).expect("create isolated npm cache");
+    let npm_user_config = scratch.path().join("npmrc");
+    std::fs::write(&npm_user_config, "").expect("create empty npm user config");
+    let server_env = BTreeMap::from([
+        (
+            "HOME".to_owned(),
+            scratch.path().to_string_lossy().into_owned(),
+        ),
+        (
+            "NPM_CONFIG_CACHE".to_owned(),
+            npm_cache.to_string_lossy().into_owned(),
+        ),
+        (
+            "NPM_CONFIG_USERCONFIG".to_owned(),
+            npm_user_config.to_string_lossy().into_owned(),
+        ),
+        (
+            "PATH".to_owned(),
+            std::env::var("PATH").expect("PATH is needed to resolve npx"),
+        ),
+    ]);
     let registry = McpRegistry::new(
         Store::open_in_memory().expect("open in-memory store"),
         McpRegistryAuthConfig::default(),
@@ -23,9 +74,7 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
         None,
     )
     .expect("build registry")
-    .with_stdio(StdioLaunchers::sandboxed(
-        Arc::new(DirectSpawner) as Arc<dyn StdioSpawner>
-    ));
+    .with_stdio(StdioLaunchers::sandboxed(Arc::new(IsolatedSpawner)));
 
     let search = registry
         .registry_search(Some("everything"), 1, 10)
@@ -59,7 +108,7 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
             continue;
         }
 
-        let installed = match registry.install(name, BTreeMap::new(), None).await {
+        let installed = match registry.install(name, server_env.clone(), None).await {
             Ok(installed) => installed,
             Err(error) => {
                 attempts.push(format!("{name}: install failed: {error}"));
@@ -100,7 +149,7 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
                     .expect("disconnect live server");
                 return;
             }
-            Ok(result) => attempts.push(format!("{name}: tool `{}` returned an error", tool.name)),
+            Ok(_) => attempts.push(format!("{name}: tool `{}` returned an error", tool.name)),
             Err(error) => attempts.push(format!("{name}: tool call failed: {error}")),
         }
         registry
