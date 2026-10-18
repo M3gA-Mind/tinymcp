@@ -659,7 +659,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::registry::{AuthKind, SecretRef};
-#[path = "../../../../tests/support/mcp_server.rs"]
+#[path = "../../../tests/support/mcp_server.rs"]
 mod mcp_server_fixture;
 use mcp_server_fixture::{Server, mcp_server};
 
