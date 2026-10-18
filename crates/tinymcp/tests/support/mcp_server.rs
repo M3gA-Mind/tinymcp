@@ -36,19 +36,19 @@ pub(crate) async fn mcp_server() -> (String, Arc<Server>) {
     mcp_server_with_reply("sunny").await
 }
 
-/// Starts a loopback server that returns HTTP 500 during initialization.
-pub(crate) async fn mcp_server_rejecting_initialization() -> (String, Arc<Server>) {
-    let state = Arc::new(Server {
-        reject_initialization: true,
-        ..Server::default()
-    });
-    serve(state).await
-}
-
 /// Starts a loopback MCP server whose `forecast` tool returns `reply`.
 pub(crate) async fn mcp_server_with_reply(reply: &str) -> (String, Arc<Server>) {
+    mcp_server_with_reply_and_initialization_failure(reply, false).await
+}
+
+/// Starts a loopback MCP server whose initialization optionally returns 500.
+pub(crate) async fn mcp_server_with_reply_and_initialization_failure(
+    reply: &str,
+    reject_initialization: bool,
+) -> (String, Arc<Server>) {
     let state = Arc::new(Server {
         reply: Mutex::new(reply.to_owned()),
+        reject_initialization,
         ..Server::default()
     });
     serve(state).await

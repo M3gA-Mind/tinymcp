@@ -661,7 +661,7 @@ use std::collections::HashMap;
 use crate::registry::{AuthKind, SecretRef};
 #[path = "../../../tests/support/mcp_server.rs"]
 mod mcp_server_fixture;
-use mcp_server_fixture::{Server, mcp_server};
+use mcp_server_fixture::mcp_server;
 
 /// An install record pointing at `endpoint` over Streamable HTTP.
 fn remote_record(server_id: &str, endpoint: &str) -> InstalledServer {

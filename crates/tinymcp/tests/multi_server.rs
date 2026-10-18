@@ -14,7 +14,9 @@ use tinymcp::{
     ServerStatus, Transport,
 };
 
-use mcp_server_fixture::{mcp_server, mcp_server_rejecting_initialization, mcp_server_with_reply};
+use mcp_server_fixture::{
+    mcp_server, mcp_server_with_reply, mcp_server_with_reply_and_initialization_failure,
+};
 
 fn registry_with_servers(servers: &[InstalledServer]) -> McpRegistry {
     let store = Store::open_in_memory().expect("open in-memory store");
@@ -110,7 +112,8 @@ async fn same_named_tools_from_two_servers_keep_distinct_ids_and_routes() {
 #[tokio::test]
 async fn failed_connect_does_not_block_a_healthy_server() {
     let (endpoint, healthy_state) = mcp_server_with_reply("still healthy").await;
-    let (unhealthy_endpoint, _unhealthy_state) = mcp_server_rejecting_initialization().await;
+    let (unhealthy_endpoint, _unhealthy_state) =
+        mcp_server_with_reply_and_initialization_failure("unavailable", true).await;
 
     let registry = registry_with_servers(&[
         remote_server("server-down", "com.example/down", &unhealthy_endpoint),
