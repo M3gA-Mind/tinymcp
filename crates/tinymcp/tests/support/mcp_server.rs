@@ -9,37 +9,52 @@ use axum::Router;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::post;
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use tinymcp_bus::LATEST_PROTOCOL_VERSION;
 
 /// What the loopback server observed.
 #[derive(Debug, Default)]
-pub struct Server {
+pub(crate) struct Server {
     /// Number of tool calls received.
-    pub calls: AtomicUsize,
+    pub(crate) calls: AtomicUsize,
     /// The credential carried by the last request, if any.
-    pub authorization: Mutex<Option<String>>,
+    pub(crate) authorization: Mutex<Option<String>>,
     /// Whether requests without authorization should receive 401.
-    pub demand_auth: AtomicBool,
+    pub(crate) demand_auth: AtomicBool,
     /// Arguments from the last `tools/call` request.
-    pub last_arguments: Mutex<Option<Value>>,
+    pub(crate) last_arguments: Mutex<Option<Value>>,
     /// Text returned by `forecast`.
-    pub reply: Mutex<String>,
+    pub(crate) reply: Mutex<String>,
+    /// Whether initialization should be refused with a server error.
+    pub(crate) reject_initialization: bool,
 }
 
 /// Starts a loopback MCP server with the shared registry-test protocol.
-pub async fn mcp_server() -> (String, Arc<Server>) {
+pub(crate) async fn mcp_server() -> (String, Arc<Server>) {
     mcp_server_with_reply("sunny").await
 }
 
+/// Starts a loopback server that returns HTTP 500 during initialization.
+pub(crate) async fn mcp_server_rejecting_initialization() -> (String, Arc<Server>) {
+    let state = Arc::new(Server {
+        reject_initialization: true,
+        ..Server::default()
+    });
+    serve(state).await
+}
+
 /// Starts a loopback MCP server whose `forecast` tool returns `reply`.
-pub async fn mcp_server_with_reply(reply: &str) -> (String, Arc<Server>) {
+pub(crate) async fn mcp_server_with_reply(reply: &str) -> (String, Arc<Server>) {
     let state = Arc::new(Server {
         reply: Mutex::new(reply.to_owned()),
         ..Server::default()
     });
+    serve(state).await
+}
+
+async fn serve(state: Arc<Server>) -> (String, Arc<Server>) {
     let app = Router::new()
         .route(
             "/mcp",
@@ -78,6 +93,12 @@ async fn handle(
     }
 
     let id = body["id"].clone();
+    if body.get("method").and_then(Value::as_str) == Some("initialize")
+        && state.reject_initialization
+    {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
     match body
         .get("method")
         .and_then(Value::as_str)

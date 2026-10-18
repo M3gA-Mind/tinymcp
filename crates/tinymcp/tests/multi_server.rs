@@ -14,7 +14,7 @@ use tinymcp::{
     ServerStatus, Transport,
 };
 
-use mcp_server_fixture::{Server, mcp_server_with_reply};
+use mcp_server_fixture::{mcp_server, mcp_server_rejecting_initialization, mcp_server_with_reply};
 
 fn registry_with_servers(servers: &[InstalledServer]) -> McpRegistry {
     let store = Store::open_in_memory().expect("open in-memory store");
@@ -73,7 +73,7 @@ fn assert_one_forecast_tool(tools: &[tinymcp::McpTool]) {
 
 #[tokio::test]
 async fn same_named_tools_from_two_servers_keep_distinct_ids_and_routes() {
-    let (endpoint_a, state_a) = mcp_server_with_reply("answer from A").await;
+    let (endpoint_a, state_a) = mcp_server().await;
     let (endpoint_b, state_b) = mcp_server_with_reply("answer from B").await;
     let registry = registry_with_servers(&[
         remote_server("server-a", "com.example/a", &endpoint_a),
@@ -98,7 +98,7 @@ async fn same_named_tools_from_two_servers_keep_distinct_ids_and_routes() {
             && server.tools[0].name == "forecast"
     }));
 
-    assert_eq!(call_forecast(&registry, "server-a").await, "answer from A");
+    assert_eq!(call_forecast(&registry, "server-a").await, "sunny");
     assert_eq!(call_forecast(&registry, "server-b").await, "answer from B");
     assert_eq!(state_a.calls.load(Ordering::SeqCst), 1);
     assert_eq!(state_b.calls.load(Ordering::SeqCst), 1);
@@ -110,18 +110,10 @@ async fn same_named_tools_from_two_servers_keep_distinct_ids_and_routes() {
 #[tokio::test]
 async fn failed_connect_does_not_block_a_healthy_server() {
     let (endpoint, healthy_state) = mcp_server_with_reply("still healthy").await;
-    let unavailable = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("reserve a loopback address");
-    let unavailable_address = unavailable.local_addr().expect("read loopback address");
-    drop(unavailable);
+    let (unhealthy_endpoint, _unhealthy_state) = mcp_server_rejecting_initialization().await;
 
     let registry = registry_with_servers(&[
-        remote_server(
-            "server-down",
-            "com.example/down",
-            &format!("http://{unavailable_address}/mcp"),
-        ),
+        remote_server("server-down", "com.example/down", &unhealthy_endpoint),
         remote_server("server-healthy", "com.example/healthy", &endpoint),
     ]);
 
