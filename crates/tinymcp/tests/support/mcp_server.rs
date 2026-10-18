@@ -41,14 +41,19 @@ pub async fn mcp_server_with_reply(reply: &str) -> (String, Arc<Server>) {
         ..Server::default()
     });
     let app = Router::new()
-        .route("/mcp", post(handle).get(|| async { StatusCode::METHOD_NOT_ALLOWED }))
+        .route(
+            "/mcp",
+            post(handle).get(|| async { StatusCode::METHOD_NOT_ALLOWED }),
+        )
         .with_state(Arc::clone(&state));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind loopback MCP server");
     let addr = listener.local_addr().expect("read loopback address");
     tokio::spawn(async move {
-        axum::serve(listener, app).await.expect("serve MCP requests");
+        axum::serve(listener, app)
+            .await
+            .expect("serve MCP requests");
     });
     (format!("http://{addr}/mcp"), state)
 }
@@ -73,7 +78,11 @@ async fn handle(
     }
 
     let id = body["id"].clone();
-    match body.get("method").and_then(Value::as_str).unwrap_or_default() {
+    match body
+        .get("method")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+    {
         "initialize" => (
             [("Mcp-Session-Id", "session-1")],
             axum::Json(json!({

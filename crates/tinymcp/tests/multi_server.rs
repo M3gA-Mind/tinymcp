@@ -142,7 +142,11 @@ async fn failed_connect_does_not_block_a_healthy_server() {
         .find(|status| status.server_id == "server-healthy")
         .expect("healthy server remains visible");
     assert_eq!(down.status, ServerStatus::Error);
-    assert!(down.last_error.as_deref().is_some_and(|error| !error.is_empty()));
+    assert!(
+        down.last_error
+            .as_deref()
+            .is_some_and(|error| !error.is_empty())
+    );
     assert_eq!(healthy.status, ServerStatus::Connected);
     assert!(healthy.last_error.is_none());
 

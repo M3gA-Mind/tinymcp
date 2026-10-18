@@ -650,11 +650,10 @@ fn unset_registry_settings_report_nothing_configured() {
 // listing, calling, and what a reconnect does to a stored credential — only
 // exist once something answers.
 
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use axum::Router;
-use axum::routing::{get, post};
+use axum::routing::get;
 use serde_json::Value;
 
 use std::collections::HashMap;
