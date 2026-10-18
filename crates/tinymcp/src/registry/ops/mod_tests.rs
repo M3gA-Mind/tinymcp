@@ -651,123 +651,18 @@ fn unset_registry_settings_report_nothing_configured() {
 // exist once something answers.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 
 use axum::Router;
-use axum::extract::State;
-use axum::http::{HeaderMap as AxumHeaderMap, StatusCode};
-use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde_json::Value;
 
 use std::collections::HashMap;
 
 use crate::registry::{AuthKind, SecretRef};
-use tinymcp_bus::LATEST_PROTOCOL_VERSION;
-
-/// What the loopback server saw.
-#[derive(Debug, Default)]
-struct Server {
-    calls: AtomicUsize,
-    /// The credential the last request carried, if any.
-    authorization: parking_lot::Mutex<Option<String>>,
-    /// Whether to refuse every request with a 401.
-    demand_auth: std::sync::atomic::AtomicBool,
-    /// The `arguments` the last `tools/call` carried.
-    last_arguments: parking_lot::Mutex<Option<Value>>,
-}
-
-/// Binds a loopback port and serves `app`, returning its endpoint.
-async fn serve(app: Router) -> String {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
-    });
-    format!("http://{addr}/mcp")
-}
-
-async fn handle(
-    State(state): State<Arc<Server>>,
-    headers: AxumHeaderMap,
-    axum::Json(body): axum::Json<Value>,
-) -> Response {
-    *state.authorization.lock() = headers
-        .get("authorization")
-        .and_then(|value| value.to_str().ok())
-        .map(ToString::to_string);
-
-    if state.demand_auth.load(Ordering::SeqCst) && state.authorization.lock().is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            [(
-                "WWW-Authenticate",
-                "Bearer resource_metadata=\"https://example.test/.well-known/oauth-protected-resource\"",
-            )],
-            "unauthorized",
-        )
-            .into_response();
-    }
-
-    let id = body["id"].clone();
-    match body
-        .get("method")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-    {
-        "initialize" => (
-            [("Mcp-Session-Id", "session-1")],
-            axum::Json(json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": {
-                    "protocolVersion": LATEST_PROTOCOL_VERSION,
-                    "capabilities": { "tools": {} },
-                    "serverInfo": { "name": "loopback", "version": "1.0.0" },
-                },
-            })),
-        )
-            .into_response(),
-        "notifications/initialized" => StatusCode::NO_CONTENT.into_response(),
-        "tools/list" => axum::Json(json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "result": {
-                "tools": [{
-                    "name": "forecast",
-                    "description": "tomorrow's weather",
-                    "inputSchema": { "type": "object" },
-                }],
-            },
-        }))
-        .into_response(),
-        "tools/call" => {
-            state.calls.fetch_add(1, Ordering::SeqCst);
-            *state.last_arguments.lock() = body["params"].get("arguments").cloned();
-            axum::Json(json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": { "content": [{ "type": "text", "text": "sunny" }] },
-            }))
-            .into_response()
-        }
-        other => (StatusCode::BAD_REQUEST, format!("unexpected {other}")).into_response(),
-    }
-}
-
-/// An MCP server answering the handshake and one tool.
-async fn mcp_server() -> (String, Arc<Server>) {
-    let state = Arc::new(Server::default());
-
-    let app = Router::new()
-        .route(
-            "/mcp",
-            post(handle).get(|| async { StatusCode::METHOD_NOT_ALLOWED }),
-        )
-        .with_state(Arc::clone(&state));
-
-    (serve(app).await, state)
-}
+#[path = "../../../../tests/support/mcp_server.rs"]
+mod mcp_server_fixture;
+use mcp_server_fixture::{Server, mcp_server};
 
 /// An install record pointing at `endpoint` over Streamable HTTP.
 fn remote_record(server_id: &str, endpoint: &str) -> InstalledServer {

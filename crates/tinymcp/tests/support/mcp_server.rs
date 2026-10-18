@@ -25,11 +25,21 @@ pub struct Server {
     pub demand_auth: AtomicBool,
     /// Arguments from the last `tools/call` request.
     pub last_arguments: Mutex<Option<Value>>,
+    /// Text returned by `forecast`.
+    pub reply: Mutex<String>,
 }
 
 /// Starts a loopback MCP server with the shared registry-test protocol.
 pub async fn mcp_server() -> (String, Arc<Server>) {
-    let state = Arc::new(Server::default());
+    mcp_server_with_reply("sunny").await
+}
+
+/// Starts a loopback MCP server whose `forecast` tool returns `reply`.
+pub async fn mcp_server_with_reply(reply: &str) -> (String, Arc<Server>) {
+    let state = Arc::new(Server {
+        reply: Mutex::new(reply.to_owned()),
+        ..Server::default()
+    });
     let app = Router::new()
         .route("/mcp", post(handle).get(|| async { StatusCode::METHOD_NOT_ALLOWED }))
         .with_state(Arc::clone(&state));
@@ -93,10 +103,11 @@ async fn handle(
         "tools/call" => {
             state.calls.fetch_add(1, Ordering::SeqCst);
             *state.last_arguments.lock() = body["params"].get("arguments").cloned();
+            let reply = state.reply.lock().clone();
             axum::Json(json!({
                 "jsonrpc": "2.0",
                 "id": id,
-                "result": { "content": [{ "type": "text", "text": "sunny" }] },
+                "result": { "content": [{ "type": "text", "text": reply }] },
             }))
             .into_response()
         }
