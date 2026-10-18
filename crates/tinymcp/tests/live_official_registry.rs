@@ -8,7 +8,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 
 use futures_util::future::BoxFuture;
-use serde_json::json;
+use serde_json::{Map, Value, json};
 use tinymcp::registry::Store;
 use tinymcp::transport::stdio::jailed::StdioLaunchers;
 use tinymcp::transport::stdio::{StdioLaunch, StdioSpawner};
@@ -16,6 +16,8 @@ use tinymcp::{McpClientIdentityConfig, McpRegistry, McpRegistryAuthConfig};
 
 #[derive(Debug)]
 struct IsolatedSpawner;
+
+static TEST_WORKSPACE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
 
 impl StdioSpawner for IsolatedSpawner {
     fn spawn(&self, launch: StdioLaunch) -> BoxFuture<'_, io::Result<tokio::process::Child>> {
@@ -30,6 +32,8 @@ impl StdioSpawner for IsolatedSpawner {
                 .env_clear();
             if let Some(cwd) = launch.cwd.as_ref() {
                 command.current_dir(cwd);
+            } else if let Some(workspace) = TEST_WORKSPACE.get() {
+                command.current_dir(workspace);
             }
             for (key, value) in &launch.env {
                 command.env(key, value);
@@ -39,12 +43,59 @@ impl StdioSpawner for IsolatedSpawner {
     }
 }
 
+fn arguments_for(tool_schema: &Value) -> Option<Value> {
+    let mut arguments = Map::new();
+    let required = tool_schema
+        .get("required")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let properties = tool_schema.get("properties");
+    for name in required {
+        let name = name.as_str()?;
+        let schema = properties?.get(name)?;
+        let value = if let Some(default) = schema.get("default") {
+            default.clone()
+        } else if let Some(constant) = schema.get("const") {
+            constant.clone()
+        } else if let Some(choice) = schema
+            .get("enum")
+            .and_then(Value::as_array)
+            .and_then(|choices| choices.first())
+        {
+            choice.clone()
+        } else {
+            match schema.get("type").and_then(Value::as_str)? {
+                "string" => json!("mcp registry smoke test"),
+                "integer" => json!(1),
+                "number" => json!(1.0),
+                "boolean" => json!(false),
+                "array" => json!([]),
+                "object" => json!({}),
+                _ => return None,
+            }
+        };
+        arguments.insert(name.to_owned(), value);
+    }
+    Some(Value::Object(arguments))
+}
+
+fn is_read_only_smoke_tool(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    ["search", "echo", "ping", "health", "lookup"]
+        .iter()
+        .any(|kind| name.contains(kind))
+}
+
 /// Searches the official registry, installs a package server, and calls one
-/// no-argument tool. Requires network access and `npx` on `PATH`.
+/// simple read-only tool. Requires network access and `npx` on `PATH`.
 #[tokio::test]
 #[ignore = "live: official MCP registry and npm package server"]
 async fn live_official_registry_server_can_be_installed_connected_and_called() {
     let scratch = tempfile::tempdir().expect("create isolated npm home");
+    TEST_WORKSPACE
+        .set(scratch.path().to_path_buf())
+        .expect("set isolated subprocess workspace");
     let npm_cache = scratch.path().join("npm-cache");
     std::fs::create_dir_all(&npm_cache).expect("create isolated npm cache");
     let npm_user_config = scratch.path().join("npmrc");
@@ -122,40 +173,55 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
                 continue;
             }
         };
-        let tool = connected.tools.iter().find(|tool| {
-            tool.input_schema
-                .get("required")
-                .and_then(serde_json::Value::as_array)
-                .is_none_or(Vec::is_empty)
-        });
-        let Some(tool) = tool else {
-            attempts.push(format!("{name}: no tool accepts empty arguments"));
+        let tools: Vec<_> = connected
+            .tools
+            .iter()
+            .filter(|tool| is_read_only_smoke_tool(&tool.name))
+            .filter_map(|tool| arguments_for(&tool.input_schema).map(|args| (tool, args)))
+            .collect();
+        if tools.is_empty() {
+            attempts.push(format!("{name}: no read-only tool has a simple schema"));
             registry
                 .disconnect(&installed.server.server_id)
                 .await
-                .expect("disconnect server without a callable tool");
+                .expect("disconnect server without a suitable tool");
             continue;
-        };
+        }
 
-        match registry
-            .tool_call(&installed.server.server_id, &tool.name, json!({}))
-            .await
-        {
-            Ok(result) if !result.is_error => {
-                eprintln!("{name}: installed, connected, and called `{}`", tool.name);
-                registry
-                    .disconnect(&installed.server.server_id)
-                    .await
-                    .expect("disconnect live server");
-                return;
+        let mut answered = false;
+        for (tool, arguments) in tools {
+            match registry
+                .tool_call(&installed.server.server_id, &tool.name, arguments.clone())
+                .await
+            {
+                Ok(result) if !result.is_error => {
+                    eprintln!("{name}: installed, connected, and called `{}`", tool.name);
+                    answered = true;
+                    break;
+                }
+                Ok(result) => {
+                    let response = result
+                        .result
+                        .pointer("/content/0/text")
+                        .and_then(Value::as_str)
+                        .unwrap_or("no error text");
+                    attempts.push(format!(
+                        "{name}: tool `{}` returned an error (schema {}, arguments {}): {response}",
+                        tool.name, tool.input_schema, arguments
+                    ));
+                }
+                Err(error) => {
+                    attempts.push(format!("{name}: tool `{}` failed: {error}", tool.name))
+                }
             }
-            Ok(_) => attempts.push(format!("{name}: tool `{}` returned an error", tool.name)),
-            Err(error) => attempts.push(format!("{name}: tool call failed: {error}")),
         }
         registry
             .disconnect(&installed.server.server_id)
             .await
             .expect("disconnect attempted server");
+        if answered {
+            return;
+        }
     }
 
     panic!(
