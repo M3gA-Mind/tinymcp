@@ -30,6 +30,14 @@ struct State {
     confidential_reads: usize,
 }
 
+/// How much of the jail the fake backend can enforce.
+#[derive(Debug, Default, PartialEq, Eq)]
+enum Backend {
+    #[default]
+    Full,
+    BestEffort,
+}
+
 /// What the fake does differently from a plain, silent module.
 #[derive(Debug, Default)]
 struct Behavior {
@@ -39,7 +47,7 @@ struct Behavior {
     create_error: bool,
     /// Act as a best-effort backend: refuse `StartStdio` unless the jail
     /// asks for `declared` enforcement.
-    best_effort_backend: bool,
+    backend: Backend,
     /// Report stdout closed while stderr stays open.
     stdout_only_closed: bool,
 }
@@ -127,7 +135,7 @@ impl JailBus for FakeBox {
                     "state": "running", "published_ports": []
                 })),
                 m if m == names::START_STDIO => {
-                    if state.behavior.best_effort_backend
+                    if state.behavior.backend == Backend::BestEffort
                         && args["jail"]["enforcement"] != "declared"
                     {
                         return Err(JailBusError {
@@ -257,7 +265,7 @@ fn the_sandbox_enforcement_defaults_to_enforced() {
 #[tokio::test]
 async fn declared_enforcement_lets_a_best_effort_backend_start() {
     let fake = FakeBox::serving();
-    fake.state.lock().unwrap().behavior.best_effort_backend = true;
+    fake.state.lock().unwrap().behavior.backend = Backend::BestEffort;
     let config = StdioSandboxConfig {
         enforcement: StdioSandboxEnforcement::Declared,
         ..sandbox()
@@ -272,7 +280,7 @@ async fn declared_enforcement_lets_a_best_effort_backend_start() {
 #[tokio::test]
 async fn enforced_enforcement_still_refuses_a_best_effort_backend() {
     let fake = FakeBox::serving();
-    fake.state.lock().unwrap().behavior.best_effort_backend = true;
+    fake.state.lock().unwrap().behavior.backend = Backend::BestEffort;
     let spawner = JailedSpawner::new(fake.clone(), sandbox());
     let error = spawner.spawn_process(launch()).await.unwrap_err();
     assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
