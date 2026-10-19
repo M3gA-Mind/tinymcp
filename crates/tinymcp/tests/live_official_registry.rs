@@ -74,7 +74,8 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
     let xdg_cache = scratch.path().join("cache");
     let temp_dir = scratch.path().join("tmp");
     for directory in [&npm_cache, &uv_cache, &xdg_cache, &temp_dir] {
-        std::fs::create_dir_all(directory).expect("create isolated cache and temporary directories");
+        std::fs::create_dir_all(directory)
+            .expect("create isolated cache and temporary directories");
     }
     let npm_user_config = scratch.path().join("npmrc");
     std::fs::write(&npm_user_config, "").expect("create empty npm user config");
@@ -83,13 +84,25 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
         stderr_path: stderr_path.clone(),
     });
     let server_env = BTreeMap::from([
-        ("HOME".to_owned(), scratch.path().to_string_lossy().into_owned()),
+        (
+            "HOME".to_owned(),
+            scratch.path().to_string_lossy().into_owned(),
+        ),
         ("TMPDIR".to_owned(), temp_dir.to_string_lossy().into_owned()),
         ("TMP".to_owned(), temp_dir.to_string_lossy().into_owned()),
         ("TEMP".to_owned(), temp_dir.to_string_lossy().into_owned()),
-        ("XDG_CACHE_HOME".to_owned(), xdg_cache.to_string_lossy().into_owned()),
-        ("UV_CACHE_DIR".to_owned(), uv_cache.to_string_lossy().into_owned()),
-        ("NPM_CONFIG_CACHE".to_owned(), npm_cache.to_string_lossy().into_owned()),
+        (
+            "XDG_CACHE_HOME".to_owned(),
+            xdg_cache.to_string_lossy().into_owned(),
+        ),
+        (
+            "UV_CACHE_DIR".to_owned(),
+            uv_cache.to_string_lossy().into_owned(),
+        ),
+        (
+            "NPM_CONFIG_CACHE".to_owned(),
+            npm_cache.to_string_lossy().into_owned(),
+        ),
         (
             "NPM_CONFIG_USERCONFIG".to_owned(),
             npm_user_config.to_string_lossy().into_owned(),
