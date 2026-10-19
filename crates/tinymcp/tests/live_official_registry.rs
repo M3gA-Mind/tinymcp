@@ -67,13 +67,13 @@ fn child_diagnostics(path: &std::path::Path) -> String {
     String::from_utf8_lossy(&bytes).trim().to_owned()
 }
 
-/// Searches the official registry, installs its self-contained npm echo
-/// package, and calls the read-only `get` tool. Requires network access and
-/// `npx` on `PATH`.
+/// Searches the official registry, installs its self-contained npm calculator
+/// package, and calls one deterministic local computation. Requires network
+/// access and `npx` on `PATH`.
 #[tokio::test]
 #[ignore = "live: official MCP registry and npm package server"]
 async fn live_official_registry_server_can_be_installed_connected_and_called() {
-    const SERVER_NAME: &str = "io.github.mrfentmen/postman-echo-mcp";
+    const SERVER_NAME: &str = "io.github.headlessherm-creator/polymath-megablaster-mcp";
 
     let scratch = tempfile::tempdir().expect("create isolated npm home");
     TEST_WORKSPACE
@@ -132,9 +132,9 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
     .with_stdio(StdioLaunchers::sandboxed(isolated_spawner));
 
     let first_page = registry
-        .registry_search(Some("echo"), 1, 20)
+        .registry_search(Some("math"), 1, 20)
         .await
-        .expect("search official MCP registry for echo servers");
+        .expect("search official MCP registry for math servers");
     let listed_on_first_page = first_page
         .servers
         .iter()
@@ -144,12 +144,12 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
     } else {
         assert!(
             first_page.total_pages >= 2,
-            "official registry search for `echo` did not list {SERVER_NAME}"
+            "official registry search for `math` did not list {SERVER_NAME}"
         );
         let second_page = registry
-            .registry_search(Some("echo"), 2, 20)
+            .registry_search(Some("math"), 2, 20)
             .await
-            .expect("search second official registry page for echo servers");
+            .expect("search second official registry page for math servers");
         second_page
             .servers
             .iter()
@@ -157,7 +157,7 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
     };
     assert!(
         listed,
-        "official registry search for `echo` did not list the verified package"
+        "official registry search for `math` did not list the verified package"
     );
     let qualified_name = SERVER_NAME;
     let (detail, _) = registry
@@ -181,6 +181,8 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
         "{qualified_name} unexpectedly advertises a hosted endpoint"
     );
 
+    // The registry supplies an unversioned npx command, so npm resolves the
+    // current package version when this live test installs it.
     let installed = registry
         .install(&qualified_name, server_env, None)
         .await
@@ -194,35 +196,50 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
                 child_diagnostics(&stderr_path)
             )
         });
-    let get_tool = connected
+    let calculate_tool = connected
         .tools
         .iter()
-        .find(|tool| tool.name == "get")
-        .expect("Postman Echo package exposes the read-only `get` tool");
-    assert_eq!(get_tool.input_schema["type"], "object");
+        .find(|tool| tool.name == "calculate")
+        .expect("Polymath package exposes its local `calculate` tool");
+    assert_eq!(calculate_tool.input_schema["type"], "object");
     assert!(
-        get_tool
+        calculate_tool
             .input_schema
             .get("required")
             .and_then(Value::as_array)
-            .is_none_or(Vec::is_empty),
-        "read-only `get` tool unexpectedly requires arguments: {}",
-        get_tool.input_schema
+            .is_some_and(|required| {
+                required.len() == 1 && required[0].as_str() == Some("expression")
+            }),
+        "local `calculate` tool's required argument schema changed: {}",
+        calculate_tool.input_schema
     );
     let result = registry
-        .tool_call(&installed.server.server_id, "get", json!({}))
+        .tool_call(
+            &installed.server.server_id,
+            "calculate",
+            json!({ "expression": "2 + 2" }),
+        )
         .await
         .unwrap_or_else(|error| {
             panic!(
-                "read-only `get` call failed: {error}; child stderr: {}",
+                "local `calculate` call failed: {error}; child stderr: {}",
                 child_diagnostics(&stderr_path)
             )
         });
     assert!(
         !result.is_error,
-        "read-only `get` returned an MCP error: {}; child stderr: {}",
+        "local `calculate` returned an MCP error: {}; child stderr: {}",
         result.result,
         child_diagnostics(&stderr_path)
+    );
+    let text = result
+        .result
+        .pointer("/content/0/text")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    assert!(
+        text.contains("\"result\": \"4\""),
+        "`calculate` did not return 4 for 2 + 2: {text}"
     );
     registry
         .disconnect(&installed.server.server_id)
