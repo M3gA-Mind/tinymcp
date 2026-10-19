@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io;
+use std::io::{self, Read, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -50,11 +50,21 @@ impl StdioSpawner for IsolatedSpawner {
 }
 
 fn child_diagnostics(path: &std::path::Path) -> String {
-    let Ok(bytes) = std::fs::read(path) else {
+    let Ok(mut stderr) = File::open(path) else {
         return "stderr was unavailable".to_owned();
     };
-    let start = bytes.len().saturating_sub(8 * 1024);
-    String::from_utf8_lossy(&bytes[start..]).trim().to_owned()
+    let Ok(length) = stderr.metadata().map(|metadata| metadata.len()) else {
+        return "stderr size was unavailable".to_owned();
+    };
+    let start = length.saturating_sub(8 * 1024);
+    if stderr.seek(SeekFrom::Start(start)).is_err() {
+        return "stderr could not be read".to_owned();
+    }
+    let mut bytes = Vec::with_capacity(8 * 1024);
+    if stderr.take(8 * 1024).read_to_end(&mut bytes).is_err() {
+        return "stderr could not be read".to_owned();
+    }
+    String::from_utf8_lossy(&bytes).trim().to_owned()
 }
 
 /// Searches the official registry, installs its self-contained npm echo
@@ -190,6 +200,15 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
         .find(|tool| tool.name == "get")
         .expect("Postman Echo package exposes the read-only `get` tool");
     assert_eq!(get_tool.input_schema["type"], "object");
+    assert!(
+        get_tool
+            .input_schema
+            .get("required")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty),
+        "read-only `get` tool unexpectedly requires arguments: {}",
+        get_tool.input_schema
+    );
     let result = registry
         .tool_call(&installed.server.server_id, "get", json!({}))
         .await
