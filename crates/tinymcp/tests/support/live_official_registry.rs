@@ -142,7 +142,7 @@ pub(crate) async fn assert_search_lists(
     let first_page = registries
         .search(store, RegistrySource::McpOfficial, Some("polymath"), 1, 20)
         .await
-        .expect("search official MCP registry for math servers");
+        .expect("search official MCP registry for Polymath servers");
     if first_page
         .servers
         .iter()
@@ -158,7 +158,7 @@ pub(crate) async fn assert_search_lists(
     let second_page = registries
         .search(store, RegistrySource::McpOfficial, Some("polymath"), 2, 20)
         .await
-        .expect("search second official registry page for math servers");
+        .expect("search second official registry page for Polymath servers");
     assert!(
         second_page
             .servers
