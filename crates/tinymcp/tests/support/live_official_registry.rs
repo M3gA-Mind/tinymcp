@@ -108,14 +108,14 @@ impl IsolatedRegistry {
         )
         .expect("build registry")
         .with_stdio(StdioLaunchers::sandboxed(spawner));
-        // The public search endpoint took about 18 seconds during the live
-        // preflight. Keep the production defaults unchanged and give this
-        // network-only acceptance client a measured 30-second budget.
+        // The exact `polymath` query took about 34 seconds during the live
+        // preflight. Keep production defaults unchanged and give this
+        // network-only acceptance client a measured 60-second budget.
         let catalog = Registries::with_official(
             auth,
             McpOfficialRegistry::with_timeouts(RegistryTimeouts {
-                search: std::time::Duration::from_secs(30),
-                detail: std::time::Duration::from_secs(30),
+                search: std::time::Duration::from_secs(60),
+                detail: std::time::Duration::from_secs(60),
                 ..RegistryTimeouts::default()
             })
             .expect("build official registry client with live-test budgets"),
@@ -140,7 +140,7 @@ pub(crate) async fn assert_search_lists(
     qualified_name: &str,
 ) {
     let first_page = registries
-        .search(store, RegistrySource::McpOfficial, Some("math"), 1, 20)
+        .search(store, RegistrySource::McpOfficial, Some("polymath"), 1, 20)
         .await
         .expect("search official MCP registry for math servers");
     if first_page
@@ -153,10 +153,10 @@ pub(crate) async fn assert_search_lists(
 
     assert!(
         first_page.total_pages >= 2,
-        "official registry search for `math` did not list {qualified_name}"
+        "official registry search for `polymath` did not list {qualified_name}"
     );
     let second_page = registries
-        .search(store, RegistrySource::McpOfficial, Some("math"), 2, 20)
+        .search(store, RegistrySource::McpOfficial, Some("polymath"), 2, 20)
         .await
         .expect("search second official registry page for math servers");
     assert!(
@@ -164,7 +164,7 @@ pub(crate) async fn assert_search_lists(
             .servers
             .iter()
             .any(|server| server.qualified_name == qualified_name),
-        "official registry search for `math` did not list the verified package"
+        "official registry search for `polymath` did not list the verified package"
     );
 }
 
