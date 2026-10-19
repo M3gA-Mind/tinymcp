@@ -6,6 +6,9 @@ use std::process::Stdio;
 use std::sync::Arc;
 
 use futures_util::future::BoxFuture;
+use tinymcp::registry::sources::{
+    McpOfficialRegistry, Registries, RegistrySource, RegistryTimeouts,
+};
 use tinymcp::registry::{McpRegistry, Store};
 use tinymcp::transport::stdio::jailed::StdioLaunchers;
 use tinymcp::transport::stdio::{StdioLaunch, StdioSpawner};
@@ -43,6 +46,8 @@ impl StdioSpawner for IsolatedSpawner {
 pub(crate) struct IsolatedRegistry {
     _scratch: tempfile::TempDir,
     pub(crate) registry: McpRegistry,
+    pub(crate) catalog: Registries,
+    pub(crate) catalog_store: Store,
     pub(crate) server_env: BTreeMap<String, String>,
     pub(crate) stderr_path: PathBuf,
 }
@@ -94,27 +99,48 @@ impl IsolatedRegistry {
             workspace: scratch.path().to_path_buf(),
             stderr_path: stderr_path.clone(),
         });
+        let auth = McpRegistryAuthConfig::default();
         let registry = McpRegistry::new(
             Store::open_in_memory().expect("open in-memory store"),
-            McpRegistryAuthConfig::default(),
+            auth.clone(),
             McpClientIdentityConfig::default(),
             None,
         )
         .expect("build registry")
         .with_stdio(StdioLaunchers::sandboxed(spawner));
+        // The public search endpoint took about 18 seconds during the live
+        // preflight. Keep the production defaults unchanged and give this
+        // network-only acceptance client a measured 30-second budget.
+        let catalog = Registries::with_official(
+            auth,
+            McpOfficialRegistry::with_timeouts(RegistryTimeouts {
+                search: std::time::Duration::from_secs(30),
+                detail: std::time::Duration::from_secs(30),
+                ..RegistryTimeouts::default()
+            })
+            .expect("build official registry client with live-test budgets"),
+        )
+        .expect("build configured catalog dispatcher");
+        let catalog_store = Store::open_in_memory().expect("open catalog cache");
 
         Self {
             _scratch: scratch,
             registry,
+            catalog,
+            catalog_store,
             server_env,
             stderr_path,
         }
     }
 }
 
-pub(crate) async fn assert_search_lists(registry: &McpRegistry, qualified_name: &str) {
-    let first_page = registry
-        .registry_search(Some("math"), 1, 20)
+pub(crate) async fn assert_search_lists(
+    registries: &Registries,
+    store: &Store,
+    qualified_name: &str,
+) {
+    let first_page = registries
+        .search(store, RegistrySource::McpOfficial, Some("math"), 1, 20)
         .await
         .expect("search official MCP registry for math servers");
     if first_page
@@ -129,8 +155,8 @@ pub(crate) async fn assert_search_lists(registry: &McpRegistry, qualified_name: 
         first_page.total_pages >= 2,
         "official registry search for `math` did not list {qualified_name}"
     );
-    let second_page = registry
-        .registry_search(Some("math"), 2, 20)
+    let second_page = registries
+        .search(store, RegistrySource::McpOfficial, Some("math"), 2, 20)
         .await
         .expect("search second official registry page for math servers");
     assert!(

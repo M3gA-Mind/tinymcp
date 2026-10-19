@@ -16,10 +16,15 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
 
     let fixture = support::IsolatedRegistry::new();
     let registry = &fixture.registry;
-    support::assert_search_lists(registry, SERVER_NAME).await;
+    support::assert_search_lists(&fixture.catalog, &fixture.catalog_store, SERVER_NAME).await;
 
-    let (detail, _) = registry
-        .registry_get(SERVER_NAME)
+    let detail = fixture
+        .catalog
+        .get(
+            &fixture.catalog_store,
+            tinymcp::registry::sources::SOURCE_MCP_OFFICIAL,
+            SERVER_NAME,
+        )
         .await
         .expect("fetch official registry package details");
     assert!(
