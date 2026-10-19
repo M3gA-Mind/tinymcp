@@ -161,7 +161,7 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
     );
     let qualified_name = SERVER_NAME;
     let (detail, _) = registry
-        .registry_get(&qualified_name)
+        .registry_get(qualified_name)
         .await
         .expect("fetch official registry package details");
     assert!(
@@ -237,8 +237,10 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
         .pointer("/content/0/text")
         .and_then(Value::as_str)
         .unwrap_or_default();
+    let calculation: Value =
+        serde_json::from_str(text).expect("calculate tool response is structured JSON text");
     assert!(
-        text.contains("\"result\": \"4\""),
+        calculation.get("result") == Some(&json!("4")),
         "`calculate` did not return 4 for 2 + 2: {text}"
     );
     registry
