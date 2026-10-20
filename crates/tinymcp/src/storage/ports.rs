@@ -17,7 +17,7 @@ use crate::error::{Error, Result};
 ///
 /// Cheap to clone: every field is a shared handle. The module's stores are
 /// synchronous, so each call runs its port future on one shared
-/// [`Blocking`] bridge thread.
+/// blocking bridge thread.
 #[derive(Clone)]
 pub struct StoragePorts {
     pub(crate) documents: Arc<dyn DocumentStore>,

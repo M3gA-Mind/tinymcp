@@ -1,6 +1,6 @@
 //! What the module declares it needs from storage.
 //!
-//! The collections and the stream come from [`storage_schema`], so the grant
+//! The collections and the stream come from the private `storage_schema` helper, so the grant
 //! cannot drift from what the module declares. Only the secret names are
 //! listed here: a secret is not renamed by a migration step, and a name outside
 //! the `mcp/` owner prefix cannot be declared as a schema item.
@@ -33,7 +33,7 @@ pub struct StorageGrant {
     pub secrets: Vec<String>,
 }
 
-/// The module's storage grant, generated from [`storage_schema`].
+/// The module's storage grant, generated from the private `storage_schema` helper.
 #[must_use]
 pub fn grant() -> StorageGrant {
     let collections = collection_specs()
