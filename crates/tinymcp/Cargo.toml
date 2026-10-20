@@ -82,6 +82,7 @@ axum = { workspace = true, features = ["form"] }
 tempfile = { workspace = true }
 # Real memory engines and decorators for storage-port tests only.
 tinystoragedrivers-testkit = { workspace = true }
+tinystoragedrivers-document = { workspace = true }
 tinystoragedrivers-secrets = { workspace = true, features = ["memory"] }
 
 [features]

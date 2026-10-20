@@ -1835,6 +1835,7 @@ dependencies = [
  "tinymcp-bus",
  "tinystoragedrivers-api",
  "tinystoragedrivers-busproxy",
+ "tinystoragedrivers-document",
  "tinystoragedrivers-secrets",
  "tinystoragedrivers-testkit",
  "tinystoragedrivers-types",

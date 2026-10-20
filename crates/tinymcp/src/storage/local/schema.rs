@@ -599,3 +599,7 @@ impl Migrations {
             .map(|_| ())
     }
 }
+
+#[cfg(test)]
+#[path = "schema_tests.rs"]
+mod tests;

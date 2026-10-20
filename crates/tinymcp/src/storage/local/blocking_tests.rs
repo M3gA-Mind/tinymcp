@@ -55,3 +55,19 @@ fn panicking_jobs_are_reported_to_the_waiting_caller() -> TestResult {
     assert_eq!(error.kind(), tinystoragedrivers_types::ErrorKind::Backend);
     Ok(())
 }
+
+#[test]
+fn bridge_reports_closed_worker_and_startup_io_failures() -> TestResult {
+    let (jobs, receiver) = tokio::sync::mpsc::unbounded_channel();
+    drop(receiver);
+    let bridge = Blocking { jobs };
+    let error = bridge
+        .run(async {})
+        .err()
+        .ok_or("closed bridge accepted work")?;
+    assert_eq!(error.kind(), tinystoragedrivers_types::ErrorKind::Backend);
+    let error = startup_error("cannot start test bridge")(std::io::Error::other("denied"));
+    assert_eq!(error.kind(), tinystoragedrivers_types::ErrorKind::Backend);
+    assert!(format!("{bridge:?}").contains("Blocking"));
+    Ok(())
+}

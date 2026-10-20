@@ -119,6 +119,7 @@ tinystoragedrivers-types = { git = "https://github.com/senamakel/tinystoragedriv
 # `module` feature (a cdylib reaches storage through the host, never a file).
 tinystoragedrivers-busproxy = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.2", rev = "7acd22d8e8061edf7ef8cc4976c666b198a203c7" }
 tinystoragedrivers-testkit = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.2", rev = "7acd22d8e8061edf7ef8cc4976c666b198a203c7" }
+tinystoragedrivers-document = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.2", rev = "7acd22d8e8061edf7ef8cc4976c666b198a203c7", default-features = false, features = ["memory"] }
 tinystoragedrivers-secrets = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.2", rev = "7acd22d8e8061edf7ef8cc4976c666b198a203c7" }
 # Locating a user's home directory, to find the version-manager shim
 # directories a desktop launch's stripped PATH leaves out.

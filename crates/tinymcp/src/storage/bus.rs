@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use crate::storage::types::SecretStore;
 use tinybus::{BusName, Connection};
+use tinystoragedrivers_api::Storage;
 #[cfg(test)]
 use tinystoragedrivers_busproxy::connect_storage;
 use tinystoragedrivers_busproxy::connect_storage_at;
@@ -45,13 +46,23 @@ impl BusProvider {
         destination: BusName,
         secrets: Option<Arc<dyn SecretStore>>,
     ) -> Result<Self> {
-        let storage = connect_storage_at(connection, destination)
-            .await
-            .map_err(|source| Error::store("connecting to the host storage", source))?;
+        Self::from_storage_result(connect_storage_at(connection, destination).await, secrets)
+    }
+
+    fn from_storage_result(
+        storage: tinystoragedrivers_types::Result<Storage>,
+        secrets: Option<Arc<dyn SecretStore>>,
+    ) -> Result<Self> {
+        let storage =
+            storage.map_err(|source| Error::store("connecting to the host storage", source))?;
+        Ok(Self::from_storage(&storage, secrets))
+    }
+
+    fn from_storage(storage: &Storage, secrets: Option<Arc<dyn SecretStore>>) -> Self {
         let secrets = secrets.unwrap_or_else(|| Arc::clone(storage.secrets()));
-        Ok(Self {
-            ports: StoragePorts::from_storage(&storage, secrets),
-        })
+        Self {
+            ports: StoragePorts::from_storage(storage, secrets),
+        }
     }
 
     /// Ordinary, non-attested bus connections are used only by the in-process
@@ -64,10 +75,7 @@ impl BusProvider {
         let storage = connect_storage(connection)
             .await
             .map_err(|source| Error::store("connecting to the host storage", source))?;
-        let secrets = secrets.unwrap_or_else(|| Arc::clone(storage.secrets()));
-        Ok(Self {
-            ports: StoragePorts::from_storage(&storage, secrets),
-        })
+        Ok(Self::from_storage(&storage, secrets))
     }
 
     /// A provider over already-connected `ports`.
@@ -76,6 +84,10 @@ impl BusProvider {
         Self { ports }
     }
 }
+
+#[cfg(test)]
+#[path = "bus_unit_tests.rs"]
+mod tests;
 
 impl StorageProvider for BusProvider {
     fn ports_for(&self, _data_dir: &Path) -> Result<StoragePorts> {

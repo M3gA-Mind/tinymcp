@@ -3083,6 +3083,31 @@ async fn bus_provider_rejects_an_invalid_host_callback_destination() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn setup_uses_host_storage_only_when_no_provider_was_installed() {
+    use tinybus::{broker::Broker, transport::memory::MemoryBus};
+
+    let bus = MemoryBus::new();
+    Broker::new().spawn(bus.clone());
+    let connection = tinybus::Connection::connect(bus.connect().await.unwrap())
+        .await
+        .unwrap();
+    let callback = ModuleConfig {
+        storage_callback: Some("org.example.Storage".into()),
+        ..ModuleConfig::default()
+    };
+    assert!(
+        super::provider_for_setup(connection.clone(), &callback, true)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let error = super::provider_for_setup(connection, &callback, false)
+        .await
+        .expect_err("missing attested host capability must fail closed");
+    assert!(error.to_string().contains("host storage"), "{error}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_module_without_a_data_directory_still_requires_host_storage() {
     use tinybus::{broker::Broker, transport::memory::MemoryBus};
 
@@ -3127,6 +3152,56 @@ fn stdio_launchers_need_a_configured_sandbox_and_a_reachable_bus() {
     };
     // A sandbox with no bus to reach TinyBox is not a sandbox: refuse.
     assert!(!super::stdio_launchers(None, &configured).has_sandbox());
+}
+
+#[test]
+fn configured_stdio_sandbox_refuses_a_connection_without_tinybox() {
+    use tinymcp_bus::StdioSandboxConfig;
+
+    let config = McpClientConfig {
+        stdio_sandbox: Some(StdioSandboxConfig {
+            workspace: "/work".into(),
+            read_only: Vec::new(),
+            read_write: Vec::new(),
+            deny_read: Vec::new(),
+            allow_net: true,
+            allow_subprocess: true,
+            require_process_isolation: true,
+            enforcement: tinymcp_bus::StdioSandboxEnforcement::default(),
+        }),
+        ..McpClientConfig::default()
+    };
+    let refused = super::stdio_launchers_for_bus(
+        &config,
+        Some(Err(tinybus::Error::failed("TinyBox unavailable"))),
+    );
+    assert!(!refused.has_sandbox());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn configured_stdio_sandbox_builds_a_launcher_for_a_bus_connection() {
+    use tinybus::{broker::Broker, transport::memory::MemoryBus};
+    use tinymcp_bus::StdioSandboxConfig;
+
+    let bus = MemoryBus::new();
+    Broker::new().spawn(bus.clone());
+    let connection = tinybus::Connection::connect(bus.connect().await.unwrap())
+        .await
+        .unwrap();
+    let config = McpClientConfig {
+        stdio_sandbox: Some(StdioSandboxConfig {
+            workspace: "/work".into(),
+            read_only: Vec::new(),
+            read_write: Vec::new(),
+            deny_read: Vec::new(),
+            allow_net: true,
+            allow_subprocess: true,
+            require_process_isolation: true,
+            enforcement: tinymcp_bus::StdioSandboxEnforcement::default(),
+        }),
+        ..McpClientConfig::default()
+    };
+    assert!(super::stdio_launchers(Some(&connection), &config).has_sandbox());
 }
 
 #[derive(Debug, Default)]

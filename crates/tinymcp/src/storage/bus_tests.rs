@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use serde_json::json;
-use tinybus::{Connection, broker::Broker, transport::memory::MemoryBus};
+use tinybus::{BusName, Connection, broker::Broker, transport::memory::MemoryBus};
 use tinystoragedrivers_api::StorageBackend;
 use tinystoragedrivers_secrets::{MemorySecrets, SecretStore};
 use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
@@ -113,6 +113,20 @@ async fn connecting_without_a_host_is_an_error_not_a_silent_memory_store() {
             .await
             .is_err()
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn callback_connection_requires_a_live_admitted_host_capability() {
+    let bus = MemoryBus::new();
+    Broker::new().spawn(bus.clone());
+    let connection = Connection::connect(bus.connect().await.unwrap())
+        .await
+        .unwrap();
+    let destination = BusName::new("org.example.Storage").unwrap();
+    let error = BusProvider::connect_at(connection, destination)
+        .await
+        .expect_err("ordinary peers cannot impersonate a provisioned host callback");
+    assert!(matches!(error, crate::Error::Store { .. }));
 }
 
 #[tokio::test(flavor = "multi_thread")]

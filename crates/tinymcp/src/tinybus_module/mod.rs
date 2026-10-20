@@ -62,15 +62,28 @@ pub(super) async fn setup(connection: Connection, config: ModuleConfig) -> TinyB
     // services over the installed provider whatever the load-time `data_dir`
     // was, so even a static-only module needs host storage. Missing storage is
     // a load failure; silently continuing in memory would lose state.
-    let provider = if crate::storage::provider_installed() {
-        None
-    } else {
-        host_storage_for(connection.clone(), &config).await?
-    };
+    let provider = provider_for_setup(
+        connection.clone(),
+        &config,
+        crate::storage::provider_installed(),
+    )
+    .await?;
     if let Some(provider) = provider {
         crate::storage::install_provider(provider);
     }
     setup_over_installed_storage(connection, config).await
+}
+
+async fn provider_for_setup(
+    connection: Connection,
+    config: &ModuleConfig,
+    provider_installed: bool,
+) -> TinyBusResult<Option<Arc<dyn crate::storage::StorageProvider>>> {
+    if provider_installed {
+        Ok(None)
+    } else {
+        host_storage_for(connection, config).await
+    }
 }
 
 /// The host-storage provider to install for `config`.
@@ -112,11 +125,19 @@ pub(super) fn stdio_launchers(
     connection: Option<&Connection>,
     client: &tinymcp_bus::McpClientConfig,
 ) -> crate::transport::stdio::jailed::StdioLaunchers {
-    use crate::transport::stdio::jailed::{BusJail, JailedSpawner, StdioLaunchers};
+    use crate::transport::stdio::jailed::BusJail;
+    stdio_launchers_for_bus(client, connection.map(BusJail::connect))
+}
+
+fn stdio_launchers_for_bus(
+    client: &tinymcp_bus::McpClientConfig,
+    bus: Option<Result<crate::transport::stdio::jailed::BusJail, tinybus::Error>>,
+) -> crate::transport::stdio::jailed::StdioLaunchers {
+    use crate::transport::stdio::jailed::{JailedSpawner, StdioLaunchers};
     let Some(sandbox) = client.stdio_sandbox.clone() else {
         return StdioLaunchers::new();
     };
-    if let Some(Ok(bus)) = connection.map(BusJail::connect) {
+    if let Some(Ok(bus)) = bus {
         return StdioLaunchers::sandboxed(Arc::new(JailedSpawner::new(Arc::new(bus), sandbox)));
     }
     tracing::warn!("a stdio sandbox is configured but the sandbox module is not reachable");

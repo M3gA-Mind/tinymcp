@@ -37,6 +37,16 @@ fn ids_are_escaped_keys() {
 }
 
 #[test]
+fn composite_ids_escape_reserved_bytes_without_changing_component_boundaries() {
+    assert_eq!(
+        doc_id(&["~owner%", "part/with\0bytes"]).unwrap(),
+        "%7Eowner%25/part%2Fwith%00bytes"
+    );
+    assert_eq!(doc_id(&["owner", "~leading"]).unwrap(), "owner/~leading");
+    assert!(doc_id(&[]).is_err());
+}
+
+#[test]
 fn write_options_pin_the_collection_schema_version() {
     assert_eq!(write_options().schema, SCHEMA_VERSION);
 }
