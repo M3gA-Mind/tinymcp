@@ -15,7 +15,6 @@ pub(crate) const REGISTRY_INDEX: &str = "mcp.registry_index";
 pub(crate) const REGISTRY_INDEX_STATE: &str = "mcp.registry_index_state";
 
 /// MCP's owned collection and schema migrations.
-#[must_use]
 pub(crate) fn storage_schema() -> tinystoragedrivers_types::Result<Schema> {
     let mut schema = Schema::new(Owner::new(OWNER)?);
     for spec in collection_specs() {
