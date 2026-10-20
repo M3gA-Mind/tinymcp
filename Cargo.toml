@@ -112,14 +112,14 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 # Runtime-neutral storage ports and their shared serialized types. TinyMCP
 # owns its typed repositories and migrations; the host chooses the engines.
-tinystoragedrivers-api = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.1", rev = "3b65027b148bccc5824b7323c1455bca8cc15bf5" }
-tinystoragedrivers-types = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.1", rev = "3b65027b148bccc5824b7323c1455bca8cc15bf5" }
+tinystoragedrivers-api = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.2", rev = "7acd22d8e8061edf7ef8cc4976c666b198a203c7" }
+tinystoragedrivers-types = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.2", rev = "7acd22d8e8061edf7ef8cc4976c666b198a203c7" }
 # The module-side storage bus: `connect_storage` over the module's TinyBus
 # connection, giving the same port traits the host serves. Used only by the
 # `module` feature (a cdylib reaches storage through the host, never a file).
-tinystoragedrivers-busproxy = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.1", rev = "3b65027b148bccc5824b7323c1455bca8cc15bf5" }
-tinystoragedrivers-testkit = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.1", rev = "3b65027b148bccc5824b7323c1455bca8cc15bf5" }
-tinystoragedrivers-secrets = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.1", rev = "3b65027b148bccc5824b7323c1455bca8cc15bf5" }
+tinystoragedrivers-busproxy = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.2", rev = "7acd22d8e8061edf7ef8cc4976c666b198a203c7" }
+tinystoragedrivers-testkit = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.2", rev = "7acd22d8e8061edf7ef8cc4976c666b198a203c7" }
+tinystoragedrivers-secrets = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.2", rev = "7acd22d8e8061edf7ef8cc4976c666b198a203c7" }
 # Locating a user's home directory, to find the version-manager shim
 # directories a desktop launch's stripped PATH leaves out.
 dirs = "7"

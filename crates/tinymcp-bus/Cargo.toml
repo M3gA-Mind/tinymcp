@@ -28,10 +28,10 @@ schemars = { workspace = true, optional = true }
 base64 = { workspace = true }
 # Pure collection declaration types for the module's storage grant. The bus
 # contract does not run migrations or depend on storage implementation code.
-tinystoragedrivers-types = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.1", rev = "3b65027b148bccc5824b7323c1455bca8cc15bf5", optional = true }
+tinystoragedrivers-types = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.2", rev = "7acd22d8e8061edf7ef8cc4976c666b198a203c7", optional = true }
 
 [dev-dependencies]
-tinystoragedrivers-testkit = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.1", rev = "3b65027b148bccc5824b7323c1455bca8cc15bf5" }
+tinystoragedrivers-testkit = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.2", rev = "7acd22d8e8061edf7ef8cc4976c666b198a203c7" }
 # The WHATWG parser the `ui` link splitter must agree with: its differential
 # tests check every web link the splitter accepts against `url`'s reading.
 url = { workspace = true }
