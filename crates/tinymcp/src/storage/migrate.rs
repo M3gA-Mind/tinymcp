@@ -98,97 +98,87 @@ async fn migrate_audit_source(
 ) -> StorageResult<()> {
     const STEP: &str = "audit_streams_v2";
     let source_len = streams.len(source).await?;
-    let mut progress = if let Some(progress) =
-        migrations.stream_progress(OWNER, STEP, source).await?
-    {
-        progress
-    } else {
-        let progress = StreamProgress {
-            owner: OWNER.to_owned(),
-            step: STEP.to_owned(),
-            source: source.to_owned(),
-            target: target.to_owned(),
-            source_offset: 0,
-            target_offset: streams.len(target).await?,
+    let mut progress =
+        if let Some(progress) = migrations.stream_progress(OWNER, STEP, source).await? {
+            progress
+        } else {
+            let progress = StreamProgress {
+                owner: OWNER.to_owned(),
+                step: STEP.to_owned(),
+                source: source.to_owned(),
+                target: target.to_owned(),
+                source_offset: 0,
+                target_offset: streams.len(target).await?,
+            };
+            migrations.save_stream_progress(&progress).await?;
+            progress
         };
-        migrations.save_stream_progress(&progress).await?;
-        progress
-    };
     if progress.target != target {
         return Err(tinystoragedrivers_types::StorageError::conflict(
             "audit migration target changed after progress was recorded",
         ));
     }
     while progress.source_offset < source_len {
-            let batch = streams
-                .read_window(source, progress.source_offset, 256)
-                .await?;
-            if batch.is_empty() {
-                return Err(tinystoragedrivers_types::StorageError::conflict(
-                    "audit source ended before its reported length",
-                ));
-            }
-            let batch_size = batch.len();
-            let count = u64::try_from(batch_size).unwrap_or(u64::MAX);
-            let values = batch
-                .into_iter()
-                .map(|entry| entry.value)
-                .collect::<Vec<_>>();
-            let copied = streams
-                .read_window(target, progress.target_offset, batch_size)
-                .await?
-                .into_iter()
-                .map(|entry| entry.value)
-                .collect::<Vec<_>>();
-            if copied == values {
+        let batch = streams
+            .read_window(source, progress.source_offset, 256)
+            .await?;
+        if batch.is_empty() {
+            return Err(tinystoragedrivers_types::StorageError::conflict(
+                "audit source ended before its reported length",
+            ));
+        }
+        let batch_size = batch.len();
+        let count = u64::try_from(batch_size).unwrap_or(u64::MAX);
+        let values = batch
+            .into_iter()
+            .map(|entry| entry.value)
+            .collect::<Vec<_>>();
+        let copied = streams
+            .read_window(target, progress.target_offset, batch_size)
+            .await?
+            .into_iter()
+            .map(|entry| entry.value)
+            .collect::<Vec<_>>();
+        if copied == values {
+            progress.source_offset = progress.source_offset.saturating_add(count);
+            progress.target_offset = progress.target_offset.saturating_add(count);
+            migrations.save_stream_progress(&progress).await?;
+            continue;
+        }
+        if streams.len(target).await? != progress.target_offset {
+            return Err(tinystoragedrivers_types::StorageError::conflict(
+                "audit target changed while migrating its source stream",
+            ));
+        }
+        let first_offset = match streams
+            .append_batch_if_offset(target, progress.target_offset, values.clone())
+            .await
+        {
+            Ok(first_offset) => first_offset,
+            Err(error) if error.kind() == ErrorKind::Conflict => {
+                // Another opener may have copied this exact source batch
+                // after our checkpoint read. Accept only the identical
+                // batch at the expected offset; any different write stays
+                // a conflict and leaves the source and checkpoint intact.
+                let raced = streams
+                    .read_window(target, progress.target_offset, batch_size)
+                    .await?
+                    .into_iter()
+                    .map(|entry| entry.value)
+                    .collect::<Vec<_>>();
+                if raced != values {
+                    return Err(error);
+                }
                 progress.source_offset = progress.source_offset.saturating_add(count);
                 progress.target_offset = progress.target_offset.saturating_add(count);
                 migrations.save_stream_progress(&progress).await?;
                 continue;
             }
-            if streams.len(target).await? != progress.target_offset {
-                return Err(tinystoragedrivers_types::StorageError::conflict(
-                    "audit target changed while migrating its source stream",
-                ));
-            }
-            let first_offset = match streams
-                .append_batch_if_offset(target, progress.target_offset, values.clone())
-                .await
-            {
-                Ok(first_offset) => first_offset,
-                Err(error) if error.kind() == ErrorKind::Conflict => {
-                    // Another opener may have copied this exact source batch
-                    // after our checkpoint read. Accept only the identical
-                    // batch at the expected offset; any different write stays
-                    // a conflict and leaves the source and checkpoint intact.
-                    let raced = streams
-                        .read_window(target, progress.target_offset, batch_size)
-                        .await?
-                        .into_iter()
-                        .map(|entry| entry.value)
-                        .collect::<Vec<_>>();
-                    if raced != values {
-                        return Err(error);
-                    }
-                    progress.source_offset = progress.source_offset.saturating_add(count);
-                    progress.target_offset = progress.target_offset.saturating_add(count);
-                    migrations.save_stream_progress(&progress).await?;
-                    continue;
-                }
-                Err(error) => return Err(error),
-            };
-            progress.source_offset = progress.source_offset.saturating_add(count);
-            progress.target_offset = first_offset.saturating_add(count);
-            migrations.save_stream_progress(&progress).await?;
-        }
-        if progress.source_offset == source_len {
-            if streams.len(&source).await? != source_len {
-                return Err(tinystoragedrivers_types::StorageError::conflict(
-                    "audit source changed while it was being migrated",
-                ));
-            }
-            streams.delete_stream(&source).await?;
-        }
+            Err(error) => return Err(error),
+        };
+        progress.source_offset = progress.source_offset.saturating_add(count);
+        progress.target_offset = first_offset.saturating_add(count);
+        migrations.save_stream_progress(&progress).await?;
     }
     if progress.source_offset == source_len {
         if streams.len(source).await? != source_len {

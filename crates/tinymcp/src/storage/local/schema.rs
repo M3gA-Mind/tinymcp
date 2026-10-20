@@ -230,6 +230,10 @@ impl Schema {
     /// The shared `tsd.migrations` collection records one progress row per
     /// owner, item and step. Backends are supplied by the caller; this method
     /// never constructs an engine or an in-memory fallback.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "a migration step orders writes, source deletion, and its durable checkpoint"
+    )]
     pub(crate) async fn migrate(
         &self,
         docs: &Arc<dyn DocumentStore>,
