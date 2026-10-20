@@ -104,7 +104,7 @@ impl StoragePorts {
     /// Returns [`Error::Store`] when the port refuses a collection.
     pub fn prepare(&self) -> Result<()> {
         self.run("declaring the collections", |ports| async move {
-            let schema = super::schema::storage_schema();
+            let schema = super::schema::storage_schema()?;
             schema
                 .migrate(&ports.documents, &MigrateOptions::default())
                 .await?;

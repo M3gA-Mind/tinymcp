@@ -38,7 +38,7 @@ impl Fixture {
         let backend = MemoryBackend::new();
         let scope = Scope::new("tinymcp").unwrap();
         let storage = backend.for_scope(&scope).unwrap();
-        let schema = storage_schema();
+        let schema = storage_schema().unwrap();
         Self {
             blocking,
             storage,

@@ -72,43 +72,56 @@ pub(crate) async fn migrate_audit_streams(
         return Ok(());
     }
     for source in streams.streams(LEGACY_AUDIT).await? {
-        let suffix = if source == LEGACY_AUDIT {
-            None
-        } else {
-            source.strip_prefix("mcp_audit/")
-        };
-        if source != LEGACY_AUDIT && suffix.is_none() {
+        let Some(target) = audit_target(&source) else {
             continue;
-        }
-        let target = if let Some(suffix) = suffix {
-            format!("{AUDIT_STREAM}/{suffix}")
-        } else {
-            AUDIT_STREAM.to_owned()
         };
-        let source_len = streams.len(&source).await?;
-        let mut progress = match migrations.stream_progress(OWNER, STEP, &source).await? {
-            Some(progress) => progress,
-            None => {
-                let progress = StreamProgress {
-                    owner: OWNER.to_owned(),
-                    step: STEP.to_owned(),
-                    source: source.clone(),
-                    target: target.clone(),
-                    source_offset: 0,
-                    target_offset: streams.len(&target).await?,
-                };
-                migrations.save_stream_progress(&progress).await?;
-                progress
-            }
+        migrate_audit_source(streams, migrations, &source, &target).await?;
+    }
+    migrations.mark_done(OWNER, STEP).await
+}
+
+fn audit_target(source: &str) -> Option<String> {
+    if source == LEGACY_AUDIT {
+        Some(AUDIT_STREAM.to_owned())
+    } else {
+        source
+            .strip_prefix("mcp_audit/")
+            .map(|suffix| format!("{AUDIT_STREAM}/{suffix}"))
+    }
+}
+
+async fn migrate_audit_source(
+    streams: &dyn StreamStore,
+    migrations: &Migrations,
+    source: &str,
+    target: &str,
+) -> StorageResult<()> {
+    const STEP: &str = "audit_streams_v2";
+    let source_len = streams.len(source).await?;
+    let mut progress = if let Some(progress) =
+        migrations.stream_progress(OWNER, STEP, source).await?
+    {
+        progress
+    } else {
+        let progress = StreamProgress {
+            owner: OWNER.to_owned(),
+            step: STEP.to_owned(),
+            source: source.to_owned(),
+            target: target.to_owned(),
+            source_offset: 0,
+            target_offset: streams.len(target).await?,
         };
-        if progress.target != target {
-            return Err(tinystoragedrivers_types::StorageError::conflict(
-                "audit migration target changed after progress was recorded",
-            ));
-        }
-        while progress.source_offset < source_len {
+        migrations.save_stream_progress(&progress).await?;
+        progress
+    };
+    if progress.target != target {
+        return Err(tinystoragedrivers_types::StorageError::conflict(
+            "audit migration target changed after progress was recorded",
+        ));
+    }
+    while progress.source_offset < source_len {
             let batch = streams
-                .read_window(&source, progress.source_offset, 256)
+                .read_window(source, progress.source_offset, 256)
                 .await?;
             if batch.is_empty() {
                 return Err(tinystoragedrivers_types::StorageError::conflict(
@@ -122,7 +135,7 @@ pub(crate) async fn migrate_audit_streams(
                 .map(|entry| entry.value)
                 .collect::<Vec<_>>();
             let copied = streams
-                .read_window(&target, progress.target_offset, batch_size)
+                .read_window(target, progress.target_offset, batch_size)
                 .await?
                 .into_iter()
                 .map(|entry| entry.value)
@@ -133,13 +146,13 @@ pub(crate) async fn migrate_audit_streams(
                 migrations.save_stream_progress(&progress).await?;
                 continue;
             }
-            if streams.len(&target).await? != progress.target_offset {
+            if streams.len(target).await? != progress.target_offset {
                 return Err(tinystoragedrivers_types::StorageError::conflict(
                     "audit target changed while migrating its source stream",
                 ));
             }
             let first_offset = match streams
-                .append_batch_if_offset(&target, progress.target_offset, values.clone())
+                .append_batch_if_offset(target, progress.target_offset, values.clone())
                 .await
             {
                 Ok(first_offset) => first_offset,
@@ -149,7 +162,7 @@ pub(crate) async fn migrate_audit_streams(
                     // batch at the expected offset; any different write stays
                     // a conflict and leaves the source and checkpoint intact.
                     let raced = streams
-                        .read_window(&target, progress.target_offset, batch_size)
+                        .read_window(target, progress.target_offset, batch_size)
                         .await?
                         .into_iter()
                         .map(|entry| entry.value)
@@ -177,7 +190,15 @@ pub(crate) async fn migrate_audit_streams(
             streams.delete_stream(&source).await?;
         }
     }
-    migrations.mark_done(OWNER, STEP).await
+    if progress.source_offset == source_len {
+        if streams.len(source).await? != source_len {
+            return Err(tinystoragedrivers_types::StorageError::conflict(
+                "audit source changed while it was being migrated",
+            ));
+        }
+        streams.delete_stream(source).await?;
+    }
+    Ok(())
 }
 
 /// A step reading the legacy collection `legacy` and writing `item`, applying

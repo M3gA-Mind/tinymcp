@@ -16,15 +16,15 @@ pub(crate) const REGISTRY_INDEX_STATE: &str = "mcp.registry_index_state";
 
 /// MCP's owned collection and schema migrations.
 #[must_use]
-pub(crate) fn storage_schema() -> Schema {
-    let mut schema = Schema::new(Owner::new(OWNER).expect("fixed valid storage owner"));
+pub(crate) fn storage_schema() -> tinystoragedrivers_types::Result<Schema> {
+    let mut schema = Schema::new(Owner::new(OWNER)?);
     for spec in collection_specs() {
         schema = schema.collection_with(SCHEMA_VERSION, spec, ScopeClass::Tenant);
     }
     for step in super::migrate::steps() {
         schema = schema.step(step);
     }
-    schema
+    Ok(schema)
 }
 
 /// A document id made from escaped key components.

@@ -47,7 +47,7 @@ pub(crate) enum ScopeClass {
     Tenant,
 }
 
-/// A validated TinyFlows storage owner name.
+/// A validated `TinyFlows` storage owner name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct Owner(String);
 
@@ -280,7 +280,7 @@ impl Schema {
                     .map(|row| SourceRecord {
                         id: row.id.clone(),
                         body: row.doc.clone(),
-                        meta: row.meta.clone(),
+                        meta: row.meta,
                     })
                     .collect();
                 let outputs = (step.run)(inputs)?;
@@ -352,9 +352,9 @@ impl Schema {
                     }
                 }
                 for row in &page.items {
-                    if (source != step.item || row.meta.schema < step.to)
-                        && (source != step.item
-                            || !output_ids.contains(&(step.item.to_owned(), row.id.clone())))
+                    if source != step.item
+                        || row.meta.schema < step.to
+                            && !output_ids.contains(&(step.item.to_owned(), row.id.clone()))
                     {
                         match docs
                             .delete(source, &row.id, Precondition::Version(row.version))

@@ -1,3 +1,3 @@
-//! Small document-store primitives owned by TinyMCP.
+//! Small document-store primitives owned by `TinyMCP`.
 
 pub(crate) mod repo;

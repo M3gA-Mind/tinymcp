@@ -1263,9 +1263,7 @@ impl tinybus::service::Interface for DispatchInterface {
                 message: "the directory service is closed".into(),
             });
         }
-        let result =
-            tinybus::service::Interface::call(self.service.as_ref(), member, arguments).await;
-        result
+        tinybus::service::Interface::call(self.service.as_ref(), member, arguments).await
     }
 }
 
