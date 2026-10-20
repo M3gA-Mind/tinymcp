@@ -4,6 +4,32 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 engine_pattern='^(rusqlite|libsqlite3-sys|mongodb|bson|aws-sdk-s3|lapin|amq-protocol|sqlx|redb|sled|rocksdb|tinystoragedrivers-(document|kv|blob|queue|secrets|connect)|tinystoragedrivers)$'
 
+strip_carriage_return() {
+  printf '%s' "${1%$'\r'}"
+}
+
+tree_names() {
+  printf '%s\n' "$1" | tr -d '\r' | awk '{print $1}'
+}
+
+# Python on Windows writes CRLF to captured stdout. Exercise the same package
+# and cargo-tree parsing used below with Bash 3-compatible builtins.
+crlf_packages=$'tinymcp\r\ntinymcp-storage\r\n'
+normalized_packages=''
+while IFS= read -r package; do
+  [[ -n "$package" ]] || continue
+  package="$(strip_carriage_return "$package")"
+  normalized_packages="${normalized_packages:+${normalized_packages}$'\n'}${package}"
+done <<< "$crlf_packages"
+if [[ "$normalized_packages" != $'tinymcp\ntinymcp-storage' ]]; then
+  echo "engine gate failed its CRLF package-list self-test" >&2
+  exit 1
+fi
+if [[ "$(tree_names $'tinymcp\r\nrusqlite\r\n')" != $'tinymcp\nrusqlite' ]]; then
+  echo "engine gate failed its CRLF cargo-tree self-test" >&2
+  exit 1
+fi
+
 # Prove exact-name matching catches engines while allowing TSD ports.
 for name in rusqlite libsqlite3-sys mongodb bson aws-sdk-s3 lapin amq-protocol sqlx redb sled rocksdb tinystoragedrivers-document tinystoragedrivers-kv tinystoragedrivers-blob tinystoragedrivers-queue tinystoragedrivers-secrets tinystoragedrivers-connect tinystoragedrivers; do
   if ! printf '%s\n' "$name" | grep -xE "$engine_pattern" >/dev/null; then
@@ -39,13 +65,14 @@ if [[ -z "$libraries" ]]; then
 fi
 
 while IFS= read -r package; do
+  package="$(strip_carriage_return "$package")"
   for features in default all; do
     args=(tree --locked -p "$package" -e normal,build --prefix none)
     if [[ "$features" == all ]]; then
       args+=(--all-features)
     fi
     tree="$(cargo "${args[@]}")"
-    names="$(printf '%s\n' "$tree" | awk '{print $1}')"
+    names="$(tree_names "$tree")"
     if ! printf '%s\n' "$names" | grep -Fx "$package" >/dev/null; then
       echo "cargo tree for $package ($features) had no root package entry" >&2
       exit 1
