@@ -63,6 +63,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .await?;
 
+    verify_module_calls(&module_host, &bus, &module, info).await?;
+    broker_task.abort();
+    Ok(())
+}
+
+async fn verify_module_calls(
+    module_host: &ModuleHost,
+    bus: &MemoryBus,
+    module: &std::path::Path,
+    info: tinybus::module::ModuleInfo,
+) -> Result<(), Box<dyn std::error::Error>> {
     if info.name != env!("CARGO_PKG_NAME") {
         return Err(io::Error::other(format!(
             "loaded module `{}` instead of `{}`",
@@ -173,7 +184,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         names::INTERFACE
     );
 
-    broker_task.abort();
     Ok(())
 }
 
