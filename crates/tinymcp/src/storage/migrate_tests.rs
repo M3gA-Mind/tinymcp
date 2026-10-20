@@ -240,6 +240,17 @@ impl StreamStore for EmptyFirstRead {
         self.inner.append_batch(stream, values).await
     }
 
+    async fn append_batch_if_offset(
+        &self,
+        stream: &str,
+        expected_next_offset: u64,
+        values: Vec<Value>,
+    ) -> crate::storage::types::Result<u64> {
+        self.inner
+            .append_batch_if_offset(stream, expected_next_offset, values)
+            .await
+    }
+
     async fn read_window(
         &self,
         stream: &str,
@@ -391,6 +402,17 @@ impl StreamStore for AppendDuringRead {
         values: Vec<Value>,
     ) -> crate::storage::types::Result<u64> {
         self.inner.append_batch(stream, values).await
+    }
+
+    async fn append_batch_if_offset(
+        &self,
+        stream: &str,
+        expected_next_offset: u64,
+        values: Vec<Value>,
+    ) -> crate::storage::types::Result<u64> {
+        self.inner
+            .append_batch_if_offset(stream, expected_next_offset, values)
+            .await
     }
 
     async fn read_window(
