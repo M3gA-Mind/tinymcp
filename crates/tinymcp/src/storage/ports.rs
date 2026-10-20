@@ -5,6 +5,8 @@ use std::sync::{Arc, OnceLock};
 
 use tinystoragedrivers_api::{DocumentStore, SecretStore, Storage, StreamStore};
 use tinystoragedrivers_types::{ErrorKind, Filter, Result as StorageResult};
+#[cfg(test)]
+use tinystoragedrivers_api::StorageBackend;
 
 use super::local::{Blocking, MigrateOptions, Migrations};
 
@@ -86,7 +88,6 @@ impl StoragePorts {
     ) -> Result<Self> {
         let scope = tinystoragedrivers_types::Scope::new(scope)
             .map_err(|source| Error::store("opening a scope", source))?;
-        use tinystoragedrivers_api::StorageBackend;
         let scoped = backend
             .for_scope(&scope)
             .map_err(|source| Error::store("opening a scope", source))?;

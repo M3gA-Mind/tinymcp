@@ -318,7 +318,7 @@ impl StreamStore for CompetingAuditAppend {
     ) -> crate::storage::types::Result<u64> {
         // This is the pre-fix importer path. Make the competing opener append
         // first, then allow the unconditional append to expose duplication.
-        if stream == AUDIT_STREAM && self.raced.swap(true, Ordering::SeqCst) == false {
+        if stream == AUDIT_STREAM && !self.raced.swap(true, Ordering::SeqCst) {
             self.inner
                 .append_batch(
                     stream,
@@ -726,7 +726,7 @@ fn opening_the_audit_store_runs_owner_stream_migrations() {
     let _audit = AuditStore::open(ports).unwrap();
 
     assert_eq!(fixture.stream(AUDIT_STREAM), entries);
-    assert!(fixture.stream("mcp_audit").is_empty());
+    assert_eq!(fixture.stream("mcp_audit"), Vec::<Value>::new());
 }
 
 #[test]
@@ -769,7 +769,7 @@ fn concurrent_owner_openers_do_not_duplicate_an_audit_batch() {
         .unwrap();
 
     assert_eq!(fixture.stream(AUDIT_STREAM), [repeated.clone(), repeated]);
-    assert!(fixture.stream("mcp_audit").is_empty());
+    assert_eq!(fixture.stream("mcp_audit"), Vec::<Value>::new());
 }
 
 #[test]
@@ -777,7 +777,7 @@ fn audit_import_keeps_its_source_when_a_different_batch_wins_the_offset() {
     let fixture = Fixture::new();
     let source = json!({"timestamp_ms": 1, "tool_name": "source"});
     let competing = json!({"timestamp_ms": 9, "tool_name": "other"});
-    fixture.legacy_stream("mcp_audit", &[source.clone()]);
+    fixture.legacy_stream("mcp_audit", std::slice::from_ref(&source));
     let storage =
         StoragePorts::from_storage(&fixture.storage, Arc::clone(fixture.storage.secrets()));
     let racing = CompetingAuditAppend {
@@ -815,7 +815,7 @@ fn audit_import_only_moves_exact_legacy_stream_names() {
     let fixture = Fixture::new();
     let alias = json!({"timestamp_ms": 9});
     fixture.legacy_stream("mcp_audit", &[json!({"timestamp_ms": 1})]);
-    fixture.legacy_stream("mcp_audit_extra", &[alias.clone()]);
+    fixture.legacy_stream("mcp_audit_extra", std::slice::from_ref(&alias));
     fixture.legacy_stream("mcp_audit/archive", &[json!({"timestamp_ms": 2})]);
 
     fixture.migrate();
@@ -848,13 +848,13 @@ fn audit_import_retries_after_an_empty_page_before_source_end() {
         "an empty page before the declared end is an error"
     );
     assert_eq!(fixture.stream("mcp_audit"), entries);
-    assert!(fixture.stream(AUDIT_STREAM).is_empty());
+    assert_eq!(fixture.stream(AUDIT_STREAM), Vec::<Value>::new());
 
     fixture
         .blocking
         .block_on(migrate::migrate_audit_streams(&*streams, &migrations))
         .unwrap();
-    assert!(fixture.stream("mcp_audit").is_empty());
+    assert_eq!(fixture.stream("mcp_audit"), Vec::<Value>::new());
     assert_eq!(fixture.stream(AUDIT_STREAM), entries);
 }
 
@@ -883,7 +883,7 @@ fn audit_import_rechecks_source_length_before_deleting_it() {
         .blocking
         .block_on(migrate::migrate_audit_streams(&*streams, &migrations))
         .unwrap();
-    assert!(fixture.stream("mcp_audit").is_empty());
+    assert_eq!(fixture.stream("mcp_audit"), Vec::<Value>::new());
     assert_eq!(
         fixture.stream(AUDIT_STREAM),
         [json!({"timestamp_ms": 1}), json!({"timestamp_ms": 2})]
@@ -915,7 +915,7 @@ fn audit_import_recovers_when_append_succeeds_but_progress_write_is_lost() {
         .unwrap();
 
     assert_eq!(fixture.stream(AUDIT_STREAM), [repeated.clone(), repeated]);
-    assert!(fixture.stream("mcp_audit").is_empty());
+    assert_eq!(fixture.stream("mcp_audit"), Vec::<Value>::new());
 }
 
 #[test]

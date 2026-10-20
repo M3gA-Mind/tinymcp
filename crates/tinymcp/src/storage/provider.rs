@@ -93,6 +93,9 @@ pub fn installed_provider() -> Result<Arc<dyn StorageProvider>> {
 }
 
 #[cfg(test)]
+pub(crate) use memory::MemoryProvider;
+
+#[cfg(test)]
 mod memory {
     //! Explicit test-only memory provider.
 
@@ -103,7 +106,7 @@ mod memory {
 
     use super::*;
 
-    /// An in-memory provider used only by TinyMCP's tests.
+    /// An in-memory provider used only by `TinyMCP`'s tests.
     #[derive(Debug, Default)]
     pub(crate) struct MemoryProvider {
         backend: MemoryBackend,
@@ -142,5 +145,3 @@ mod memory {
     }
 }
 
-#[cfg(test)]
-pub(crate) use memory::MemoryProvider;
