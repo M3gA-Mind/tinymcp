@@ -3,10 +3,10 @@
 use std::future::Future;
 use std::sync::{Arc, OnceLock};
 
-use tinystoragedrivers_api::{DocumentStore, SecretStore, Storage, StreamStore};
-use tinystoragedrivers_types::{ErrorKind, Filter, Result as StorageResult};
 #[cfg(test)]
 use tinystoragedrivers_api::StorageBackend;
+use tinystoragedrivers_api::{DocumentStore, SecretStore, Storage, StreamStore};
+use tinystoragedrivers_types::{ErrorKind, Filter, Result as StorageResult};
 
 use super::local::{Blocking, MigrateOptions, Migrations};
 

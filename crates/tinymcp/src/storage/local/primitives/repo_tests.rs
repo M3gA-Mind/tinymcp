@@ -5,7 +5,7 @@ use tinystoragedrivers_api::StorageBackend;
 use tinystoragedrivers_testkit::MemoryBackend;
 use tinystoragedrivers_types::{CollectionSpec, Scope};
 
-type TestResult = Result<(), Box<dyn std::error::Error>>;
+type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct Row {
@@ -14,8 +14,7 @@ struct Row {
 
 #[tokio::test]
 async fn repo_update_is_atomic_and_conditional_delete_preserves_unmatched_rows() -> TestResult {
-    let storage = MemoryBackend::new()
-        .for_scope(&Scope::new("local")?)?;
+    let storage = MemoryBackend::new().for_scope(&Scope::new("local")?)?;
     let docs = storage.documents();
     docs.ensure_collection(&CollectionSpec::new("flows.rows"))
         .await?;
@@ -38,15 +37,7 @@ async fn repo_update_is_atomic_and_conditional_delete_preserves_unmatched_rows()
         .await?
         .ok_or("second write was not accepted")?;
     assert_eq!(row.value, 2);
-    assert!(
-        !repo
-            .delete_if("one", |row| row.value == 1)
-            .await?
-    );
-    assert!(
-        repo.delete_if("one", |row| row.value == 2)
-            .await
-            ?
-    );
+    assert!(!repo.delete_if("one", |row| row.value == 1).await?);
+    assert!(repo.delete_if("one", |row| row.value == 2).await?);
     Ok(())
 }

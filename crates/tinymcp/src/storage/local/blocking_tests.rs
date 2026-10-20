@@ -1,6 +1,6 @@
 use super::*;
 
-type TestResult = Result<(), Box<dyn std::error::Error>>;
+type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
 
 #[test]
 fn bridge_runs_futures_from_sync_and_current_thread_runtime_contexts() -> TestResult {
@@ -47,8 +47,11 @@ fn a_future_cannot_reenter_its_own_bridge() -> TestResult {
 #[test]
 fn panicking_jobs_are_reported_to_the_waiting_caller() -> TestResult {
     let bridge = Blocking::new()?;
-    let result = bridge.run(async { std::panic::panic_any("intentional bridge job failure") });
-    let error = result.err().ok_or("panicking job should close its reply channel")?;
+    let result =
+        bridge.run(async { std::panic::resume_unwind(Box::new("intentional bridge job failure")) });
+    let error = result
+        .err()
+        .ok_or("panicking job should close its reply channel")?;
     assert_eq!(error.kind(), tinystoragedrivers_types::ErrorKind::Backend);
     Ok(())
 }

@@ -3077,8 +3077,7 @@ async fn bus_provider_rejects_an_invalid_host_callback_destination() {
 
     let error = super::bus_provider(connection, &config)
         .await
-        .err()
-        .expect("invalid callback destinations must fail closed");
+        .expect_err("invalid callback destinations must fail closed");
 
     assert!(error.to_string().contains("invalid host storage callback"));
 }
