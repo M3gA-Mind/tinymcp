@@ -13,18 +13,18 @@ tenants in one process. The host owns storage; this crate asks for ports.
 
 ## What changed
 
-- No database client. The crate depends on `tinystoragedrivers-core` (the
-  `DocumentStore` and `StreamStore` ports and the `Blocking` bridge) and
-  `tinystoragedrivers-secrets` (the `SecretStore` port), by git tag, and on no
-  driver.
+- No database client. The crate depends on the `tinystoragedrivers-api` and
+  `tinystoragedrivers-types` port contracts and the bus proxy, and on no
+  storage engine.
 - `Store` and `AuditStore` open over `StoragePorts`
   (`documents`, `streams`, `secrets`). Their API stays synchronous; each call
   runs its port future on one shared bridge thread.
-- A host supplies ports in process (`StoragePorts::from_scoped`), or installs a
+- A host supplies ports in process (`StoragePorts::from_storage`), or installs a
   `StorageProvider` that maps a data directory to ports; the module's
-  `McpService` asks the installed provider. The default is an in-memory
-  provider. The storage bus client implements the same port traits, so the
-  module code is identical over the bus.
+  `McpService` asks the installed provider. Tests may install an in-memory
+  provider. A loaded module requires an explicit host callback destination and
+  never falls back to process-local memory. The storage bus client implements
+  the same port traits, so the module code is identical over the bus.
 
 ## Layout
 
@@ -55,14 +55,17 @@ names, and refuses the rest.
 - Deleting a server also removes its secret, its cached tools and its claim.
 - Audit listing reads the stream in windows and filters, sorts and pages in
   memory, so ordering matches the previous SQL (`timestamp DESC, id DESC`).
+- The v1 audit-stream import uses `StreamStore::append_batch_if_offset` to
+  serialize competing owner opens without duplicating entries. A host stream
+  backend that lacks conditional append support fails migration closed.
 
 ## Hosting as a loadable module
 
 Loaded as a `cdylib`, the module cannot reach the host's storage handles. When
-its configuration names a `data_dir` and the host has not installed a
-`StorageProvider` itself, `setup` connects to the host's
-`ai.tinyhumans.tinystorage.Storage` objects (`BusProvider`, over
-`tinystoragedrivers-busproxy::connect_storage`) and installs that as the
+its host-provided `storage_callback` destination is present and the host has
+not installed a `StorageProvider` itself, `setup` connects to that exact
+callback (`BusProvider`, over
+`tinystoragedrivers-busproxy::connect_storage_at`) and installs it as the
 provider. The host binds the scope from the broker-authenticated caller and
 enforces the grant above; the module never names a tenant. Every data
 directory answers the one host-bound scope. A host with no storage objects

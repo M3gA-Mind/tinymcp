@@ -38,10 +38,9 @@ base64 = { workspace = true }
 futures-util = { workspace = true }
 tracing = { workspace = true }
 dirs = { workspace = true }
-tinystoragedrivers-core = { workspace = true }
-tinystoragedrivers-secrets = { workspace = true }
+tinystoragedrivers-api = { workspace = true }
+tinystoragedrivers-types = { workspace = true }
 tinystoragedrivers-busproxy = { workspace = true, optional = true }
-tinystoragedrivers-client = { workspace = true, optional = true }
 uuid = { workspace = true }
 sha2 = { workspace = true }
 serde = { workspace = true }
@@ -70,6 +69,9 @@ name = "verify_github_release"
 required-features = ["module"]
 
 [dev-dependencies]
+# The compiled-module verifier must admit the artifact through TinyBus's
+# test attestation helper before exercising confidential storage calls.
+tinybus = { workspace = true, features = ["test-support"] }
 # `net` stands up the loopback test servers; `test-util` pauses the clock so a
 # five-minute timeout is testable without waiting five minutes. The rest comes
 # from the ordinary dependency entry above.
@@ -78,13 +80,16 @@ tokio = { workspace = true, features = ["net", "test-util"] }
 axum = { workspace = true, features = ["form"] }
 # Temporary directories for the command-resolution tests.
 tempfile = { workspace = true }
+# Real memory engines and decorators for storage-port tests only.
+tinystoragedrivers-testkit = { workspace = true }
+tinystoragedrivers-secrets = { workspace = true, features = ["memory"] }
 
 [features]
 default = ["module", "rustls-tls"]
 # Build the `TinyBus` adapter and the ABI exports. On by default because the
 # released artifact is a loadable module; a host consuming this crate as a path
 # dependency turns it off and links neither `tinybus` nor its module SDK.
-module = ["dep:tinybus", "dep:tinybus-module", "dep:tinystoragedrivers-busproxy", "dep:tinystoragedrivers-client"]
+module = ["dep:tinybus", "dep:tinybus-module", "dep:tinystoragedrivers-busproxy"]
 # Link the TinyBus module into a host binary with Rust-addressable entry points.
 static-link = ["module"]
 # Bundle a TLS stack, so a build needs no system OpenSSL. The default.

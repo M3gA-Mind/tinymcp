@@ -2,8 +2,8 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use crate::storage::types::{DocumentStoreExt as _, Precondition, Query};
 use serde_json::Value;
-use tinystoragedrivers_core::{DocumentStoreExt as _, Precondition, Query};
 
 use super::types::Store;
 

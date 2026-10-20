@@ -16,8 +16,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::storage::types::Filter;
 use serde_json::json;
-use tinystoragedrivers_core::Filter;
 
 use super::types::Store;
 use crate::Error;
@@ -994,7 +994,7 @@ fn meta_of(
     ports: &StoragePorts,
     collection: &'static str,
     id: &str,
-) -> tinystoragedrivers_core::Meta {
+) -> crate::storage::types::Meta {
     let id = id.to_string();
     ports
         .run("reading metadata", move |ports| async move {

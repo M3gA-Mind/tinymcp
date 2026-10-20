@@ -6,10 +6,9 @@
 //! the `mcp/` owner prefix cannot be declared as a schema item.
 
 use serde::Serialize;
-use tinystoragedrivers_core::CollectionSpec;
-use tinystoragedrivers_core::schema::Item;
+use tinystoragedrivers_types::CollectionSpec;
 
-use super::schema::storage_schema;
+use super::schema::AUDIT_STREAM;
 
 /// Prefix of the secret holding one server's environment and OAuth values:
 /// the full name is this prefix plus the install identifier.
@@ -37,26 +36,14 @@ pub struct StorageGrant {
 /// The module's storage grant, generated from [`storage_schema`].
 #[must_use]
 pub fn grant() -> StorageGrant {
-    let schema = storage_schema();
-    let mut collections = Vec::new();
-    let mut searchable = Vec::new();
-    let mut streams = Vec::new();
-    for item in schema.items {
-        match item {
-            Item::Collection { name, spec, .. } => {
-                if spec.search.is_some() {
-                    searchable.push(name.clone());
-                }
-                collections.push(name);
-            }
-            Item::Stream { name, .. } => streams.push(name),
-            Item::Blobs { .. } | Item::Secrets { .. } => {}
-        }
-    }
+    let collections = collection_specs()
+        .into_iter()
+        .map(|spec| spec.name)
+        .collect();
     StorageGrant {
         collections,
-        searchable,
-        streams,
+        searchable: Vec::new(),
+        streams: vec![AUDIT_STREAM.to_owned()],
         secrets: vec![
             format!("{ENV_SECRET_PREFIX}*"),
             CACHE_KEY_SECRET.to_string(),
@@ -67,12 +54,5 @@ pub fn grant() -> StorageGrant {
 /// The collections the module declares, with their indexes.
 #[must_use]
 pub fn collection_specs() -> Vec<CollectionSpec> {
-    storage_schema()
-        .items
-        .into_iter()
-        .filter_map(|item| match item {
-            Item::Collection { spec, .. } => Some(spec),
-            _ => None,
-        })
-        .collect()
+    tinymcp_bus::storage::collection_specs()
 }

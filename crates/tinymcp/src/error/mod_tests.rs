@@ -354,7 +354,7 @@ fn one_of_every_variant() -> Vec<Error> {
     errors.push(serde_json::from_str::<u8>("x").unwrap_err().into());
     errors.push(Error::store(
         "listing",
-        tinystoragedrivers_core::StorageError::not_found("missing"),
+        crate::storage::types::StorageError::not_found("missing"),
     ));
     errors.push(Error::StoreIo {
         path: "/nowhere".into(),

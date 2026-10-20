@@ -3,12 +3,11 @@
 use std::future::Future;
 use std::sync::{Arc, OnceLock};
 
-use tinystoragedrivers_core::{
-    Blocking, DocumentStore, MemoryStorage, Scope, ScopedStorage, StorageBackend, StreamStore,
-};
-use tinystoragedrivers_secrets::{MemorySecrets, SecretStore};
+use tinystoragedrivers_api::{DocumentStore, SecretStore, Storage, StreamStore};
+use tinystoragedrivers_types::{ErrorKind, Filter, Result as StorageResult};
 
-use super::grant::collection_specs;
+use super::local::{Blocking, MigrateOptions, Migrations};
+
 use super::schema::SERVERS;
 use crate::error::{Error, Result};
 
@@ -53,7 +52,7 @@ impl StoragePorts {
     /// Uses a scoped backend handle for documents and streams, and `secrets`
     /// for secret values.
     #[must_use]
-    pub fn from_scoped(scoped: &ScopedStorage, secrets: Arc<dyn SecretStore>) -> Self {
+    pub fn from_storage(scoped: &Storage, secrets: Arc<dyn SecretStore>) -> Self {
         Self::new(
             Arc::clone(scoped.documents()),
             Arc::clone(scoped.streams()),
@@ -66,8 +65,9 @@ impl StoragePorts {
     /// # Errors
     ///
     /// Returns [`Error::Store`] when the scope cannot be opened.
-    pub fn memory() -> Result<Self> {
-        Self::memory_scoped(&MemoryStorage::new(), "local")
+    #[cfg(test)]
+    pub(crate) fn memory() -> Result<Self> {
+        Self::memory_scoped(&tinystoragedrivers_testkit::MemoryBackend::new(), "local")
     }
 
     /// The `scope` of a shared in-memory backend.
@@ -79,12 +79,21 @@ impl StoragePorts {
     /// # Errors
     ///
     /// Returns [`Error::Store`] when the scope is invalid.
-    pub fn memory_scoped(backend: &MemoryStorage, scope: &str) -> Result<Self> {
-        let scope = Scope::new(scope).map_err(|source| Error::store("opening a scope", source))?;
+    #[cfg(test)]
+    pub(crate) fn memory_scoped(
+        backend: &tinystoragedrivers_testkit::MemoryBackend,
+        scope: &str,
+    ) -> Result<Self> {
+        let scope = tinystoragedrivers_types::Scope::new(scope)
+            .map_err(|source| Error::store("opening a scope", source))?;
+        use tinystoragedrivers_api::StorageBackend;
         let scoped = backend
             .for_scope(&scope)
             .map_err(|source| Error::store("opening a scope", source))?;
-        Ok(Self::from_scoped(&scoped, Arc::new(MemorySecrets::new())))
+        Ok(Self::from_storage(
+            &scoped,
+            Arc::new(tinystoragedrivers_secrets::MemorySecrets::new()),
+        ))
     }
 
     /// Asks the documents port for the collections [`grant`](super::grant)
@@ -95,9 +104,12 @@ impl StoragePorts {
     /// Returns [`Error::Store`] when the port refuses a collection.
     pub fn prepare(&self) -> Result<()> {
         self.run("declaring the collections", |ports| async move {
-            for spec in collection_specs() {
-                ports.documents.ensure_collection(&spec).await?;
-            }
+            let schema = super::schema::storage_schema();
+            schema
+                .migrate(&ports.documents, &MigrateOptions::default())
+                .await?;
+            let migration = Migrations::new(&ports.documents, super::schema::OWNER);
+            super::migrate::migrate_audit_streams(&*ports.streams, &migration).await?;
             Ok(())
         })
     }
@@ -112,13 +124,13 @@ impl StoragePorts {
         self.run("checking for stored state", |ports| async move {
             let servers = ports
                 .documents
-                .count(SERVERS, &tinystoragedrivers_core::Filter::default())
+                .count(SERVERS, &Filter::default())
                 .await
                 .or_else(|error| {
                     // A collection never declared here holds nothing, and the
                     // probe must not create it; any other failure (an
                     // unavailable or refusing port) is not "no installs".
-                    if error.kind() == tinystoragedrivers_core::ErrorKind::NotFound {
+                    if error.kind() == ErrorKind::NotFound {
                         Ok(0)
                     } else {
                         Err(error)
@@ -138,7 +150,7 @@ impl StoragePorts {
     ) -> Result<T>
     where
         T: Send + 'static,
-        F: Future<Output = tinystoragedrivers_core::Result<T>> + Send + 'static,
+        F: Future<Output = StorageResult<T>> + Send + 'static,
     {
         let future = work(self.clone());
         bridge()
@@ -150,7 +162,7 @@ impl StoragePorts {
 }
 
 /// The one bridge thread every store in the process shares.
-fn bridge() -> tinystoragedrivers_core::Result<&'static Blocking> {
+fn bridge() -> StorageResult<&'static Blocking> {
     static BRIDGE: OnceLock<Blocking> = OnceLock::new();
     if let Some(bridge) = BRIDGE.get() {
         return Ok(bridge);
