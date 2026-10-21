@@ -3,7 +3,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use super::*;
-use serde_json::{Value, json};
+use serde_json::json;
 
 fn legacy_server(storage_id: &str) -> LegacyServerDocument {
     LegacyServerDocument {
@@ -34,7 +34,10 @@ fn server_conversion_rekeys_and_renames_times_without_losing_optional_or_unknown
     assert_eq!(converted.body.last_connected_ms, Some(1_700_000_100_000));
     assert_eq!(converted.body.transport.as_deref(), Some("stdio"));
     assert_eq!(converted.body.catalog_managed, Some(true));
-    assert_eq!(converted.body.extra["future_owner_field"], json!({"preserve": true}));
+    assert_eq!(
+        converted.body.extra["future_owner_field"],
+        json!({"preserve": true})
+    );
 
     let serialized = serde_json::to_value(converted.body).unwrap();
     assert_eq!(serialized["installed_ms"], 1_700_000_000_000_i64);
@@ -111,12 +114,17 @@ fn name_claim_conversion_rejects_malformed_time_and_empty_key() {
 
 #[test]
 fn audit_stream_conversion_matches_only_the_legacy_family() {
-    assert_eq!(legacy_audit_stream_target("mcp_audit"), Some("mcp.audit".into()));
+    assert_eq!(
+        legacy_audit_stream_target("mcp_audit"),
+        Some("mcp.audit".into())
+    );
     assert_eq!(
         legacy_audit_stream_target("mcp_audit/workspace/a"),
         Some("mcp.audit/workspace/a".into())
     );
     assert_eq!(legacy_audit_stream_target("mcp_audit_extra"), None);
-    assert_eq!(legacy_audit_stream_target("mcp_audit/archive"), Some("mcp.audit/archive".into()));
-    let _: Option<Value> = None;
+    assert_eq!(
+        legacy_audit_stream_target("mcp_audit/archive"),
+        Some("mcp.audit/archive".into())
+    );
 }

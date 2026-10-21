@@ -18,32 +18,49 @@ pub struct LegacyServerDocument {
 /// The previous release's server record shape.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LegacyServerBody {
+    /// The server's stable owner ID.
     pub server_id: String,
+    /// Its qualified registry name.
     pub qualified_name: String,
+    /// Its display name.
     pub display_name: String,
+    /// Optional user-facing description.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Optional registry icon URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon_url: Option<String>,
+    /// The command launcher kind.
     pub command_kind: String,
+    /// The command or executable.
     pub command: String,
+    /// Arguments passed to the command.
     #[serde(default)]
     pub args: Vec<String>,
+    /// Names of environment variables required by the server.
     #[serde(default)]
     pub env_keys: Vec<String>,
+    /// Optional opaque configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<Value>,
+    /// Installation timestamp in the old field.
     pub installed_at: i64,
+    /// Optional last successful connection timestamp in the old field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_connected_at: Option<i64>,
+    /// Optional transport discriminator.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport: Option<String>,
+    /// Optional deployment URL for remote transport.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deployment_url: Option<String>,
+    /// Whether the server is enabled when the field was present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    /// Whether the server came from a managed catalog when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub catalog_managed: Option<bool>,
+    /// Unrecognized fields retained verbatim by the conversion.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -60,32 +77,49 @@ pub struct ServerDocument {
 /// The current owner document body for an installed MCP server.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ServerDocumentBody {
+    /// The server's stable owner ID.
     pub server_id: String,
+    /// Its qualified registry name.
     pub qualified_name: String,
+    /// Its display name.
     pub display_name: String,
+    /// Optional user-facing description.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Optional registry icon URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon_url: Option<String>,
+    /// The command launcher kind.
     pub command_kind: String,
+    /// The command or executable.
     pub command: String,
+    /// Arguments passed to the command.
     #[serde(default)]
     pub args: Vec<String>,
+    /// Names of environment variables required by the server.
     #[serde(default)]
     pub env_keys: Vec<String>,
+    /// Optional opaque configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<Value>,
+    /// Installation timestamp in Unix milliseconds.
     pub installed_ms: i64,
+    /// Optional last successful connection timestamp in Unix milliseconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_connected_ms: Option<i64>,
+    /// Optional transport discriminator.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport: Option<String>,
+    /// Optional deployment URL for remote transport.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deployment_url: Option<String>,
+    /// Whether the server is enabled when the field was present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    /// Whether the server came from a managed catalog when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub catalog_managed: Option<bool>,
+    /// Unrecognized fields retained verbatim by the conversion.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -128,10 +162,14 @@ pub fn convert_legacy_server(
 /// A qualified-name claim written by the previous collection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LegacyServerNameClaim {
+    /// The qualified name held by this claim.
     pub qualified_name: String,
+    /// The server ID that owns the claim.
     pub server_id: String,
+    /// Optional timestamp in the old field.
     #[serde(default)]
     pub claimed_at: Option<i64>,
+    /// Unknown fields retained by conversion.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -141,10 +179,13 @@ pub struct LegacyServerNameClaim {
 pub struct ServerNameClaim {
     /// The composite-key-escaped ID, derived from `qualified_name`.
     pub id: String,
+    /// The qualified name held by this claim.
     pub qualified_name: String,
+    /// The server ID that owns the claim.
     pub server_id: String,
     /// A missing legacy timestamp means the claim was already expired.
     pub claimed_ms: i64,
+    /// Unknown fields retained by conversion.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }

@@ -15,8 +15,8 @@ use tinystoragedrivers_types::{ErrorKind, Result as StorageResult};
 
 use super::local::{Migrations, SourceRecord, Step, StreamProgress, TargetRecord};
 use super::schema::{
-    OWNER, REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE, SERVER_NAMES, SERVERS,
-    TOOL_CACHE, doc_id,
+    OWNER, REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE, SERVER_NAMES, SERVERS, TOOL_CACHE,
+    doc_id,
 };
 use tinymcp_bus::storage::{
     LegacyServerDocument, LegacyServerNameClaim, convert_legacy_server,
@@ -268,7 +268,10 @@ fn claim(
     let converted = convert_legacy_server_name_claim(claim)?;
     let id = converted.id;
     let mut body = serde_json::Map::new();
-    body.insert("qualified_name".to_owned(), Value::String(converted.qualified_name));
+    body.insert(
+        "qualified_name".to_owned(),
+        Value::String(converted.qualified_name),
+    );
     body.insert("server_id".to_owned(), Value::String(converted.server_id));
     body.insert("claimed_ms".to_owned(), Value::from(converted.claimed_ms));
     body.extend(converted.extra);
