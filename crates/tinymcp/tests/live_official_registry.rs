@@ -149,5 +149,5 @@ async fn call_calculate(
 }
 
 #[cfg(test)]
-#[path = "live_official_registry_tests.rs"]
+#[path = "support/live_official_registry_tests.rs"]
 mod tests;
