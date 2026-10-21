@@ -71,6 +71,7 @@ pub(crate) struct IsolatedRegistry {
 }
 
 impl IsolatedRegistry {
+    #[allow(clippy::expect_used)]
     pub(crate) fn new() -> Self {
         let scratch = tempfile::tempdir().expect("create isolated npm home");
         let npm_cache = scratch.path().join("npm-cache");
@@ -152,6 +153,7 @@ impl IsolatedRegistry {
     }
 }
 
+#[allow(clippy::expect_used, clippy::panic)]
 pub(crate) async fn assert_search_lists(
     registries: &Registries,
     store: &Store,

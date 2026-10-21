@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 /// Searches the official registry, installs its local npm calculator package,
 /// and calls one deterministic computation. Requires network access and `npx`.
 #[tokio::test]
-#[ignore = "live: official MCP registry and npm package server"]
+#[allow(clippy::expect_used, clippy::panic)]
 async fn live_official_registry_server_can_be_installed_connected_and_called() {
     if std::env::var_os("TINYMCP_LIVE_REGISTRY").as_deref() != Some(std::ffi::OsStr::new("1")) {
         eprintln!("skipping live registry test; set TINYMCP_LIVE_REGISTRY=1 to enable it");

@@ -1,7 +1,5 @@
 //! A loopback Streamable HTTP server shared by registry tests.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -54,6 +52,7 @@ pub(crate) async fn mcp_server_with_reply_and_initialization_failure(
     serve(state).await
 }
 
+#[allow(clippy::expect_used, clippy::panic)]
 async fn serve(state: Arc<Server>) -> (String, Arc<Server>) {
     let app = Router::new()
         .route(
