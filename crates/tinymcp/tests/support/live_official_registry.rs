@@ -34,6 +34,9 @@ impl StdioSpawner for IsolatedSpawner {
                 "/home".to_owned(),
                 "--tmpfs".to_owned(),
                 "/root".to_owned(),
+                "--tmpfs".to_owned(),
+                "/tmp".to_owned(),
+                "--unshare-net".to_owned(),
                 "--bind".to_owned(),
                 workspace.to_string_lossy().into_owned(),
                 "/sandbox".to_owned(),
@@ -56,6 +59,9 @@ impl StdioSpawner for IsolatedSpawner {
                 let value = value.replace(&workspace.to_string_lossy().to_string(), "/sandbox");
                 command.env(key, value);
             }
+            if launch.program.file_name().is_some_and(|name| name == "npx") {
+                command.env("npm_config_offline", "true");
+            }
             command.spawn()
         })
     }
@@ -68,6 +74,7 @@ pub(crate) struct IsolatedRegistry {
     pub(crate) catalog_store: Store,
     pub(crate) server_env: BTreeMap<String, String>,
     pub(crate) stderr_path: PathBuf,
+    npm_cache: PathBuf,
 }
 
 impl IsolatedRegistry {
@@ -149,6 +156,28 @@ impl IsolatedRegistry {
             catalog_store,
             server_env,
             stderr_path,
+            npm_cache,
+        }
+    }
+
+    pub(crate) async fn cache_npm_package(&self, package: &str) -> Result<(), String> {
+        let mut command = tokio::process::Command::new("npm");
+        command
+            .args(["cache", "add", package, "--cache"])
+            .arg(&self.npm_cache)
+            .env_clear()
+            .envs(&self.server_env);
+        let output = tokio::time::timeout(std::time::Duration::from_secs(90), command.output())
+            .await
+            .map_err(|_| "npm package cache prefetch exceeded 90 seconds".to_owned())?
+            .map_err(|error| format!("could not prefetch npm package: {error}"))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "npm package cache prefetch failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ))
         }
     }
 }

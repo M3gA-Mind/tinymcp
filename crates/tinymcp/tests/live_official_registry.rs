@@ -56,6 +56,20 @@ async fn run_live_flow() {
         "{SERVER_NAME} unexpectedly advertises a hosted endpoint"
     );
 
+    let npm_package = detail
+        .connections
+        .iter()
+        .find(|connection| connection.r#type == "stdio")
+        .and_then(|connection| connection.example_config.as_ref())
+        .and_then(|config| config.get("args"))
+        .and_then(Value::as_array)
+        .and_then(|args| args.iter().filter_map(Value::as_str).last())
+        .expect("npm stdio connection advertises its package argument");
+    fixture
+        .cache_npm_package(npm_package)
+        .await
+        .expect("prefetch npm package before starting it in the offline sandbox");
+
     // The registry supplies an unversioned npx command, so npm resolves the
     // current package version when this live test installs it.
     let installed = registry
