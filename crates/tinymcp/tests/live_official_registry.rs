@@ -19,6 +19,7 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
     assert!(outcome.is_ok(), "live registry acceptance flow exceeded 180 seconds");
 }
 
+#[allow(clippy::expect_used, clippy::panic)]
 async fn run_live_flow() {
     const SERVER_NAME: &str = "io.github.headlessherm-creator/polymath-megablaster-mcp";
 
