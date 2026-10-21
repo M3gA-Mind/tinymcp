@@ -25,17 +25,53 @@ impl StdioSpawner for IsolatedSpawner {
         let workspace = self.workspace.clone();
         let stderr_path = self.stderr_path.clone();
         Box::pin(async move {
+            let runtime_root = node_runtime_root(&launch)?;
+            let program = launch
+                .program
+                .canonicalize()
+                .map_err(|error| io::Error::other(format!("resolve stdio program: {error}")))?;
+            let program_relative = program.strip_prefix(&runtime_root).map_err(|_| {
+                io::Error::other("stdio program is outside the resolved Node runtime")
+            })?;
             let stderr = File::create(stderr_path)?;
             let mut args = vec![
+                "--tmpfs".to_owned(),
+                "/".to_owned(),
+                "--dir".to_owned(),
+                "/usr".to_owned(),
+                "--dir".to_owned(),
+                "/lib".to_owned(),
+                "--dir".to_owned(),
+                "/lib64".to_owned(),
+                "--dir".to_owned(),
+                "/proc".to_owned(),
+                "--dir".to_owned(),
+                "/dev".to_owned(),
+                "--dir".to_owned(),
+                "/tmp".to_owned(),
+                "--dir".to_owned(),
+                "/node".to_owned(),
                 "--ro-bind".to_owned(),
-                "/".to_owned(),
-                "/".to_owned(),
-                "--tmpfs".to_owned(),
-                "/home".to_owned(),
-                "--tmpfs".to_owned(),
-                "/root".to_owned(),
+                runtime_root.to_string_lossy().into_owned(),
+                "/node".to_owned(),
+                "--ro-bind".to_owned(),
+                "/usr/bin".to_owned(),
+                "/usr/bin".to_owned(),
+                "--ro-bind".to_owned(),
+                "/usr/lib".to_owned(),
+                "/usr/lib".to_owned(),
+                "--ro-bind".to_owned(),
+                "/lib".to_owned(),
+                "/lib".to_owned(),
+                "--ro-bind".to_owned(),
+                "/lib64".to_owned(),
+                "/lib64".to_owned(),
                 "--tmpfs".to_owned(),
                 "/tmp".to_owned(),
+                "--proc".to_owned(),
+                "/proc".to_owned(),
+                "--dev".to_owned(),
+                "/dev".to_owned(),
                 "--unshare-net".to_owned(),
                 "--bind".to_owned(),
                 workspace.to_string_lossy().into_owned(),
@@ -43,7 +79,7 @@ impl StdioSpawner for IsolatedSpawner {
                 "--chdir".to_owned(),
                 "/sandbox".to_owned(),
                 "--".to_owned(),
-                launch.program.to_string_lossy().into_owned(),
+                format!("/node/{}", program_relative.to_string_lossy()),
             ];
             args.extend(launch.args);
             let mut command = tokio::process::Command::new("bwrap");
@@ -56,9 +92,17 @@ impl StdioSpawner for IsolatedSpawner {
                 .env_clear()
                 .current_dir(&workspace);
             for (key, value) in &launch.env {
-                let value = value.replace(&workspace.to_string_lossy().to_string(), "/sandbox");
+                let value = value
+                    .replace(&workspace.to_string_lossy().to_string(), "/sandbox")
+                    .replace(&runtime_root.to_string_lossy().to_string(), "/node");
                 command.env(key, value);
             }
+            let path = launch
+                .env
+                .get("PATH")
+                .map(String::as_str)
+                .unwrap_or_default();
+            command.env("PATH", sandbox_path(path, &runtime_root));
             if launch.program.file_name().is_some_and(|name| name == "npx") {
                 command.env("npm_config_offline", "true");
             }
@@ -166,7 +210,8 @@ impl IsolatedRegistry {
             .args(["cache", "add", package, "--cache"])
             .arg(&self.npm_cache)
             .env_clear()
-            .envs(&self.server_env);
+            .envs(&self.server_env)
+            .kill_on_drop(true);
         let output = tokio::time::timeout(std::time::Duration::from_secs(90), command.output())
             .await
             .map_err(|_| "npm package cache prefetch exceeded 90 seconds".to_owned())?
@@ -180,6 +225,46 @@ impl IsolatedRegistry {
             ))
         }
     }
+}
+
+fn node_runtime_root(launch: &StdioLaunch) -> io::Result<PathBuf> {
+    let path = launch
+        .env
+        .get("PATH")
+        .map(String::as_str)
+        .unwrap_or_default();
+    for directory in std::env::split_paths(path) {
+        let node = directory.join("node");
+        if node.is_file() {
+            let node = node.canonicalize()?;
+            return node
+                .parent()
+                .and_then(Path::parent)
+                .map(Path::to_path_buf)
+                .ok_or_else(|| io::Error::other("resolved Node executable has no runtime root"));
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::NotFound,
+        "could not resolve Node from the stdio launch PATH",
+    ))
+}
+
+fn sandbox_path(path: &str, runtime_root: &Path) -> String {
+    let entries = std::env::split_paths(path)
+        .filter_map(|entry| {
+            if let Ok(relative) = entry.strip_prefix(runtime_root) {
+                Some(format!("/node/{}", relative.to_string_lossy()))
+            } else if entry == Path::new("/usr/bin") {
+                Some(entry.to_string_lossy().into_owned())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    std::env::join_paths(entries)
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "/node/bin:/usr/bin".to_owned())
 }
 
 #[allow(clippy::expect_used, clippy::panic)]
