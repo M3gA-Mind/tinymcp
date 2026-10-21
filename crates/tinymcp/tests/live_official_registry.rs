@@ -147,3 +147,7 @@ async fn call_calculate(
         "`calculate` did not return 4 for 2 + 2: {text}"
     );
 }
+
+#[cfg(test)]
+#[path = "live_official_registry_tests.rs"]
+mod tests;

@@ -69,6 +69,7 @@ impl StdioSpawner for IsolatedSpawner {
                 "/lib64".to_owned(),
                 "--tmpfs".to_owned(),
                 "/tmp".to_owned(),
+                "--unshare-pid".to_owned(),
                 "--proc".to_owned(),
                 "/proc".to_owned(),
                 "--dev".to_owned(),
@@ -98,12 +99,7 @@ impl StdioSpawner for IsolatedSpawner {
                     .replace(&runtime_root.to_string_lossy().to_string(), "/node");
                 command.env(key, value);
             }
-            let path = launch
-                .env
-                .iter()
-                .find(|(key, _)| key == "PATH")
-                .map(|(_, value)| value.as_str())
-                .unwrap_or_default();
+            let path = launch_path(launch);
             command.env("PATH", sandbox_path(path, &runtime_root));
             if launch.program.file_name().is_some_and(|name| name == "npx") {
                 command.env("npm_config_offline", "true");
@@ -230,12 +226,7 @@ impl IsolatedRegistry {
 }
 
 fn node_runtime_root(launch: &StdioLaunch) -> io::Result<PathBuf> {
-    let path = launch
-        .env
-        .iter()
-        .find(|(key, _)| key == "PATH")
-        .map(|(_, value)| value.as_str())
-        .unwrap_or_default();
+    let path = launch_path(launch);
     for directory in std::env::split_paths(path) {
         let node = directory.join("node");
         if node.is_file() {
@@ -258,6 +249,15 @@ fn node_runtime_root(launch: &StdioLaunch) -> io::Result<PathBuf> {
         io::ErrorKind::NotFound,
         "could not resolve Node from the stdio launch PATH",
     ))
+}
+
+pub(crate) fn launch_path(launch: &StdioLaunch) -> &str {
+    launch
+        .env
+        .iter()
+        .rev()
+        .find(|(key, _)| key == "PATH")
+        .map_or("", |(_, value)| value.as_str())
 }
 
 fn node_runtime_program(launch: &StdioLaunch, runtime_root: &Path) -> io::Result<PathBuf> {
