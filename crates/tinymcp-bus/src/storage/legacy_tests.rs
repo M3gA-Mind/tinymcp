@@ -4,6 +4,7 @@
 
 use super::*;
 use serde_json::json;
+use std::collections::BTreeMap;
 
 fn legacy_server(storage_id: &str) -> LegacyServerDocument {
     LegacyServerDocument {
@@ -113,7 +114,7 @@ fn name_claim_conversion_rejects_malformed_time_and_empty_key() {
         qualified_name: String::new(),
         server_id: "srv-1".into(),
         claimed_at: None,
-        extra: Default::default(),
+        extra: BTreeMap::default(),
     };
     assert!(convert_legacy_server_name_claim(empty).is_err());
 }
