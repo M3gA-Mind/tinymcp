@@ -4,6 +4,13 @@
 //! provision. Migration execution and storage behavior live in `tinymcp`.
 
 mod schema;
+mod legacy;
+
+pub use legacy::{
+    LegacyServerBody, LegacyServerDocument, LegacyServerNameClaim, ServerDocument,
+    ServerDocumentBody, ServerNameClaim, convert_legacy_server,
+    convert_legacy_server_name_claim, legacy_audit_stream_target,
+};
 
 pub use schema::{
     AUDIT_STREAM, MIGRATIONS, OWNER, REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE,
