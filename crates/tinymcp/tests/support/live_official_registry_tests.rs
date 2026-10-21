@@ -22,7 +22,7 @@ fn uses_the_last_path_override_for_node_resolution() {
 #[test]
 fn accepts_registry_package_specs_and_rejects_urls_or_paths() {
     assert!(support::is_registry_package_spec(
-        "io.github.headlessherm-creator/polymath-megablaster-mcp"
+        "polymath-megablaster-mcp"
     ));
     assert!(support::is_registry_package_spec(
         "@modelcontextprotocol/sdk@1.0.0"
