@@ -489,6 +489,28 @@ fn a_v1_server_moves_to_the_v2_collection_with_ms_time_fields() {
 }
 
 #[test]
+fn a_malformed_legacy_server_is_not_converted_or_consumed() {
+    let fixture = Fixture::new();
+    let mut malformed = v1_server();
+    malformed["installed_at"] = json!("yesterday");
+    fixture.legacy("mcp_servers", "srv-1", malformed.clone());
+
+    let documents = Arc::clone(fixture.storage.documents());
+    let error = fixture
+        .blocking
+        .block_on(fixture.schema.migrate(&documents, &MigrateOptions::new()))
+        .expect_err("malformed legacy timestamps must fail the owner migration");
+
+    assert!(
+        error
+            .to_string()
+            .contains("malformed legacy MCP server record")
+    );
+    assert_eq!(fixture.get("mcp_servers", "srv-1").unwrap().doc, malformed);
+    assert!(fixture.get(SERVERS, "srv-1").is_none());
+}
+
+#[test]
 fn opening_the_registry_store_runs_the_owner_document_migrations() {
     let fixture = Fixture::new();
     fixture.legacy("mcp_servers", "srv-1", v1_server());
@@ -579,6 +601,37 @@ fn a_name_claim_is_keyed_by_the_qualified_name_and_keeps_its_time() {
     let old = fixture.get(SERVER_NAMES, "@acme%2Fold").unwrap();
     assert_eq!(old.doc["claimed_ms"], 0);
     assert_eq!(fixture.all("mcp_server_names").len(), 0);
+}
+
+#[test]
+fn a_malformed_legacy_name_claim_is_not_converted_or_consumed() {
+    let fixture = Fixture::new();
+    let malformed = json!({
+        "qualified_name": "@acme/files",
+        "server_id": "srv-1",
+        "claimed_at": "yesterday"
+    });
+    fixture.legacy("mcp_server_names", "legacy-claim-files", malformed.clone());
+
+    let documents = Arc::clone(fixture.storage.documents());
+    let error = fixture
+        .blocking
+        .block_on(fixture.schema.migrate(&documents, &MigrateOptions::new()))
+        .expect_err("malformed legacy claim times must fail the owner migration");
+
+    assert!(
+        error
+            .to_string()
+            .contains("malformed legacy MCP server-name claim")
+    );
+    assert_eq!(
+        fixture
+            .get("mcp_server_names", "legacy-claim-files")
+            .unwrap()
+            .doc,
+        malformed
+    );
+    assert!(fixture.get(SERVER_NAMES, "@acme%2Ffiles").is_none());
 }
 
 #[test]
