@@ -26,16 +26,34 @@ impl StdioSpawner for IsolatedSpawner {
         let stderr_path = self.stderr_path.clone();
         Box::pin(async move {
             let stderr = File::create(stderr_path)?;
-            let mut command = tokio::process::Command::new(&launch.program);
+            let mut args = vec![
+                "--ro-bind".to_owned(),
+                "/".to_owned(),
+                "/".to_owned(),
+                "--tmpfs".to_owned(),
+                "/home".to_owned(),
+                "--tmpfs".to_owned(),
+                "/root".to_owned(),
+                "--bind".to_owned(),
+                workspace.to_string_lossy().into_owned(),
+                "/sandbox".to_owned(),
+                "--chdir".to_owned(),
+                "/sandbox".to_owned(),
+                "--".to_owned(),
+                launch.program.to_string_lossy().into_owned(),
+            ];
+            args.extend(launch.args);
+            let mut command = tokio::process::Command::new("bwrap");
             command
-                .args(&launch.args)
+                .args(args)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::from(stderr))
                 .kill_on_drop(true)
                 .env_clear()
-                .current_dir(launch.cwd.as_ref().unwrap_or(&workspace));
+                .current_dir(&workspace);
             for (key, value) in &launch.env {
+                let value = value.replace(&workspace.to_string_lossy().to_string(), "/sandbox");
                 command.env(key, value);
             }
             command.spawn()

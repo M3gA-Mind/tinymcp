@@ -1,6 +1,4 @@
-//! An ignored smoke test against the official MCP registry and a listed server.
-
-#![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+//! An opt-in smoke test against the official MCP registry and a listed server.
 
 #[path = "support/live_official_registry.rs"]
 mod support;
@@ -12,6 +10,16 @@ use serde_json::{Value, json};
 #[tokio::test]
 #[ignore = "live: official MCP registry and npm package server"]
 async fn live_official_registry_server_can_be_installed_connected_and_called() {
+    if std::env::var_os("TINYMCP_LIVE_REGISTRY").as_deref() != Some(std::ffi::OsStr::new("1")) {
+        eprintln!("skipping live registry test; set TINYMCP_LIVE_REGISTRY=1 to enable it");
+        return;
+    }
+
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(180), run_live_flow()).await;
+    assert!(outcome.is_ok(), "live registry acceptance flow exceeded 180 seconds");
+}
+
+async fn run_live_flow() {
     const SERVER_NAME: &str = "io.github.headlessherm-creator/polymath-megablaster-mcp";
 
     let fixture = support::IsolatedRegistry::new();
@@ -50,9 +58,12 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
         .install(SERVER_NAME, fixture.server_env.clone(), None)
         .await
         .expect("install official npm package");
-    let connected = registry
-        .connect(&installed.server.server_id)
+    let connected = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        registry.connect(&installed.server.server_id),
+    )
         .await
+        .expect("stdio server initialization exceeded 30 seconds")
         .unwrap_or_else(|error| {
             panic!(
                 "connect installed package failed: {error}; child stderr: {}",
