@@ -98,7 +98,7 @@ pub use registry::{
     AppliedServer, ConfigApplyReport, Connections, McpRegistry, MemoryPendingStore, OAuthFlow,
     PENDING_TTL_SECS, PendingAuthorization, PendingAuthorizationStore, ProbeOutcome,
     REMOTE_REQUEST_TIMEOUT, SecretRef, SecretVault, ServerRef, Store, SupervisedHost, Supervisor,
-    SupervisorConfig, SupervisorEvent, TickReport,
+    SupervisorConfig, SupervisorEvent, TickReport, guard_public_endpoint,
 };
 pub use server::{
     ClientSession, McpServerHandler, RequestContext, RequestHeaders, ResourceSpec, ServerInfo,

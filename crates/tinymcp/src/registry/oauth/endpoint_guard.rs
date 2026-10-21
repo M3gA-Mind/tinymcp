@@ -19,16 +19,17 @@ use crate::error::{Error, Result};
 /// Refuses `raw` unless it is `https` and every address its host resolves to
 /// is public. `what` names the endpoint in the error.
 ///
-/// A single blocked record is enough to refuse. The returned addresses can be
-/// pinned to the HTTP client so the eventual connection uses the vetted result
-/// instead of resolving the name again. Resolution runs on the blocking pool
-/// so a slow resolver cannot stall the executor.
+/// A single blocked record is enough to refuse. Callers that connect to `raw`
+/// must pin the returned addresses to the HTTP client; otherwise, the eventual
+/// connection may resolve the name again and use an unchecked address.
+/// Resolution runs on the blocking pool so a slow resolver cannot stall the
+/// executor.
 ///
 /// # Errors
 ///
 /// [`Error::MalformedResponse`] when the URL is unsafe, or
 /// [`Error::EndpointResolution`] when DNS resolution could not complete.
-pub(crate) async fn guard_endpoint(raw: &str, what: &str) -> Result<Vec<SocketAddr>> {
+pub async fn guard_endpoint(raw: &str, what: &str) -> Result<Vec<SocketAddr>> {
     let refuse = |why: String| Error::malformed(format!("{what} endpoint refused: {why}"));
     let url = Url::parse(raw).map_err(|error| refuse(format!("not a valid url: {error}")))?;
     if url.scheme() != "https" {

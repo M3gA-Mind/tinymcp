@@ -28,6 +28,12 @@ fn the_contract_types_resolve_at_the_crate_root_to_the_bus_definitions() {
     assert_ne!(freshness, RegistryFreshness::Live);
 }
 
+#[tokio::test]
+async fn the_public_endpoint_guard_resolves_at_the_crate_root() {
+    let refused = tinymcp::guard_public_endpoint("http://example.com/mcp", "MCP").await;
+    assert!(refused.is_err());
+}
+
 #[test]
 fn the_pending_sign_in_store_api_resolves_at_the_crate_root() {
     use std::sync::Arc;
