@@ -264,9 +264,10 @@ fn sandbox_path(path: &str, runtime_root: &Path) -> String {
             }
         })
         .collect::<Vec<_>>();
-    std::env::join_paths(entries)
-        .map(|path| path.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| "/node/bin:/usr/bin".to_owned())
+    std::env::join_paths(entries).map_or_else(
+        |_| "/node/bin:/usr/bin".to_owned(),
+        |path| path.to_string_lossy().into_owned(),
+    )
 }
 
 #[allow(clippy::expect_used, clippy::panic)]
