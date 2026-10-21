@@ -63,7 +63,7 @@ async fn run_live_flow() {
         .and_then(|connection| connection.example_config.as_ref())
         .and_then(|config| config.get("args"))
         .and_then(Value::as_array)
-        .and_then(|args| args.iter().filter_map(Value::as_str).last())
+        .and_then(|args| args.iter().filter_map(Value::as_str).next_back())
         .expect("npm stdio connection advertises its package argument");
     fixture
         .cache_npm_package(npm_package)
@@ -105,25 +105,34 @@ async fn run_live_flow() {
         "local `calculate` tool's required argument schema changed: {}",
         calculate.input_schema
     );
+    call_calculate(registry, &installed.server.server_id, &fixture.stderr_path).await;
 
+    registry
+        .disconnect(&installed.server.server_id)
+        .await
+        .expect("disconnect installed package");
+}
+
+#[allow(clippy::expect_used, clippy::panic)]
+async fn call_calculate(
+    registry: &tinymcp::registry::McpRegistry,
+    server_id: &str,
+    stderr: &std::path::Path,
+) {
     let result = registry
-        .tool_call(
-            &installed.server.server_id,
-            "calculate",
-            json!({ "expression": "2 + 2" }),
-        )
+        .tool_call(server_id, "calculate", json!({ "expression": "2 + 2" }))
         .await
         .unwrap_or_else(|error| {
             panic!(
                 "local `calculate` call failed: {error}; child stderr: {}",
-                support::child_diagnostics(&fixture.stderr_path)
+                support::child_diagnostics(stderr)
             )
         });
     assert!(
         !result.is_error,
         "local `calculate` returned an MCP error: {}; child stderr: {}",
         result.result,
-        support::child_diagnostics(&fixture.stderr_path)
+        support::child_diagnostics(stderr)
     );
     let text = result
         .result
@@ -137,9 +146,4 @@ async fn run_live_flow() {
         Some(&json!("4")),
         "`calculate` did not return 4 for 2 + 2: {text}"
     );
-
-    registry
-        .disconnect(&installed.server.server_id)
-        .await
-        .expect("disconnect installed package");
 }
