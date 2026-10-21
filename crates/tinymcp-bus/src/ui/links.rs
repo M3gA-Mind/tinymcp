@@ -4,11 +4,9 @@
 //! scheme that could run script or reach the host is blocked, and an image
 //! asset is not an action.
 
-use std::sync::LazyLock;
-
-use regex::Regex;
 use serde_json::Value;
 
+use super::web_url::WebUrl;
 use super::{LinkClass, UiLink, UiLinkKind};
 
 /// The most links one result surfaces.
@@ -43,9 +41,10 @@ const IMAGE_EXTENSIONS: &[&str] = &[
     "jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "bmp", "ico", "heic", "heif", "tif", "tiff",
 ];
 
-static URL_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
-    Regex::new(r#"(?i)\b([a-z][a-z0-9+.\-]{1,31})://[^\s"'<>\x60{}|\\^\[\]]+"#).ok()
-});
+/// The longest scheme the scanner recognizes, in bytes.
+const MAX_SCHEME_LEN: usize = 32;
+/// Characters that end a URL in free text, besides whitespace.
+const URL_TERMINATORS: &str = "\"'<>`{}|\\^[]";
 
 /// How `url` is classified, by scheme and, for `http(s)`, by path.
 #[must_use]
@@ -67,15 +66,10 @@ pub fn classify_link(url: &str) -> LinkClass {
         return LinkClass::Blocked;
     }
     match scheme.as_str() {
-        "http" | "https" => match url::Url::parse(url) {
-            Ok(parsed) if parsed.host_str().is_some_and(|host| !host.is_empty()) => {
-                if image_path(&parsed) {
-                    LinkClass::Image
-                } else {
-                    LinkClass::Web
-                }
-            }
-            _ => LinkClass::Blocked,
+        "http" | "https" => match WebUrl::split(url) {
+            Some(web) if image_path(web.path) => LinkClass::Image,
+            Some(_) => LinkClass::Web,
+            None => LinkClass::Blocked,
         },
         _ => LinkClass::Handoff,
     }
@@ -95,11 +89,11 @@ pub fn link_kind(class: LinkClass) -> Option<UiLinkKind> {
 /// Whether an `http(s)` URL points at an image asset rather than a page.
 #[must_use]
 pub fn is_image_url(url: &str) -> bool {
-    url::Url::parse(url).is_ok_and(|parsed| image_path(&parsed))
+    WebUrl::split(url).is_some_and(|web| image_path(web.path))
 }
 
-fn image_path(parsed: &url::Url) -> bool {
-    let path = parsed.path().to_ascii_lowercase();
+pub(super) fn image_path(path: &str) -> bool {
+    let path = path.to_ascii_lowercase();
     if path.contains("/image/upload/") {
         return true;
     }
@@ -112,22 +106,18 @@ fn image_path(parsed: &url::Url) -> bool {
 #[must_use]
 pub fn extract_links(structured: Option<&Value>, text: &str) -> Vec<UiLink> {
     let mut out: Vec<UiLink> = Vec::new();
-    let Some(pattern) = URL_RE.as_ref() else {
-        return out;
-    };
     let mut strings = Vec::new();
     if let Some(value) = structured {
         collect_strings(value, 0, &mut strings);
     }
     strings.push(text);
     for haystack in strings {
-        for found in pattern.find_iter(haystack) {
+        for found in url_spans(haystack) {
             if out.len() >= MAX_LINKS {
                 return out;
             }
-            let url = trim_trailing(found.as_str());
+            let url = trim_trailing(found);
             let Some(kind) = link_kind(classify_link(url)) else {
-                tracing::trace!("[mcp_ui] skipped a link that is not an action");
                 continue;
             };
             if out.iter().any(|link| link.url == url) {
@@ -140,6 +130,59 @@ pub fn extract_links(structured: Option<&Value>, text: &str) -> Vec<UiLink> {
         }
     }
     out
+}
+
+/// Every `scheme://rest` run in `haystack`, leftmost first and
+/// non-overlapping: a scheme of 2 to [`MAX_SCHEME_LEN`] ASCII letters, digits,
+/// `+`, `.` or `-` that starts with a letter and a word boundary, then `://`,
+/// then everything up to whitespace or a [`URL_TERMINATORS`] character.
+///
+/// Only finds candidates; [`classify_link`] decides what each one is.
+fn url_spans(haystack: &str) -> Vec<&str> {
+    let mut spans = Vec::new();
+    let mut at = 0;
+    while let Some(next) = haystack[at..].chars().next() {
+        let at_boundary = haystack[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !is_word(c));
+        if at_boundary && let Some(len) = url_len(&haystack[at..]) {
+            spans.push(&haystack[at..at + len]);
+            at += len;
+        } else {
+            at += next.len_utf8();
+        }
+    }
+    spans
+}
+
+/// The length of the URL `text` starts with, if it starts with one.
+fn url_len(text: &str) -> Option<usize> {
+    let scheme = text
+        .bytes()
+        .take_while(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'.' | b'-'))
+        // Bounded, so text like `a.a.a.…` (a boundary every other byte) stays
+        // linear rather than rescanning the run from every boundary.
+        .take(MAX_SCHEME_LEN + 1)
+        .count();
+    if !(2..=MAX_SCHEME_LEN).contains(&scheme)
+        || !text.as_bytes()[0].is_ascii_alphabetic()
+        || !text[scheme..].starts_with("://")
+    {
+        return None;
+    }
+    let start = scheme + "://".len();
+    let body: usize = text[start..]
+        .chars()
+        .take_while(|c| !c.is_whitespace() && !URL_TERMINATORS.contains(*c))
+        .map(char::len_utf8)
+        .sum();
+    (body > 0).then_some(start + body)
+}
+
+/// A word character, for the boundary before a scheme.
+fn is_word(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
 }
 
 fn collect_strings<'a>(value: &'a Value, depth: usize, out: &mut Vec<&'a str>) {
@@ -178,3 +221,7 @@ fn trim_trailing(url: &str) -> &str {
 #[cfg(test)]
 #[path = "links_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "links_scan_tests.rs"]
+mod scan_tests;

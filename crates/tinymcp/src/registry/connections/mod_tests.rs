@@ -927,6 +927,33 @@ mod stdio {
     /// and its exec, this test's still-open descriptor makes the kernel refuse
     /// the exec with `ETXTBSY`, and the suite runs its cases in parallel. The
     /// interpreter is never written by the test, so there is nothing to race.
+    /// Connections whose "sandbox" is the direct spawn: the fixtures here run
+    /// real `/bin/sh` servers and test the transport, not the jail.
+    fn direct_stdio() -> Connections {
+        use crate::transport::stdio::DirectSpawner;
+        use crate::transport::stdio::jailed::StdioLaunchers;
+        Connections::new().with_stdio(StdioLaunchers::sandboxed(std::sync::Arc::new(
+            DirectSpawner,
+        )))
+    }
+
+    #[tokio::test]
+    async fn an_installed_subprocess_server_is_refused_without_a_sandbox() {
+        let server = stdio_install(&responder());
+        let store = store_with(&server);
+        let error = Connections::new()
+            .connect(
+                &store,
+                &OAuthFlow::new(None).unwrap(),
+                &McpClientIdentityConfig::default(),
+                None,
+                &server,
+            )
+            .await
+            .expect_err("no sandbox, no start");
+        assert!(error.to_string().contains("without a sandbox"), "{error}");
+    }
+
     fn stdio_install(body: &str) -> InstalledServer {
         InstalledServer {
             command: "/bin/sh".to_string(),
@@ -940,7 +967,7 @@ mod stdio {
     async fn a_subprocess_server_connects_and_reports_its_tools() {
         let server = stdio_install(&responder());
         let store = store_with(&server);
-        let connections = Connections::new();
+        let connections = direct_stdio();
 
         let tools = connections
             .connect(
@@ -961,7 +988,7 @@ mod stdio {
     async fn a_connected_subprocess_server_answers_a_tool_call() {
         let server = stdio_install(&responder());
         let store = store_with(&server);
-        let connections = Connections::new();
+        let connections = direct_stdio();
         connections
             .connect(
                 &store,
@@ -1003,7 +1030,7 @@ mod stdio {
 
         let server = stdio_install(&body);
         let store = store_with(&server);
-        let connections = Connections::new();
+        let connections = direct_stdio();
         connections
             .connect(
                 &store,
@@ -1027,7 +1054,7 @@ mod stdio {
     async fn disconnecting_every_server_ends_each_session() {
         let server = stdio_install(&responder());
         let store = store_with(&server);
-        let connections = Connections::new();
+        let connections = direct_stdio();
         connections
             .connect(
                 &store,
@@ -1063,7 +1090,7 @@ mod stdio {
         // It connects rather than failing, which is what proves the filter runs
         // before the spawn rather than the child rejecting the variable.
         assert!(
-            Connections::new()
+            direct_stdio()
                 .connect(
                     &store,
                     &OAuthFlow::new(None).unwrap(),

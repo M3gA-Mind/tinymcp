@@ -123,14 +123,13 @@ pub fn select_source(view: &UiCallView) -> Option<UiSource> {
     let metas = [view.tool_meta.as_ref(), view.result_meta.as_ref()];
     for (path, flavor) in TEMPLATE_KEYS {
         for meta in metas {
-            if let Some(uri) = meta_str(meta, path).map(str::trim) {
-                if is_ui_uri(uri) {
-                    return Some(UiSource::Uri {
-                        uri: uri.to_string(),
-                        flavor,
-                    });
-                }
-                tracing::debug!(tool = %view.tool, "[mcp_ui] ignored a non-ui:// resource URI");
+            if let Some(uri) = meta_str(meta, path).map(str::trim)
+                && is_ui_uri(uri)
+            {
+                return Some(UiSource::Uri {
+                    uri: uri.to_string(),
+                    flavor,
+                });
             }
         }
     }
@@ -154,11 +153,7 @@ pub fn select_source(view: &UiCallView) -> Option<UiSource> {
 pub fn bounded(value: Option<&Value>, limit: usize) -> Option<Value> {
     let value = value.filter(|value| !value.is_null())?;
     let size = serde_json::to_vec(value).map(|bytes| bytes.len()).ok()?;
-    if size > limit {
-        tracing::debug!(size, limit, "[mcp_ui] dropped an oversized field");
-        return None;
-    }
-    Some(value.clone())
+    (size <= limit).then(|| value.clone())
 }
 
 /// The presentation for one call, or `None` when it offered neither a widget
@@ -186,12 +181,7 @@ pub fn resolve_presentation(view: &UiCallView) -> Option<ResolvedUi> {
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_string();
-            match resource_from_contents(std::slice::from_ref(&resource), &uri) {
-                Ok(document) => inline_document = Some(document),
-                Err(error) => {
-                    tracing::debug!(tool = %view.tool, %error, "[mcp_ui] embedded widget rejected");
-                }
-            }
+            inline_document = resource_from_contents(std::slice::from_ref(&resource), &uri).ok();
             (None, UiFlavor::McpApps)
         }
         None => (None, UiFlavor::McpApps),
@@ -199,13 +189,6 @@ pub fn resolve_presentation(view: &UiCallView) -> Option<ResolvedUi> {
     if resource_uri.is_none() && inline_document.is_none() && links.is_empty() {
         return None;
     }
-    tracing::debug!(
-        server_id = %view.server_id,
-        tool = %view.tool,
-        frame = resource_uri.is_some() || inline_document.is_some(),
-        links = links.len(),
-        "[mcp_ui] tool call offered UI"
-    );
     Some(ResolvedUi {
         presentation: McpUiPresentation {
             kind: MCP_UI_KIND.to_string(),

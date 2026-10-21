@@ -14,6 +14,7 @@ use crate::config_servers::McpServerRegistry;
 use crate::error::Result;
 use crate::processing::bound_mcp_tool_result;
 use crate::registry::{McpRegistry, SecretRef, Store, SupervisorConfig};
+use crate::transport::stdio::jailed::StdioLaunchers;
 use tinybus::Connection;
 use tinymcp_bus::{
     AuthDetection, ClassifiedStaticToolCall, ConfigApplyReport, ConfigApplyResponse,
@@ -37,6 +38,9 @@ pub struct McpService {
     /// persisted or installed — they exist because the host said so, and they
     /// change only when its configuration does.
     static_servers: McpServerRegistry,
+    /// How stdio servers start, for every registry this service builds
+    /// (including the one-shot registry of a configured call).
+    stdio: StdioLaunchers,
     audit: AuditStore,
     /// The storage provider this service was built over, so a state probe
     /// asks the same backend the service reads and writes.
@@ -75,6 +79,31 @@ impl McpService {
         config: &ModuleConfig,
         provider: Arc<dyn crate::storage::StorageProvider>,
     ) -> Result<Self> {
+        Self::with_provider_and_stdio(config, provider, StdioLaunchers::new())
+    }
+
+    /// [`Self::new`], starting stdio servers through `stdio`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::new`].
+    pub fn new_with_stdio(config: &ModuleConfig, stdio: StdioLaunchers) -> Result<Self> {
+        Self::with_provider_and_stdio(config, crate::storage::installed_provider(), stdio)
+    }
+
+    /// [`Self::with_provider`], starting stdio servers through `stdio`.
+    ///
+    /// Without a sandbox in `stdio`, only servers the config marks
+    /// operator-trusted can start; installed servers never can.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::new`].
+    pub fn with_provider_and_stdio(
+        config: &ModuleConfig,
+        provider: Arc<dyn crate::storage::StorageProvider>,
+        stdio: StdioLaunchers,
+    ) -> Result<Self> {
         // No data directory means nothing to persist, which is the right shape
         // for a host that only wants its statically declared servers.
         let ports = match config.data_dir.as_deref() {
@@ -83,18 +112,22 @@ impl McpService {
         };
         let (store, audit) = (Store::open(ports.clone())?, AuditStore::open(ports)?);
 
-        let dynamic = Arc::new(McpRegistry::new(
-            store,
-            config.client.registry_auth.clone(),
-            config.client.client_identity.clone(),
-            config.client.proxy.clone(),
-        )?);
+        let dynamic = Arc::new(
+            McpRegistry::new(
+                store,
+                config.client.registry_auth.clone(),
+                config.client.client_identity.clone(),
+                config.client.proxy.clone(),
+            )?
+            .with_stdio(stdio.clone()),
+        );
 
-        let static_servers = McpServerRegistry::from_config(&config.client)?;
+        let static_servers = McpServerRegistry::from_config_with(&config.client, stdio.clone())?;
 
         Ok(Self {
             dynamic,
             static_servers,
+            stdio,
             audit,
             provider,
             server_sessions: crate::server::bridge::ServerSessions::default(),
@@ -717,7 +750,7 @@ impl McpService {
             servers: vec![request.server],
             ..tinymcp_bus::McpClientConfig::default()
         };
-        let registry = match McpServerRegistry::from_config(&config) {
+        let registry = match McpServerRegistry::from_config_with(&config, self.stdio.clone()) {
             Ok(registry) => registry,
             Err(error) => {
                 let outcome = tinymcp_bus::McpCallOutcome::failed(

@@ -2,8 +2,8 @@
 
 Shared serialized MCP vocabulary, fixed tool declarations, errors, method names
 and contract version. The implementation re-exports the same definitions.
-Normal/build dependency closures contain only serialization/schema utilities,
-including with all features enabled. No optional runtime, transport, native or
+Normal/build dependency closures contain only serialization/schema utilities
+and `base64`, including with all features enabled. No optional runtime, transport, native or
 TinyTools dependency belongs here.
 
 DTO constructors, fixed catalog/schema declarations and serde helpers are
@@ -67,7 +67,24 @@ Contract 1.24 carries each tool's `_meta` on `McpTool`, so `ListTools`,
 with `ResourceTooLarge`, and redact the server's known credentials from the
 contents' text and `_meta`.
 
-Contract 1.25 keeps a listed tool's `annotations` on `McpRemoteTool`
+Contract 1.25 moves the pure tool-UI rules (template resolution, widget
+document checks, link classification and extraction, the widget tool-call and
+rendering policy) from `tinymcp::ui` into `ui`, so a host renders tool UI
+without linking the module crate. `tinymcp::ui` re-exports them. Link
+classification splits `http(s)` hosts by hand, fail-closed, instead of with a
+URL parser. No member was added or removed. Behaviour change (fail-closed):
+`http(s)` links with userinfo, IDN/punycode or %-encoded hosts, IPv6,
+non-canonical IPv4, bad ports or dot segments are now `Blocked` (previously
+`Web`).
+
+Contract 1.26 adds `McpClientConfig::stdio_sandbox` and
+`McpServerConfig::operator_trusted`: a stdio server runs in the host's jail, or
+unconfined only when the operator trusts it; with neither it is refused.
+Contract 1.27 adds `StdioSandboxConfig::enforcement`
+(`StdioSandboxEnforcement`), letting the host choose `Declared` for a backend
+with partial enforcement; the default stays `Enforced`.
+
+Contract 1.28 keeps a listed tool's `annotations` on `McpRemoteTool`
 (`readOnlyHint`, `destructiveHint`, …), with `McpRemoteTool::is_read_only`,
 so a host can tell a tool that only reads from one that changes something
 before it calls it. The field is optional and omitted when absent, and

@@ -1635,7 +1635,7 @@ async fn switchable_registry() -> (String, Arc<Switchable>) {
 fn expire_cache(store: &Store) {
     store.age_collection(
         crate::storage::REGISTRY_CACHE,
-        &["cached_at"],
+        &["cached_ms"],
         24 * 60 * 60 * 1_000,
     );
 }
@@ -1652,6 +1652,25 @@ fn budgets_with_cooldown(cooldown: Duration) -> RegistryTimeouts {
 /// An adapter with [`budgets_with_cooldown`].
 fn adapter_with_cooldown(cooldown: Duration) -> McpOfficialRegistry {
     McpOfficialRegistry::with_timeouts(budgets_with_cooldown(cooldown)).expect("the adapter builds")
+}
+
+/// The search budget for tests that time a search made during the cooldown.
+///
+/// Such a search must not wait on the network at all. The request count is
+/// what proves nothing was sent; the wall clock only adds that the adapter did
+/// not wait out the budget either. With the 100ms of [`short_budgets`] those
+/// two are indistinguishable from scheduler noise on a shared CI runner, so
+/// these tests use a budget long enough that half of it is a bound no idle
+/// call comes near, and a call that waited the budget cannot meet.
+const COOLDOWN_SEARCH_BUDGET: Duration = Duration::from_secs(1);
+
+/// An adapter cooling down for a minute, with [`COOLDOWN_SEARCH_BUDGET`].
+fn cooling_adapter() -> McpOfficialRegistry {
+    McpOfficialRegistry::with_timeouts(RegistryTimeouts {
+        search: COOLDOWN_SEARCH_BUDGET,
+        ..budgets_with_cooldown(Duration::from_secs(60))
+    })
+    .expect("the adapter builds")
 }
 
 #[tokio::test]
@@ -1890,7 +1909,7 @@ async fn a_stalled_search_skips_the_network_for_the_cooldown() {
     let (base, state) = switchable_registry().await;
     let auth = auth_at(&base);
     let store = store();
-    let adapter = adapter_with_cooldown(Duration::from_secs(60));
+    let adapter = cooling_adapter();
 
     state.set(STALLED);
     adapter
@@ -1907,7 +1926,7 @@ async fn a_stalled_search_skips_the_network_for_the_cooldown() {
 
     assert_eq!(state.requests(), after_first, "nothing was sent");
     assert!(
-        started.elapsed() < Duration::from_millis(100),
+        started.elapsed() < COOLDOWN_SEARCH_BUDGET / 2,
         "{:?}",
         started.elapsed()
     );
@@ -1916,7 +1935,7 @@ async fn a_stalled_search_skips_the_network_for_the_cooldown() {
             operation, timeout, ..
         } => {
             assert_eq!(operation, RegistryOperation::Search);
-            assert_eq!(timeout, Duration::from_millis(100));
+            assert_eq!(timeout, COOLDOWN_SEARCH_BUDGET);
         }
         other => panic!("expected a registry timeout, got {other:?}"),
     }
@@ -2062,7 +2081,7 @@ fn every_browse_page_shares_the_browse_prefix_and_no_search_page_does() {
 fn a_local_match_skips_cached_pages_that_do_not_decode() {
     let store = store();
     store
-        .cache(&search_cache_key("", 1, 20), "not json")
+        .cache(&search_cache_key("", 1, 20), r#""not an envelope""#)
         .unwrap();
     store
         .cache(
@@ -2152,7 +2171,7 @@ async fn a_cooling_down_search_answers_from_cached_server_details() {
     let store = store_with_details(&["com.notion/mcp"]).await;
     let (base, state) = switchable_registry().await;
     let auth = auth_at(&base);
-    let adapter = adapter_with_cooldown(Duration::from_secs(60));
+    let adapter = cooling_adapter();
 
     state.set(STALLED);
     adapter
@@ -2169,7 +2188,7 @@ async fn a_cooling_down_search_answers_from_cached_server_details() {
 
     assert_eq!(state.requests(), after_first, "nothing was sent");
     assert!(
-        started.elapsed() < Duration::from_millis(100),
+        started.elapsed() < COOLDOWN_SEARCH_BUDGET / 2,
         "{:?}",
         started.elapsed()
     );
@@ -2244,7 +2263,7 @@ fn a_detail_offering_no_way_to_connect_is_not_matched() {
     store
         .cache(
             &format!("{}io.example/zzq-broken", super::DETAIL_CACHE_PREFIX),
-            "not json",
+            r#""not a detail""#,
         )
         .unwrap();
 

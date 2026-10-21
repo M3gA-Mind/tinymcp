@@ -22,7 +22,9 @@ crate-type = ["rlib", "cdylib"]
 # Re-exported wholesale from `src/lib.rs` so a consumer takes one dependency
 # rather than two, and so `tinymcp::GreetRequest` and
 # `tinymcp_bus::GreetRequest` are the same type.
-tinymcp-bus = { workspace = true }
+tinymcp-bus = { workspace = true, features = ["storage"] }
+# The TinyBox contract for the jailed stdio launcher; see the workspace entry.
+tinybox-bus = { workspace = true }
 # Only the `TinyBus` adapter needs these, and only a `cdylib` build needs the
 # adapter. A host taking this crate as an ordinary library calls the API
 # directly and should not link a bus to do it — see the `module` feature.
@@ -48,11 +50,9 @@ serde_json = { workspace = true }
 # serving MCP over stdio alone, or not serving at all, links neither.
 axum = { workspace = true, optional = true }
 tokio-stream = { workspace = true, optional = true }
-# TinyTools Std owns generic lexical sanitization.
-# The remaining optional dependencies support the `tinytools::Tool` adapter over a
+# The optional dependencies support the `tinytools::Tool` adapter over a
 # server's advertised tools. See the note on the workspace entry.
 tinytools.workspace = true
-tinytools-std.workspace = true
 async-trait = { workspace = true, optional = true }
 anyhow = { workspace = true, optional = true }
 # MCP module results must be scrubbed before they cross the bus. Endpoint
@@ -60,8 +60,6 @@ anyhow = { workspace = true, optional = true }
 # path, not only the optional `tinytools::Tool` adapter.
 url = { workspace = true }
 urlencoding = { workspace = true }
-# Finding URLs in tool results, for the `ui` feature's link extraction.
-regex = { workspace = true, optional = true }
 
 [[example]]
 name = "verify_module"
@@ -107,8 +105,9 @@ server-http = ["dep:axum", "dep:tokio-stream", "tokio/net"]
 tools = ["dep:async-trait", "dep:anyhow"]
 # Tool-provided UI for hosts (`tinymcp::ui`): widget template resolution,
 # widget document checks, link classification, and the widget tool-call and
-# rendering policy. Off by default; a host that renders tool UI turns it on.
-ui = ["dep:regex"]
+# rendering policy. The rules live in `tinymcp_bus::ui`, which a host can take
+# without this crate; this feature only re-exports them here. Off by default.
+ui = []
 
 [lints]
 workspace = true

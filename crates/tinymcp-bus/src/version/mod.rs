@@ -34,8 +34,17 @@
 /// (`require_identifier`, `ServerDetail::server_json`, `explain_not_connected`) that
 /// hosts previously copied; no member was added or removed. 1.24 adds tool
 /// `_meta` on `McpTool` and the `ReadResource` and `StaticReadResource`
-/// members. 1.25 adds the optional `annotations` on `McpRemoteTool`.
-pub const CONTRACT_VERSION: (u32, u32) = (1, 25);
+/// members. 1.25 moves the pure tool-UI rules into `ui`; no member was added
+/// or removed. Behaviour change (fail-closed): `http(s)` links with userinfo,
+/// IDN/punycode or %-encoded hosts, IPv6, non-canonical IPv4, bad ports or dot
+/// segments are now `Blocked` (previously `Web`). 1.26 adds
+/// `McpClientConfig::stdio_sandbox` and `McpServerConfig::operator_trusted`:
+/// a stdio server runs in the host's jail, or unconfined only when the operator
+/// trusts it; with neither it is refused. 1.27 adds
+/// `StdioSandboxConfig::enforcement` (`StdioSandboxEnforcement`), letting the
+/// host choose `Declared` for a backend with partial enforcement; the default
+/// stays `Enforced`. 1.28 adds the optional `annotations` on `McpRemoteTool`.
+pub const CONTRACT_VERSION: (u32, u32) = (1, 28);
 
 /// Returns whether a host holding [`CONTRACT_VERSION`] can bind to a module
 /// reporting `module`.
