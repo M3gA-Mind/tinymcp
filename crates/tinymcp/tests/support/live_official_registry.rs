@@ -263,6 +263,9 @@ pub(crate) fn is_registry_package_spec(package: &str) -> bool {
             .chars()
             .all(|character| character.is_ascii_alphanumeric() || "@/._-".contains(character))
         && package.matches('/').count() <= 1
+        && package.split_once('/').is_none_or(|(scope, name)| {
+            scope.starts_with('@') && scope.len() > 1 && !name.is_empty()
+        })
 }
 
 fn node_runtime_root(launch: &StdioLaunch) -> io::Result<PathBuf> {
