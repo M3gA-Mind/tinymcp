@@ -179,6 +179,13 @@ pub struct LegacyServerNameClaim {
 pub struct ServerNameClaim {
     /// The composite-key-escaped ID, derived from `qualified_name`.
     pub id: String,
+    /// The current owner document body.
+    pub body: ServerNameClaimBody,
+}
+
+/// The current owner body for one qualified-name claim.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerNameClaimBody {
     /// The qualified name held by this claim.
     pub qualified_name: String,
     /// The server ID that owns the claim.
@@ -201,10 +208,12 @@ pub fn convert_legacy_server_name_claim(
 ) -> tinystoragedrivers_types::Result<ServerNameClaim> {
     Ok(ServerNameClaim {
         id: doc_id(&[&claim.qualified_name])?,
-        qualified_name: claim.qualified_name,
-        server_id: claim.server_id,
-        claimed_ms: claim.claimed_at.unwrap_or(0),
-        extra: claim.extra,
+        body: ServerNameClaimBody {
+            qualified_name: claim.qualified_name,
+            server_id: claim.server_id,
+            claimed_ms: claim.claimed_at.unwrap_or(0),
+            extra: claim.extra,
+        },
     })
 }
 
