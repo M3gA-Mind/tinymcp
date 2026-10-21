@@ -77,6 +77,19 @@ URL parser. No member was added or removed. Behaviour change (fail-closed):
 non-canonical IPv4, bad ports or dot segments are now `Blocked` (previously
 `Web`).
 
+Contract 1.26 adds `McpClientConfig::stdio_sandbox` and
+`McpServerConfig::operator_trusted`: a stdio server runs in the host's jail, or
+unconfined only when the operator trusts it; with neither it is refused.
+Contract 1.27 adds `StdioSandboxConfig::enforcement`
+(`StdioSandboxEnforcement`), letting the host choose `Declared` for a backend
+with partial enforcement; the default stays `Enforced`.
+
+Contract 1.28 keeps a listed tool's `annotations` on `McpRemoteTool`
+(`readOnlyHint`, `destructiveHint`, …), with `McpRemoteTool::is_read_only`,
+so a host can tell a tool that only reads from one that changes something
+before it calls it. The field is optional and omitted when absent, and
+`StaticScrubTools` scrubs it like the rest of a tool's metadata.
+
 Library consumers bring implementation extension traits into scope for moved
 DTO methods. Contract-only hosts call the compiled module. See
 [the relocation specification](../../docs/specs/pure-vocabulary.md) for public
