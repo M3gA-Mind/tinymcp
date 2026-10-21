@@ -72,6 +72,8 @@ while IFS= read -r file; do
   mkdir -p "$stage/$(dirname "$file")"
   cp "$file" "$stage/$file"
 done < <(jq -r '.[]' <<<"$extras")
+# Keep packaged module directories from being writable by group or other users.
+find "$stage" -type d -exec chmod go-w {} +
 archive="$output/${crate}-${version}-${host}.tar.gz"
 tar -C "$stage" -czf "$archive" .
 echo "$archive"
