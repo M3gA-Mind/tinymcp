@@ -10,11 +10,9 @@
 //! | `SecretStore` | each server's environment values and OAuth bundle, and the key that keys the tool-cache fingerprints |
 //!
 //! The crate links no database client and picks no backend. A host hands over
-//! [`StoragePorts`] (in process, the handles of its installed backend; across
-//! the bus, the same port traits implemented by the storage bus client), or
-//! installs a [`StorageProvider`] that does so per data directory. Without
-//! one, a process-wide in-memory provider answers, which is the right shape
-//! for tests and for a host that wants only its statically declared servers.
+//! [`StoragePorts`] or installs a [`StorageProvider`] that supplies those
+//! handles. Service construction fails until a host provides them; tests use
+//! the TSD testkit memory backend explicitly.
 //!
 //! # The grant
 //!
@@ -35,6 +33,8 @@ mod bus;
 #[cfg(test)]
 mod failing;
 mod grant;
+mod local;
+mod migrate;
 mod ports;
 mod provider;
 mod schema;
@@ -43,16 +43,22 @@ mod schema;
 pub use bus::BusProvider;
 pub use grant::{CACHE_KEY_SECRET, ENV_SECRET_PREFIX, StorageGrant, collection_specs, grant};
 pub use ports::StoragePorts;
-pub use provider::{
-    MemoryProvider, StorageProvider, install_provider, installed_provider, provider_installed,
-};
+pub(crate) mod types {
+    //! Stable TSD v2 ports and portable value types used by MCP.
+    pub(crate) use tinystoragedrivers_api::{DocumentStore, DocumentStoreExt, SecretStore};
+    pub(crate) use tinystoragedrivers_types::*;
+}
+pub(crate) use local::Repo;
 #[cfg(test)]
-pub(crate) use schema::SCHEMA_VERSION;
-pub use schema::{AUDIT_STREAM, OWNER, storage_schema};
+pub(crate) use provider::MemoryProvider;
+pub use provider::{StorageProvider, install_provider, installed_provider, provider_installed};
+pub use schema::{AUDIT_STREAM, OWNER};
 pub(crate) use schema::{
     REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE, SERVER_NAMES, SERVERS, TOOL_CACHE,
     doc_id, write_options,
 };
+#[cfg(test)]
+pub(crate) use tinymcp_bus::storage::SCHEMA_VERSION;
 
 #[cfg(all(test, feature = "module"))]
 pub(crate) mod test_host;

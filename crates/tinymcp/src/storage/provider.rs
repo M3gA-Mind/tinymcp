@@ -1,98 +1,70 @@
-//! Choosing the ports for a data directory.
+//! Installing the host-selected storage ports.
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
 use parking_lot::Mutex;
-use tinystoragedrivers_core::MemoryStorage;
 
 use super::StoragePorts;
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 /// Hands the module its storage ports, one set per data directory.
-///
-/// A host that serves several directories (profiles, tenants) maps each to
-/// its own scope; the module only asks.
 pub trait StorageProvider: Send + Sync + std::fmt::Debug {
-    /// The ports for `data_dir`. Calling it again for the same directory
-    /// answers the same state.
+    /// Ports for `data_dir`, already bound by the host to the correct scope.
     ///
     /// # Errors
-    ///
-    /// Returns [`crate::Error::Store`] when the directory has no storage.
+    /// Returns [`Error::Store`] when storage cannot be opened.
     fn ports_for(&self, data_dir: &Path) -> Result<StoragePorts>;
+
+    /// Ports for a service that has no configured data directory.
+    ///
+    /// Hosts that support ephemeral or static-only services must provide an
+    /// explicit storage binding. There is no implicit in-memory fallback.
+    ///
+    /// # Errors
+    /// Returns [`Error::Store`] when the host has no default binding.
+    fn default_ports(&self) -> Result<StoragePorts> {
+        Err(Error::store(
+            "opening storage without a data directory",
+            crate::storage::types::StorageError::unavailable(
+                "the host did not provide a default storage binding",
+            ),
+        ))
+    }
 }
 
-/// An in-memory provider: one backend, one scope per directory.
-///
-/// State lives as long as the provider, so reopening a directory in the same
-/// process finds what was written. Nothing is written to disk. A directory
-/// must be an absolute path, as everywhere else the module takes one.
+/// The slot holding the host provider services are built with.
 #[derive(Debug, Default)]
-pub struct MemoryProvider {
-    backend: MemoryStorage,
-    opened: Mutex<HashMap<PathBuf, StoragePorts>>,
-}
-
-impl MemoryProvider {
-    /// An empty provider.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-impl StorageProvider for MemoryProvider {
-    fn ports_for(&self, data_dir: &Path) -> Result<StoragePorts> {
-        if !data_dir.is_absolute() {
-            return Err(crate::Error::invalid_argument(
-                "a data directory must be a non-empty absolute path",
-            ));
-        }
-        // Keyed by the original path: a lossy string would merge distinct
-        // directories whose names differ only in invalid UTF-8 bytes.
-        let key = data_dir.to_path_buf();
-        let mut opened = self.opened.lock();
-        if let Some(ports) = opened.get(&key) {
-            return Ok(ports.clone());
-        }
-        let scope = format!(
-            "dir-{}",
-            crate::registry::store::hex_digest(&path_bytes(&key))
-        );
-        let ports = StoragePorts::memory_scoped(&self.backend, &scope)?;
-        opened.insert(key, ports.clone());
-        Ok(ports)
-    }
-}
-
-/// The slot holding the provider services are built with.
-#[derive(Debug)]
 pub(crate) struct ProviderSlot {
-    provider: Mutex<Arc<dyn StorageProvider>>,
-    explicit: std::sync::atomic::AtomicBool,
+    provider: Mutex<Option<Arc<dyn StorageProvider>>>,
 }
 
 impl ProviderSlot {
-    /// A slot holding a fresh in-memory provider.
+    /// An empty slot; the host must install its backend before service setup.
     pub(crate) fn new() -> Self {
-        Self {
-            provider: Mutex::new(Arc::new(MemoryProvider::new())),
-            explicit: std::sync::atomic::AtomicBool::new(false),
-        }
+        Self::default()
     }
 
     /// Replaces the provider.
     pub(crate) fn install(&self, provider: Arc<dyn StorageProvider>) {
-        *self.provider.lock() = provider;
-        self.explicit
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+        *self.provider.lock() = Some(provider);
     }
 
-    /// The current provider.
-    pub(crate) fn current(&self) -> Arc<dyn StorageProvider> {
-        Arc::clone(&self.provider.lock())
+    /// Whether the host supplied a provider.
+    pub(crate) fn is_installed(&self) -> bool {
+        self.provider.lock().is_some()
+    }
+
+    /// The current provider, failing closed when none has been installed.
+    pub(crate) fn current(&self) -> Result<Arc<dyn StorageProvider>> {
+        self.provider.lock().clone().ok_or_else(|| {
+            Error::store(
+                "opening the host storage provider",
+                crate::storage::types::StorageError::unavailable(
+                    "the host has not installed storage ports",
+                ),
+            )
+        })
     }
 }
 
@@ -102,37 +74,73 @@ fn slot() -> &'static ProviderSlot {
 }
 
 /// Makes `provider` the process's storage, for every service built afterwards.
-///
-/// A host calls this once at startup, before building a service.
 pub fn install_provider(provider: Arc<dyn StorageProvider>) {
     slot().install(provider);
 }
 
-/// Whether a host installed a provider, as opposed to the in-memory default.
+/// Whether the host installed storage ports.
 #[must_use]
 pub fn provider_installed() -> bool {
-    slot().explicit.load(std::sync::atomic::Ordering::SeqCst)
+    slot().is_installed()
 }
 
-/// The provider services are built with: the installed one, or the
-/// process-wide in-memory provider.
-#[must_use]
-pub fn installed_provider() -> Arc<dyn StorageProvider> {
+/// The host provider services are built with.
+///
+/// # Errors
+/// Returns [`Error::Store`] before the host installs its storage provider.
+pub fn installed_provider() -> Result<Arc<dyn StorageProvider>> {
     slot().current()
 }
 
-/// The bytes of a path, without lossy conversion.
-fn path_bytes(path: &Path) -> Vec<u8> {
-    #[cfg(unix)]
-    {
-        std::os::unix::ffi::OsStrExt::as_bytes(path.as_os_str()).to_vec()
+#[cfg(test)]
+pub(crate) use memory::MemoryProvider;
+
+#[cfg(test)]
+mod memory {
+    //! Explicit test-only memory provider.
+
+    use parking_lot::Mutex;
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use tinystoragedrivers_testkit::MemoryBackend;
+
+    use super::*;
+
+    /// An in-memory provider used only by `TinyMCP`'s tests.
+    #[derive(Debug, Default)]
+    pub(crate) struct MemoryProvider {
+        backend: MemoryBackend,
+        opened: Mutex<HashMap<PathBuf, StoragePorts>>,
     }
-    #[cfg(not(unix))]
-    {
-        // Windows paths are UTF-16; encode the code units so distinct
-        // (even ill-formed) names stay distinct.
-        std::os::windows::ffi::OsStrExt::encode_wide(path.as_os_str())
-            .flat_map(u16::to_le_bytes)
-            .collect()
+
+    impl MemoryProvider {
+        /// An empty provider.
+        #[must_use]
+        pub(crate) fn new() -> Self {
+            Self::default()
+        }
+    }
+
+    impl StorageProvider for MemoryProvider {
+        fn ports_for(&self, data_dir: &Path) -> Result<StoragePorts> {
+            if !data_dir.is_absolute() {
+                return Err(crate::Error::invalid_argument(
+                    "a data directory must be a non-empty absolute path",
+                ));
+            }
+            let key = data_dir.to_path_buf();
+            let mut opened = self.opened.lock();
+            if let Some(ports) = opened.get(&key) {
+                return Ok(ports.clone());
+            }
+            let label = format!("test-{}", opened.len());
+            let ports = StoragePorts::memory_scoped(&self.backend, &label)?;
+            opened.insert(key, ports.clone());
+            Ok(ports)
+        }
+
+        fn default_ports(&self) -> Result<StoragePorts> {
+            StoragePorts::memory_scoped(&self.backend, "test-default")
+        }
     }
 }

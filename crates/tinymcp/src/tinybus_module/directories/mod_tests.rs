@@ -17,7 +17,7 @@ use tinymcp_bus::{
 
 use super::MAX_OPEN_DIRECTORIES;
 use crate::registry::SupervisorConfig;
-use crate::tinybus_module::{McpService, ModuleConfig, test_linked_module};
+use crate::tinybus_module::{ModuleConfig, test_linked_module};
 
 /// Owns the host and broker alongside a connection so the linked test module
 /// stays alive and receives the same attestation as production-linked code.
@@ -82,7 +82,7 @@ async fn serve_untrusted_root(config: &ModuleConfig) -> Connection {
         .await
         .unwrap();
     let service = std::sync::Arc::new(
-        McpService::new(config)
+        crate::tinybus_module::test_service(config)
             .unwrap()
             .with_opener(connection.clone(), config, SupervisorConfig::default())
             .unwrap(),
@@ -359,6 +359,7 @@ async fn reconfiguring_the_load_time_directory_keeps_the_root_opener() {
         mock_static_server("beta provider").await,
     );
     let config = ModuleConfig {
+        storage_callback: None,
         client: configured_client("alpha", &alpha_url),
         ..config_in(root_dir.path())
     };
@@ -514,6 +515,7 @@ async fn root_transition_status_is_nonblocking_before_tree_writer_registration()
     let alpha_url = mock_static_server_with_gate("alpha provider", Some(Arc::clone(&gate))).await;
     let beta_url = mock_static_server("beta provider").await;
     let config = ModuleConfig {
+        storage_callback: None,
         client: configured_client("alpha", &alpha_url),
         ..config_in(root_dir.path())
     };
@@ -930,6 +932,7 @@ async fn closing_the_root_resets_its_configuration_and_keeps_the_opener_alive() 
     let root_dir = tempfile::tempdir().unwrap();
     let endpoint = mock_static_server("signed-in provider").await;
     let config = ModuleConfig {
+        storage_callback: None,
         client: configured_client("signed-in", &endpoint),
         ..config_in(root_dir.path())
     };
@@ -1119,7 +1122,7 @@ async fn a_service_that_is_not_a_root_refuses_to_open() {
     connection
         .serve_at(
             "/ai/tinyhumans/tinymcp/Plain".try_into().unwrap(),
-            McpService::new(&ModuleConfig::default()).unwrap(),
+            crate::tinybus_module::test_service(&ModuleConfig::default()).unwrap(),
         )
         .await
         .unwrap();

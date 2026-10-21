@@ -550,7 +550,14 @@ impl DirectoryOpener {
         client: McpClientConfig,
     ) -> Result<McpService> {
         let stdio = crate::tinybus_module::stdio_launchers(Some(&self.connection), &client);
-        McpService::new_with_stdio(&ModuleConfig { data_dir, client }, stdio)
+        McpService::new_with_stdio(
+            &ModuleConfig {
+                data_dir,
+                storage_callback: None,
+                client,
+            },
+            stdio,
+        )
     }
 
     async fn configured_service(

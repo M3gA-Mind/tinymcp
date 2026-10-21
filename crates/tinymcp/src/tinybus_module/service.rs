@@ -66,7 +66,7 @@ impl McpService {
     /// Returns [`crate::Error::Store`] when the stores cannot be opened, and
     /// [`crate::Error::ClientBuild`] when an HTTP client cannot be built.
     pub fn new(config: &ModuleConfig) -> Result<Self> {
-        Self::with_provider(config, crate::storage::installed_provider())
+        Self::with_provider(config, crate::storage::installed_provider()?)
     }
 
     /// Builds the service over the storage `provider` hands out for the
@@ -88,7 +88,7 @@ impl McpService {
     ///
     /// As [`Self::new`].
     pub fn new_with_stdio(config: &ModuleConfig, stdio: StdioLaunchers) -> Result<Self> {
-        Self::with_provider_and_stdio(config, crate::storage::installed_provider(), stdio)
+        Self::with_provider_and_stdio(config, crate::storage::installed_provider()?, stdio)
     }
 
     /// [`Self::with_provider`], starting stdio servers through `stdio`.
@@ -104,11 +104,11 @@ impl McpService {
         provider: Arc<dyn crate::storage::StorageProvider>,
         stdio: StdioLaunchers,
     ) -> Result<Self> {
-        // No data directory means nothing to persist, which is the right shape
-        // for a host that only wants its statically declared servers.
+        // Even a static-only service receives explicit ports from its host;
+        // the module never chooses an in-memory backend on the host's behalf.
         let ports = match config.data_dir.as_deref() {
             Some(dir) => provider.ports_for(&absolute_data_dir(dir)?)?,
-            None => crate::storage::StoragePorts::memory()?,
+            None => provider.default_ports()?,
         };
         let (store, audit) = (Store::open(ports.clone())?, AuditStore::open(ports)?);
 

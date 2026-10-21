@@ -12,7 +12,7 @@ async fn connected_service() -> (Connection, Arc<McpService>) {
     let connection = Connection::connect(bus.connect().await.unwrap())
         .await
         .unwrap();
-    let service = Arc::new(McpService::new(&ModuleConfig::default()).unwrap());
+    let service = Arc::new(crate::tinybus_module::test_service(&ModuleConfig::default()).unwrap());
     connection
         .serve_at(
             "/ai/tinyhumans/tinymcp/Test".try_into().unwrap(),
@@ -143,7 +143,7 @@ async fn successful_unserve_completes_cleanup_and_removes_the_object() {
 async fn scheduled_serve_registers_and_replaces_before_completing_transition() {
     let (connection, _) = connected_service().await;
     let path: tinybus::ObjectPath = "/ai/tinyhumans/tinymcp/Lifecycle".try_into().unwrap();
-    let original = Arc::new(McpService::new(&ModuleConfig::default()).unwrap());
+    let original = Arc::new(crate::tinybus_module::test_service(&ModuleConfig::default()).unwrap());
     let first_status = Arc::new(Mutex::new(HashMap::from([(
         "t1".to_string(),
         TransitionStatus::Pending,
@@ -174,7 +174,8 @@ async fn scheduled_serve_registers_and_replaces_before_completing_transition() {
         TransitionStatus::Complete
     );
 
-    let replacement = Arc::new(McpService::new(&ModuleConfig::default()).unwrap());
+    let replacement =
+        Arc::new(crate::tinybus_module::test_service(&ModuleConfig::default()).unwrap());
     let replacement_status = Arc::new(Mutex::new(HashMap::from([(
         "t2".to_string(),
         TransitionStatus::Pending,

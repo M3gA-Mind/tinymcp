@@ -10,10 +10,12 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use tinybus::Connection;
-use tinystoragedrivers_busproxy::{connect_storage, module_scope_label};
-use tinystoragedrivers_core::StorageBackend;
-use tinystoragedrivers_secrets::SecretStore;
+use crate::storage::types::SecretStore;
+use tinybus::{BusName, Connection};
+use tinystoragedrivers_api::Storage;
+#[cfg(test)]
+use tinystoragedrivers_busproxy::connect_storage;
+use tinystoragedrivers_busproxy::connect_storage_at;
 
 use super::{StoragePorts, StorageProvider};
 use crate::error::{Error, Result};
@@ -28,34 +30,52 @@ pub struct BusProvider {
 }
 
 impl BusProvider {
-    /// Connects to the host's storage objects and binds the granted scope.
+    /// Connects to the explicit host callback that was provisioned for this
+    /// module instance.
     ///
     /// # Errors
     ///
     /// Returns [`Error::Store`] when the host serves no storage, refuses the
     /// capability calls, or the bus fails.
-    pub async fn connect(connection: Connection) -> Result<Self> {
-        Self::connect_with(connection, None).await
+    pub async fn connect_at(connection: Connection, destination: BusName) -> Result<Self> {
+        Self::connect_at_with(connection, destination, None).await
     }
 
-    /// [`connect`](Self::connect), with `secrets` standing in for the host's
-    /// secret store. Secrets travel only on the confidential route, which a
-    /// broker grants to attested artifacts alone, so a test over an in-process
-    /// broker supplies its own.
-    pub(crate) async fn connect_with(
+    async fn connect_at_with(
+        connection: Connection,
+        destination: BusName,
+        secrets: Option<Arc<dyn SecretStore>>,
+    ) -> Result<Self> {
+        Self::from_storage_result(connect_storage_at(connection, destination).await, secrets)
+    }
+
+    fn from_storage_result(
+        storage: tinystoragedrivers_types::Result<Storage>,
+        secrets: Option<Arc<dyn SecretStore>>,
+    ) -> Result<Self> {
+        let storage =
+            storage.map_err(|source| Error::store("connecting to the host storage", source))?;
+        Ok(Self::from_storage(&storage, secrets))
+    }
+
+    fn from_storage(storage: &Storage, secrets: Option<Arc<dyn SecretStore>>) -> Self {
+        let secrets = secrets.unwrap_or_else(|| Arc::clone(storage.secrets()));
+        Self {
+            ports: StoragePorts::from_storage(storage, secrets),
+        }
+    }
+
+    /// Ordinary, non-attested bus connections are used only by the in-process
+    /// port tests. Production module setup always uses [`connect_at`].
+    #[cfg(test)]
+    pub(crate) async fn connect_ordinary_with(
         connection: Connection,
         secrets: Option<Arc<dyn SecretStore>>,
     ) -> Result<Self> {
         let storage = connect_storage(connection)
             .await
             .map_err(|source| Error::store("connecting to the host storage", source))?;
-        let scoped = storage
-            .for_scope(&module_scope_label())
-            .map_err(|source| Error::store("opening the host-bound scope", source))?;
-        let secrets = secrets.unwrap_or_else(|| storage.secrets());
-        Ok(Self {
-            ports: StoragePorts::from_scoped(&scoped, secrets),
-        })
+        Ok(Self::from_storage(&storage, secrets))
     }
 
     /// A provider over already-connected `ports`.
@@ -65,8 +85,16 @@ impl BusProvider {
     }
 }
 
+#[cfg(test)]
+#[path = "bus_unit_tests.rs"]
+mod tests;
+
 impl StorageProvider for BusProvider {
     fn ports_for(&self, _data_dir: &Path) -> Result<StoragePorts> {
+        Ok(self.ports.clone())
+    }
+
+    fn default_ports(&self) -> Result<StoragePorts> {
         Ok(self.ports.clone())
     }
 }

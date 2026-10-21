@@ -3,12 +3,12 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::sync::Arc;
-
 use tinybus::{Connection, transport::memory::MemoryBus};
+use tinystoragedrivers_api::StorageBackend;
+use tinystoragedrivers_busproxy::StorageServer;
 use tinystoragedrivers_busproxy::{PerCallerEndpoint, ServedStorage, serve};
-use tinystoragedrivers_client::StorageServer;
-use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
-use tinystoragedrivers_secrets::MemorySecrets;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
+use tinystoragedrivers_types::Scope;
 
 /// Keeps the served objects registered while it lives.
 pub(crate) struct TestHost {
@@ -29,10 +29,7 @@ pub(crate) async fn serve_storage(
         .await
         .unwrap();
     let storage = backend.for_scope(&Scope::new(scope).unwrap()).unwrap();
-    let secrets = Arc::new(MemorySecrets::new());
-    let endpoint = PerCallerEndpoint::new(move |_sender| {
-        Some(StorageServer::new(storage.clone()).with_secrets(secrets.clone()))
-    });
+    let endpoint = PerCallerEndpoint::new(move |_sender| Some(StorageServer::new(storage.clone())));
     let served = serve(&connection, Arc::new(endpoint)).await.unwrap();
     TestHost {
         _connection: connection,
