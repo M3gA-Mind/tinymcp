@@ -2,8 +2,8 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use crate::storage::StoragePorts;
 use crate::storage::AUDIT_STREAM;
+use crate::storage::StoragePorts;
 use crate::storage::local::schema::MigrationReport;
 use crate::storage::local::{MigrateOptions, Migrations, Schema};
 use crate::storage::migrate;
