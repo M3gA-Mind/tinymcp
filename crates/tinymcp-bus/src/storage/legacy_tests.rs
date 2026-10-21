@@ -83,15 +83,21 @@ fn name_claim_conversion_escapes_the_qualified_name_and_defaults_missing_time() 
     .unwrap();
     let converted = convert_legacy_server_name_claim(claim).unwrap();
     assert_eq!(converted.id, "@acme%2Ffiles");
-    assert_eq!(converted.claimed_ms, 5_000);
-    assert_eq!(converted.extra["future_claim_field"], "preserve");
+    assert_eq!(converted.body.claimed_ms, 5_000);
+    assert_eq!(converted.body.extra["future_claim_field"], "preserve");
 
     let old: LegacyServerNameClaim = serde_json::from_value(json!({
         "qualified_name": "@acme/old",
         "server_id": "srv-0"
     }))
     .unwrap();
-    assert_eq!(convert_legacy_server_name_claim(old).unwrap().claimed_ms, 0);
+    assert_eq!(
+        convert_legacy_server_name_claim(old)
+            .unwrap()
+            .body
+            .claimed_ms,
+        0
+    );
 }
 
 #[test]

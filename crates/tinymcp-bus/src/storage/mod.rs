@@ -8,8 +8,8 @@ mod schema;
 
 pub use legacy::{
     LegacyServerBody, LegacyServerDocument, LegacyServerNameClaim, ServerDocument,
-    ServerDocumentBody, ServerNameClaim, convert_legacy_server, convert_legacy_server_name_claim,
-    legacy_audit_stream_target,
+    ServerDocumentBody, ServerNameClaim, ServerNameClaimBody, convert_legacy_server,
+    convert_legacy_server_name_claim, legacy_audit_stream_target,
 };
 
 pub use schema::{

@@ -266,16 +266,12 @@ fn claim(
         ))
     })?;
     let converted = convert_legacy_server_name_claim(claim)?;
-    let id = converted.id;
-    let mut body = serde_json::Map::new();
-    body.insert(
-        "qualified_name".to_owned(),
-        Value::String(converted.qualified_name),
-    );
-    body.insert("server_id".to_owned(), Value::String(converted.server_id));
-    body.insert("claimed_ms".to_owned(), Value::from(converted.claimed_ms));
-    body.extend(converted.extra);
-    Ok(Some((id, Value::Object(body))))
+    let body = serde_json::to_value(converted.body).map_err(|error| {
+        tinystoragedrivers_types::StorageError::invalid_input(format!(
+            "serialize converted MCP server-name claim: {error}"
+        ))
+    })?;
+    Ok(Some((converted.id, body)))
 }
 
 fn cached_response(
