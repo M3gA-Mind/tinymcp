@@ -1,6 +1,6 @@
 //! Unit tests for the live official-registry acceptance harness.
 
-use super::support::launch_path;
+use super::*;
 use tinymcp::transport::stdio::StdioLaunch;
 
 #[test]
@@ -16,5 +16,22 @@ fn uses_the_last_path_override_for_node_resolution() {
         cwd: None,
     };
 
-    assert_eq!(launch_path(&launch), "/second/node/bin");
+    assert_eq!(support::launch_path(&launch), "/second/node/bin");
+}
+
+#[test]
+fn accepts_registry_package_specs_and_rejects_urls_or_paths() {
+    assert!(support::is_registry_package_spec(
+        "io.github.headlessherm-creator/polymath-megablaster-mcp"
+    ));
+    assert!(support::is_registry_package_spec(
+        "@modelcontextprotocol/sdk@1.0.0"
+    ));
+    assert!(!support::is_registry_package_spec(
+        "https://example.com/pkg.tgz"
+    ));
+    assert!(!support::is_registry_package_spec("../local-package"));
+    assert!(!support::is_registry_package_spec(
+        "git+https://example.com/pkg.git"
+    ));
 }

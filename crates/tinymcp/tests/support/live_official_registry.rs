@@ -55,6 +55,8 @@ impl StdioSpawner for IsolatedSpawner {
                 "--ro-bind".to_owned(),
                 runtime_root.to_string_lossy().into_owned(),
                 "/node".to_owned(),
+                "--tmpfs".to_owned(),
+                "/node/etc".to_owned(),
                 "--ro-bind".to_owned(),
                 "/usr/bin".to_owned(),
                 "/usr/bin".to_owned(),
@@ -203,9 +205,24 @@ impl IsolatedRegistry {
     }
 
     pub(crate) async fn cache_npm_package(&self, package: &str) -> Result<(), String> {
+        if !is_registry_package_spec(package) {
+            return Err("official registry returned an invalid npm package spec".to_owned());
+        }
+        let prefix = self.npm_cache.with_file_name("npm-prefetch");
+        std::fs::create_dir_all(&prefix)
+            .map_err(|error| format!("could not create npm prefetch prefix: {error}"))?;
         let mut command = tokio::process::Command::new("npm");
         command
-            .args(["cache", "add", package, "--cache"])
+            .args([
+                "install",
+                "--ignore-scripts",
+                "--no-audit",
+                "--no-fund",
+                "--prefix",
+            ])
+            .arg(&prefix)
+            .arg(package)
+            .arg("--cache")
             .arg(&self.npm_cache)
             .env_clear()
             .envs(&self.server_env)
@@ -223,6 +240,17 @@ impl IsolatedRegistry {
             ))
         }
     }
+}
+
+pub(crate) fn is_registry_package_spec(package: &str) -> bool {
+    !package.is_empty()
+        && !package.starts_with('.')
+        && !package.starts_with('/')
+        && !package.contains("..")
+        && package
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "@/._-".contains(character))
+        && package.matches('/').count() <= 1
 }
 
 fn node_runtime_root(launch: &StdioLaunch) -> io::Result<PathBuf> {
