@@ -83,7 +83,7 @@ impl StdioSpawner for IsolatedSpawner {
                 "--".to_owned(),
                 format!("/node/{}", program_relative.to_string_lossy()),
             ];
-            let path = launch_path(&launch);
+            let path = launch_path(&launch).to_owned();
             args.extend(launch.args);
             let mut command = tokio::process::Command::new("bwrap");
             command
@@ -100,7 +100,7 @@ impl StdioSpawner for IsolatedSpawner {
                     .replace(&runtime_root.to_string_lossy().to_string(), "/node");
                 command.env(key, value);
             }
-            command.env("PATH", sandbox_path(path, &runtime_root));
+            command.env("PATH", sandbox_path(&path, &runtime_root));
             if launch.program.file_name().is_some_and(|name| name == "npx") {
                 command.env("npm_config_offline", "true");
             }
