@@ -99,8 +99,9 @@ impl StdioSpawner for IsolatedSpawner {
             }
             let path = launch
                 .env
-                .get("PATH")
-                .map(String::as_str)
+                .iter()
+                .find(|(key, _)| key == "PATH")
+                .map(|(_, value)| value.as_str())
                 .unwrap_or_default();
             command.env("PATH", sandbox_path(path, &runtime_root));
             if launch.program.file_name().is_some_and(|name| name == "npx") {
@@ -230,8 +231,9 @@ impl IsolatedRegistry {
 fn node_runtime_root(launch: &StdioLaunch) -> io::Result<PathBuf> {
     let path = launch
         .env
-        .get("PATH")
-        .map(String::as_str)
+        .iter()
+        .find(|(key, _)| key == "PATH")
+        .map(|(_, value)| value.as_str())
         .unwrap_or_default();
     for directory in std::env::split_paths(path) {
         let node = directory.join("node");
