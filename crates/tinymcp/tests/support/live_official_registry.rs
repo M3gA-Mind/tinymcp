@@ -71,6 +71,7 @@ impl StdioSpawner for IsolatedSpawner {
                 "/tmp".to_owned(),
                 "--unshare-pid".to_owned(),
                 "--unshare-ipc".to_owned(),
+                "--new-session".to_owned(),
                 "--proc".to_owned(),
                 "/proc".to_owned(),
                 "--dev".to_owned(),
