@@ -72,9 +72,7 @@ while IFS= read -r file; do
   mkdir -p "$stage/$(dirname "$file")"
   cp "$file" "$stage/$file"
 done < <(jq -r '.[]' <<<"$extras")
-# Keep extracted module directories private from group and other writers. The
-# verifier rejects writable directories because another user could replace the
-# library after its checksum is checked.
+# Keep packaged module directories from being writable by group or other users.
 find "$stage" -type d -exec chmod go-w {} +
 archive="$output/${crate}-${version}-${host}.tar.gz"
 tar -C "$stage" -czf "$archive" .
