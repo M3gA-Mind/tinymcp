@@ -336,7 +336,7 @@ fn sandbox_path(path: &str, runtime_root: &Path) -> String {
     )
 }
 
-fn resolve_host_executable(program: &str, path: &str) -> io::Result<PathBuf> {
+pub(crate) fn resolve_host_executable(program: &str, path: &str) -> io::Result<PathBuf> {
     std::env::split_paths(path)
         .map(|directory| directory.join(program))
         .find(|candidate| candidate.is_file())
