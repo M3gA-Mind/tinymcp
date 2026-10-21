@@ -600,3 +600,19 @@ async fn a_bare_name_resolved_through_pathext_reaches_its_spawn() {
          bare name and failed: {error}"
     );
 }
+
+/// Reaches the `CREATE_NO_WINDOW` branch: a server child spawned without a
+/// console still runs to completion.
+#[cfg(windows)]
+#[tokio::test]
+async fn direct_spawner_runs_a_hidden_console_child() {
+    use super::{DirectSpawner, StdioLaunch, StdioSpawner};
+    let launch = StdioLaunch {
+        program: "cmd".into(),
+        args: vec!["/C".to_string(), "exit 0".to_string()],
+        env: Vec::new(),
+        cwd: None,
+    };
+    let mut child = DirectSpawner.spawn(launch).await.unwrap();
+    assert!(child.wait().await.unwrap().success());
+}

@@ -36,8 +36,8 @@ use std::sync::atomic::{AtomicI64, Ordering};
 
 use futures_util::future::BoxFuture;
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 
 use crate::error::{Error, Result};
@@ -50,6 +50,7 @@ use tinymcp_bus::{
     McpRemoteTool, McpResource, McpResourceContents, McpServerToolResult,
 };
 
+pub mod jailed;
 pub mod spawn_env;
 
 /// Everything needed to launch a stdio server, after path resolution.
@@ -82,6 +83,69 @@ pub trait StdioSpawner: Send + Sync + std::fmt::Debug {
     /// Returns the I/O error that prevented the launch (or the policy refusal
     /// the jail reported).
     fn spawn(&self, launch: StdioLaunch) -> BoxFuture<'_, std::io::Result<Child>>;
+
+    /// Launches `launch` as a [`StdioProcess`]: the pipes the client speaks
+    /// over plus the handle that ends the server.
+    ///
+    /// The default wraps [`Self::spawn`]. A spawner whose server does not run
+    /// as a child of this process (a jailed launcher that starts it in another
+    /// module) overrides this method instead, and its `spawn` refuses.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::spawn`].
+    fn spawn_process(&self, launch: StdioLaunch) -> BoxFuture<'_, std::io::Result<StdioProcess>> {
+        Box::pin(async move {
+            let mut child = self.spawn(launch).await?;
+            let stdin = child.stdin.take().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::BrokenPipe, "the server has no stdin")
+            })?;
+            let stdout = child.stdout.take().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::BrokenPipe, "the server has no stdout")
+            })?;
+            Ok(StdioProcess {
+                stdin: Box::new(stdin),
+                stdout: Box::new(stdout),
+                handle: Box::new(ChildHandle(child)),
+            })
+        })
+    }
+}
+
+/// A launched server: the pipes and the means to end it.
+pub struct StdioProcess {
+    /// Where requests are written.
+    pub stdin: Box<dyn AsyncWrite + Send + Unpin>,
+    /// Where replies are read.
+    pub stdout: Box<dyn AsyncRead + Send + Unpin>,
+    /// Ends the server.
+    pub handle: Box<dyn StdioHandle>,
+}
+
+impl std::fmt::Debug for StdioProcess {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StdioProcess").finish_non_exhaustive()
+    }
+}
+
+/// Ends a launched server. Dropping it must also end the server, so a client
+/// dropped without an explicit close leaves nothing behind.
+pub trait StdioHandle: Send + Sync + std::fmt::Debug {
+    /// Terminates the server and waits for it, best-effort.
+    fn terminate(&mut self) -> BoxFuture<'_, ()>;
+}
+
+/// A directly spawned child, killed on drop by `kill_on_drop`.
+#[derive(Debug)]
+struct ChildHandle(Child);
+
+impl StdioHandle for ChildHandle {
+    fn terminate(&mut self) -> BoxFuture<'_, ()> {
+        Box::pin(async move {
+            let _ = self.0.start_kill();
+            let _ = self.0.wait().await;
+        })
+    }
 }
 
 /// The default launcher: a direct `tokio::process::Command` spawn.
@@ -106,6 +170,10 @@ impl StdioSpawner for DirectSpawner {
             for (key, value) in &launch.env {
                 command.env(key, value);
             }
+            // A GUI host (the desktop app) has no console, so Windows would
+            // open a visible one for every server child (tinyhumansai/openhuman#7895).
+            #[cfg(windows)]
+            command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
             command.spawn()
         })
     }
@@ -126,13 +194,18 @@ pub struct McpStdioClient {
     cached_tools: parking_lot::Mutex<HashMap<String, McpRemoteTool>>,
 }
 
-/// A running child and the pipes to it.
-#[derive(Debug)]
+/// A running server and the pipes to it.
 struct StdioSession {
-    child: Child,
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    handle: Box<dyn StdioHandle>,
+    stdin: Box<dyn AsyncWrite + Send + Unpin>,
+    stdout: BufReader<Box<dyn AsyncRead + Send + Unpin>>,
     initialize: McpInitializeResult,
+}
+
+impl std::fmt::Debug for StdioSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StdioSession").finish_non_exhaustive()
+    }
 }
 
 impl McpStdioClient {
@@ -254,22 +327,14 @@ impl McpStdioClient {
             env,
             cwd: self.cwd.clone(),
         };
-        let mut child = self.spawner.spawn(launch).await.map_err(|error| {
+        let process = self.spawner.spawn_process(launch).await.map_err(|error| {
             Error::malformed(format!("spawning `{}` failed: {error}", self.command))
         })?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| Error::malformed("the spawned server has no stdin"))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| Error::malformed("the spawned server has no stdout"))?;
 
         let mut session = StdioSession {
-            child,
-            stdin,
-            stdout: BufReader::new(stdout),
+            handle: process.handle,
+            stdin: process.stdin,
+            stdout: BufReader::new(process.stdout),
             initialize: McpInitializeResult {
                 protocol_version: LATEST_PROTOCOL_VERSION.to_string(),
                 capabilities: json!({}),
@@ -459,8 +524,7 @@ impl McpStdioClient {
     /// graceful-shutdown handshake does not become a breaking change.
     pub async fn close_session(&self) -> Result<()> {
         if let Some(mut session) = self.state.lock().await.take() {
-            let _ = session.child.start_kill();
-            let _ = session.child.wait().await;
+            session.handle.terminate().await;
         }
         Ok(())
     }
