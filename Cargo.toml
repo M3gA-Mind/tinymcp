@@ -118,7 +118,7 @@ tracing = { version = "0.1", default-features = false, features = ["std"] }
 tinystoragedrivers-core = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v1.0.0", features = ["blocking"] }
 # The `SecretStore` port: server environment values and OAuth bundles are kept
 # there, never in a document. Same tag as the core.
-tinystoragedrivers-secrets = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v1.0.0" }
+tinystoragedrivers-secrets = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v1.5.0" }
 # The module-side storage bus: `connect_storage` over the module's TinyBus
 # connection, giving the same port traits the host serves. Used only by the
 # `module` feature (a cdylib reaches storage through the host, never a file).
