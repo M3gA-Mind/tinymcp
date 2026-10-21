@@ -37,6 +37,7 @@ fn accepts_registry_package_specs_and_rejects_urls_or_paths() {
 }
 
 #[test]
+#[allow(clippy::expect_used)]
 fn resolves_host_executables_before_applying_the_sandbox_path() {
     let directory = tempfile::tempdir().expect("create temporary host PATH");
     let executable = directory.path().join("bwrap");
