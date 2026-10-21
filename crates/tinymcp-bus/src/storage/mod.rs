@@ -20,3 +20,7 @@ pub use schema::{
 #[cfg(test)]
 #[path = "schema_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "legacy_tests.rs"]
+mod legacy_tests;
