@@ -26,10 +26,7 @@ impl StdioSpawner for IsolatedSpawner {
         let stderr_path = self.stderr_path.clone();
         Box::pin(async move {
             let runtime_root = node_runtime_root(&launch)?;
-            let program = launch
-                .program
-                .canonicalize()
-                .map_err(|error| io::Error::other(format!("resolve stdio program: {error}")))?;
+            let program = node_runtime_program(&launch, &runtime_root)?;
             let program_relative = program.strip_prefix(&runtime_root).map_err(|_| {
                 io::Error::other("stdio program is outside the resolved Node runtime")
             })?;
@@ -39,6 +36,10 @@ impl StdioSpawner for IsolatedSpawner {
                 "/".to_owned(),
                 "--dir".to_owned(),
                 "/usr".to_owned(),
+                "--dir".to_owned(),
+                "/usr/bin".to_owned(),
+                "--dir".to_owned(),
+                "/usr/lib".to_owned(),
                 "--dir".to_owned(),
                 "/lib".to_owned(),
                 "--dir".to_owned(),
@@ -238,6 +239,13 @@ fn node_runtime_root(launch: &StdioLaunch) -> io::Result<PathBuf> {
     for directory in std::env::split_paths(path) {
         let node = directory.join("node");
         if node.is_file() {
+            let output = std::process::Command::new(&node)
+                .args(["-p", "process.execPath"])
+                .output()?;
+            if !output.status.success() {
+                continue;
+            }
+            let node = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
             let node = node.canonicalize()?;
             return node
                 .parent()
@@ -250,6 +258,24 @@ fn node_runtime_root(launch: &StdioLaunch) -> io::Result<PathBuf> {
         io::ErrorKind::NotFound,
         "could not resolve Node from the stdio launch PATH",
     ))
+}
+
+fn node_runtime_program(launch: &StdioLaunch, runtime_root: &Path) -> io::Result<PathBuf> {
+    if let Ok(program) = launch.program.canonicalize()
+        && program.starts_with(runtime_root)
+    {
+        return Ok(program);
+    }
+
+    [
+        runtime_root.join("lib/node_modules/npm/bin/npx-cli.js"),
+        runtime_root.join("lib/node_modules/npm/bin/npx.js"),
+    ]
+    .into_iter()
+    .find(|program| program.is_file())
+    .ok_or_else(|| {
+        io::Error::other("could not find the npm npx entry point in the resolved Node runtime")
+    })
 }
 
 fn sandbox_path(path: &str, runtime_root: &Path) -> String {
