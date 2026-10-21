@@ -30,7 +30,7 @@ base64 = { workspace = true }
 # no I/O. Its sole tokio features are io-util and time, so this adds no runtime
 # to a host that links the contract. Backs `storage::storage_schema`; optional,
 # enabled only by the `storage` feature so the default closure stays pure.
-tinystoragedrivers-core = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v1.0.0", default-features = false, optional = true }
+tinystoragedrivers-core = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v1.5.0", default-features = false, optional = true }
 
 [dev-dependencies]
 # The WHATWG parser the `ui` link splitter must agree with: its differential
