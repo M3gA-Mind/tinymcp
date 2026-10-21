@@ -16,7 +16,10 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
     }
 
     let outcome = tokio::time::timeout(std::time::Duration::from_secs(180), run_live_flow()).await;
-    assert!(outcome.is_ok(), "live registry acceptance flow exceeded 180 seconds");
+    assert!(
+        outcome.is_ok(),
+        "live registry acceptance flow exceeded 180 seconds"
+    );
 }
 
 #[allow(clippy::expect_used, clippy::panic)]
@@ -63,14 +66,14 @@ async fn run_live_flow() {
         std::time::Duration::from_secs(30),
         registry.connect(&installed.server.server_id),
     )
-        .await
-        .expect("stdio server initialization exceeded 30 seconds")
-        .unwrap_or_else(|error| {
-            panic!(
-                "connect installed package failed: {error}; child stderr: {}",
-                support::child_diagnostics(&fixture.stderr_path)
-            )
-        });
+    .await
+    .expect("stdio server initialization exceeded 30 seconds")
+    .unwrap_or_else(|error| {
+        panic!(
+            "connect installed package failed: {error}; child stderr: {}",
+            support::child_diagnostics(&fixture.stderr_path)
+        )
+    });
     let calculate = connected
         .tools
         .iter()
