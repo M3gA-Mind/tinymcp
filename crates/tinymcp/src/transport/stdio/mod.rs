@@ -170,6 +170,10 @@ impl StdioSpawner for DirectSpawner {
             for (key, value) in &launch.env {
                 command.env(key, value);
             }
+            // A GUI host (the desktop app) has no console, so Windows would
+            // open a visible one for every server child (tinyhumansai/openhuman#7895).
+            #[cfg(windows)]
+            command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
             command.spawn()
         })
     }
