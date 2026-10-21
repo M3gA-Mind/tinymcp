@@ -1917,8 +1917,8 @@ dependencies = [
  "tinymcp-bus",
  "tinystoragedrivers-busproxy",
  "tinystoragedrivers-client",
- "tinystoragedrivers-core 1.0.0",
- "tinystoragedrivers-secrets 1.5.0",
+ "tinystoragedrivers-core",
+ "tinystoragedrivers-secrets",
  "tinytools",
  "tokio",
  "tokio-stream",
@@ -1937,15 +1937,15 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "tinystoragedrivers-core 1.0.0",
+ "tinystoragedrivers-core",
  "tokio",
  "url",
 ]
 
 [[package]]
 name = "tinystoragedrivers-bus"
-version = "1.0.0"
-source = "git+https://github.com/tinyhumansai/tinystoragedrivers?tag=v1.0.0#141fd9ed0ad5d14a8fb5a1b3e837a719e81ac08d"
+version = "1.5.0"
+source = "git+https://github.com/tinyhumansai/tinystoragedrivers?tag=v1.5.0#c9ea6ff1615b77b55d7269403af5fd11bedc9ce8"
 dependencies = [
  "serde",
  "serde_json",
@@ -1954,8 +1954,8 @@ dependencies = [
 
 [[package]]
 name = "tinystoragedrivers-busproxy"
-version = "1.0.0"
-source = "git+https://github.com/tinyhumansai/tinystoragedrivers?tag=v1.0.0#141fd9ed0ad5d14a8fb5a1b3e837a719e81ac08d"
+version = "1.5.0"
+source = "git+https://github.com/tinyhumansai/tinystoragedrivers?tag=v1.5.0#c9ea6ff1615b77b55d7269403af5fd11bedc9ce8"
 dependencies = [
  "async-trait",
  "serde",
@@ -1963,38 +1963,22 @@ dependencies = [
  "tinybus",
  "tinystoragedrivers-bus",
  "tinystoragedrivers-client",
- "tinystoragedrivers-core 1.0.0",
+ "tinystoragedrivers-core",
  "tokio",
 ]
 
 [[package]]
 name = "tinystoragedrivers-client"
-version = "1.0.0"
-source = "git+https://github.com/tinyhumansai/tinystoragedrivers?tag=v1.0.0#141fd9ed0ad5d14a8fb5a1b3e837a719e81ac08d"
+version = "1.5.0"
+source = "git+https://github.com/tinyhumansai/tinystoragedrivers?tag=v1.5.0#c9ea6ff1615b77b55d7269403af5fd11bedc9ce8"
 dependencies = [
  "async-trait",
  "serde",
  "serde_json",
  "tinystoragedrivers-bus",
- "tinystoragedrivers-core 1.0.0",
- "tinystoragedrivers-secrets 1.0.0",
+ "tinystoragedrivers-core",
+ "tinystoragedrivers-secrets",
  "tokio",
-]
-
-[[package]]
-name = "tinystoragedrivers-core"
-version = "1.0.0"
-source = "git+https://github.com/tinyhumansai/tinystoragedrivers?tag=v1.0.0#141fd9ed0ad5d14a8fb5a1b3e837a719e81ac08d"
-dependencies = [
- "async-trait",
- "data-encoding",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "thiserror",
- "tokio",
- "ulid",
- "zstd",
 ]
 
 [[package]]
@@ -2015,29 +1999,6 @@ dependencies = [
 
 [[package]]
 name = "tinystoragedrivers-secrets"
-version = "1.0.0"
-source = "git+https://github.com/tinyhumansai/tinystoragedrivers?tag=v1.0.0#141fd9ed0ad5d14a8fb5a1b3e837a719e81ac08d"
-dependencies = [
- "async-trait",
- "atomicwrites",
- "chacha20poly1305",
- "clack-private-fs",
- "fs4",
- "hkdf",
- "rustix 1.1.4",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tinystoragedrivers-core 1.0.0",
- "tokio",
- "winapi-util",
- "windows-permissions",
- "winsafe",
- "zeroize",
-]
-
-[[package]]
-name = "tinystoragedrivers-secrets"
 version = "1.5.0"
 source = "git+https://github.com/tinyhumansai/tinystoragedrivers?tag=v1.5.0#c9ea6ff1615b77b55d7269403af5fd11bedc9ce8"
 dependencies = [
@@ -2051,7 +2012,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tinystoragedrivers-core 1.5.0",
+ "tinystoragedrivers-core",
  "tokio",
  "winapi-util",
  "windows-permissions",
