@@ -27,6 +27,7 @@ fn accepts_registry_package_specs_and_rejects_urls_or_paths() {
     assert!(support::is_registry_package_spec(
         "@modelcontextprotocol/sdk@1.0.0"
     ));
+    assert!(!support::is_registry_package_spec("owner/repository"));
     assert!(!support::is_registry_package_spec(
         "https://example.com/pkg.tgz"
     ));
