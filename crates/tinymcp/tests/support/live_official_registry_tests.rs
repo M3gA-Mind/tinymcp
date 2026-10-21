@@ -35,3 +35,18 @@ fn accepts_registry_package_specs_and_rejects_urls_or_paths() {
         "git+https://example.com/pkg.git"
     ));
 }
+
+#[test]
+fn resolves_host_executables_before_applying_the_sandbox_path() {
+    let directory = tempfile::tempdir().expect("create temporary host PATH");
+    let executable = directory.path().join("bwrap");
+    std::fs::write(&executable, "host executable").expect("write fake host executable");
+
+    assert_eq!(
+        support::resolve_host_executable("bwrap", &directory.path().to_string_lossy())
+            .expect("resolve host executable"),
+        executable
+            .canonicalize()
+            .expect("canonicalize host executable")
+    );
+}

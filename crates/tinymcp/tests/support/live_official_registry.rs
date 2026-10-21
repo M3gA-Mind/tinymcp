@@ -55,8 +55,6 @@ impl StdioSpawner for IsolatedSpawner {
                 "--ro-bind".to_owned(),
                 runtime_root.to_string_lossy().into_owned(),
                 "/node".to_owned(),
-                "--tmpfs".to_owned(),
-                "/node/etc".to_owned(),
                 "--ro-bind".to_owned(),
                 "/usr/bin".to_owned(),
                 "/usr/bin".to_owned(),
@@ -72,11 +70,13 @@ impl StdioSpawner for IsolatedSpawner {
                 "--tmpfs".to_owned(),
                 "/tmp".to_owned(),
                 "--unshare-pid".to_owned(),
+                "--unshare-ipc".to_owned(),
                 "--proc".to_owned(),
                 "/proc".to_owned(),
                 "--dev".to_owned(),
                 "/dev".to_owned(),
                 "--unshare-net".to_owned(),
+                "--die-with-parent".to_owned(),
                 "--bind".to_owned(),
                 workspace.to_string_lossy().into_owned(),
                 "/sandbox".to_owned(),
@@ -85,9 +85,21 @@ impl StdioSpawner for IsolatedSpawner {
                 "--".to_owned(),
                 format!("/node/{}", program_relative.to_string_lossy()),
             ];
+            if runtime_root.join("etc").is_dir() {
+                let bind_index = args
+                    .windows(3)
+                    .position(|window| window[0] == "--ro-bind" && window[2] == "/node")
+                    .map_or(args.len(), |index| index + 3);
+                args.splice(
+                    bind_index..bind_index,
+                    ["--tmpfs", "/node/etc"].map(str::to_owned),
+                );
+            }
             let path = launch_path(&launch).to_owned();
             args.extend(launch.args);
-            let mut command = tokio::process::Command::new("bwrap");
+            let bwrap =
+                resolve_host_executable("bwrap", &std::env::var("PATH").unwrap_or_default())?;
+            let mut command = tokio::process::Command::new(bwrap);
             command
                 .args(args)
                 .stdin(Stdio::piped())
@@ -322,6 +334,21 @@ fn sandbox_path(path: &str, runtime_root: &Path) -> String {
         |_| "/node/bin:/usr/bin".to_owned(),
         |path| path.to_string_lossy().into_owned(),
     )
+}
+
+fn resolve_host_executable(program: &str, path: &str) -> io::Result<PathBuf> {
+    std::env::split_paths(path)
+        .map(|directory| directory.join(program))
+        .find(|candidate| candidate.is_file())
+        .map_or_else(
+            || {
+                Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("could not find {program} on the host PATH"),
+                ))
+            },
+            |candidate| candidate.canonicalize(),
+        )
 }
 
 #[allow(clippy::expect_used, clippy::panic)]
