@@ -3,7 +3,14 @@
 //! This contract lists the collection shapes and stable names that a host may
 //! provision. Migration execution and storage behavior live in `tinymcp`.
 
+mod legacy;
 mod schema;
+
+pub use legacy::{
+    LegacyServerBody, LegacyServerDocument, LegacyServerNameClaim, ServerDocument,
+    ServerDocumentBody, ServerNameClaim, ServerNameClaimBody, convert_legacy_server,
+    convert_legacy_server_name_claim, legacy_audit_stream_target,
+};
 
 pub use schema::{
     AUDIT_STREAM, MIGRATIONS, OWNER, REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE,
@@ -13,3 +20,7 @@ pub use schema::{
 #[cfg(test)]
 #[path = "schema_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "legacy_tests.rs"]
+mod legacy_tests;

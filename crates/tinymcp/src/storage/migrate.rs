@@ -15,8 +15,12 @@ use tinystoragedrivers_types::{ErrorKind, Result as StorageResult};
 
 use super::local::{Migrations, SourceRecord, Step, StreamProgress, TargetRecord};
 use super::schema::{
-    AUDIT_STREAM, OWNER, REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE, SERVER_NAMES,
-    SERVERS, TOOL_CACHE, doc_id,
+    OWNER, REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE, SERVER_NAMES, SERVERS, TOOL_CACHE,
+    doc_id,
+};
+use tinymcp_bus::storage::{
+    LegacyServerDocument, convert_legacy_server, convert_legacy_server_name_claim,
+    legacy_audit_stream_target,
 };
 
 /// The version the steps read.
@@ -81,13 +85,7 @@ pub(crate) async fn migrate_audit_streams(
 }
 
 fn audit_target(source: &str) -> Option<String> {
-    if source == LEGACY_AUDIT {
-        Some(AUDIT_STREAM.to_owned())
-    } else {
-        source
-            .strip_prefix("mcp_audit/")
-            .map(|suffix| format!("{AUDIT_STREAM}/{suffix}"))
-    }
+    legacy_audit_stream_target(source)
 }
 
 async fn migrate_audit_source(
@@ -237,28 +235,43 @@ fn unwrap_json(body: &mut Map<String, Value>, from: &str, to: &str) -> Option<()
 
 fn server(
     record: &SourceRecord,
-    mut body: Map<String, Value>,
+    body: Map<String, Value>,
 ) -> StorageResult<Option<(String, Value)>> {
-    rename(&mut body, "installed_at", "installed_ms");
-    rename(&mut body, "last_connected_at", "last_connected_ms");
-    Ok(Some((doc_id(&[&record.id])?, Value::Object(body))))
+    let body = serde_json::from_value(Value::Object(body)).map_err(|error| {
+        tinystoragedrivers_types::StorageError::invalid_input(format!(
+            "malformed legacy MCP server record: {error}"
+        ))
+    })?;
+    let converted = convert_legacy_server(LegacyServerDocument {
+        storage_id: record.id.clone(),
+        body,
+    })?;
+    let body = serde_json::to_value(converted.body).map_err(|error| {
+        tinystoragedrivers_types::StorageError::invalid_input(format!(
+            "serialize converted MCP server record: {error}"
+        ))
+    })?;
+    Ok(Some((converted.id, body)))
 }
 
 /// A name claim: keyed by the qualified name it holds. A claim from before
 /// claims were timed reads as claimed at `0`, i.e. long expired.
 fn claim(
     _record: &SourceRecord,
-    mut body: Map<String, Value>,
+    body: Map<String, Value>,
 ) -> StorageResult<Option<(String, Value)>> {
-    let Some(name) = text(&body, "qualified_name").map(ToOwned::to_owned) else {
-        return Ok(None);
-    };
-    let claimed = body
-        .remove("claimed_at")
-        .and_then(|value| value.as_i64())
-        .unwrap_or(0);
-    body.insert("claimed_ms".to_owned(), Value::from(claimed));
-    Ok(Some((doc_id(&[&name])?, Value::Object(body))))
+    let claim = serde_json::from_value(Value::Object(body)).map_err(|error| {
+        tinystoragedrivers_types::StorageError::invalid_input(format!(
+            "malformed legacy MCP server-name claim: {error}"
+        ))
+    })?;
+    let converted = convert_legacy_server_name_claim(claim)?;
+    let body = serde_json::to_value(converted.body).map_err(|error| {
+        tinystoragedrivers_types::StorageError::invalid_input(format!(
+            "serialize converted MCP server-name claim: {error}"
+        ))
+    })?;
+    Ok(Some((converted.id, body)))
 }
 
 fn cached_response(
