@@ -19,8 +19,8 @@ use super::schema::{
     doc_id,
 };
 use tinymcp_bus::storage::{
-    LegacyServerDocument, LegacyServerNameClaim, convert_legacy_server,
-    convert_legacy_server_name_claim, legacy_audit_stream_target,
+    LegacyServerDocument, convert_legacy_server, convert_legacy_server_name_claim,
+    legacy_audit_stream_target,
 };
 
 /// The version the steps read.
