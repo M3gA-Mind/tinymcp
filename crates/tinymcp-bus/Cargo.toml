@@ -32,10 +32,10 @@ data-encoding = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
 # Pure collection declaration types for the module's storage grant. The bus
 # contract does not run migrations or depend on storage implementation code.
-tinystoragedrivers-types = { git = "https://github.com/tinyhumansai/tinystoragedrivers", version = "2.1.0", rev = "2856dfa6f5b4de981a4db2801ae6be80c6432b3b", optional = true }
+tinystoragedrivers-types = { workspace = true, optional = true }
 
 [dev-dependencies]
-tinystoragedrivers-testkit = { git = "https://github.com/tinyhumansai/tinystoragedrivers", version = "2.1.0", rev = "2856dfa6f5b4de981a4db2801ae6be80c6432b3b" }
+tinystoragedrivers-testkit = { workspace = true }
 # The WHATWG parser the `ui` link splitter must agree with: its differential
 # tests check every web link the splitter accepts against `url`'s reading.
 url = { workspace = true }

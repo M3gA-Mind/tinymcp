@@ -106,7 +106,7 @@ async fn migrate_audit_source(
                 source: source.to_owned(),
                 target: target.to_owned(),
                 source_offset: 0,
-                target_offset: streams.len(target).await?,
+                target_offset: stream_len(streams, target).await?,
             };
             migrations.save_stream_progress(&progress).await?;
             progress
@@ -117,7 +117,7 @@ async fn migrate_audit_source(
         ));
     }
     while progress.source_offset < source_len {
-        let Some(batch) = source_batch(
+        let Some(mut batch) = source_batch(
             streams,
             migrations,
             source,
@@ -129,6 +129,8 @@ async fn migrate_audit_source(
             progress.source_offset = source_len;
             break;
         };
+        let remaining = usize::try_from(source_len - progress.source_offset).unwrap_or(usize::MAX);
+        batch.truncate(remaining);
         if batch.is_empty() {
             return Err(tinystoragedrivers_types::StorageError::conflict(
                 "audit source ended before its reported length",
@@ -152,7 +154,7 @@ async fn migrate_audit_source(
             migrations.save_stream_progress(&progress).await?;
             continue;
         }
-        if streams.len(target).await? != progress.target_offset {
+        if stream_len(streams, target).await? != progress.target_offset {
             return Err(tinystoragedrivers_types::StorageError::conflict(
                 "audit target changed while migrating its source stream",
             ));
