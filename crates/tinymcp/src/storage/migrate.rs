@@ -227,6 +227,18 @@ async fn source_batch(
     source_len: u64,
 ) -> StorageResult<Option<Vec<StreamEntry>>> {
     match streams.read_window(source, source_offset, 256).await {
+        Ok(batch) if batch.is_empty() => {
+            let current_len = stream_len(streams, source).await?;
+            let checkpoint = migrations
+                .stream_progress(OWNER, "audit_streams_v2", source)
+                .await?;
+            if current_len == 0 && checkpoint.is_some_and(|saved| saved.source_offset >= source_len)
+            {
+                Ok(None)
+            } else {
+                Ok(Some(batch))
+            }
+        }
         Ok(batch) => Ok(Some(batch)),
         Err(error) if error.kind() == ErrorKind::NotFound => {
             let current_len = stream_len(streams, source).await?;
