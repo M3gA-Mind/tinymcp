@@ -5,7 +5,7 @@
 use crate::storage::AUDIT_STREAM;
 use crate::storage::StoragePorts;
 use crate::storage::local::schema::MigrationReport;
-use crate::storage::local::{MigrateOptions, Migrations, Schema};
+use crate::storage::local::{MigrateOptions, Migrations, Schema, StreamProgress};
 use crate::storage::migrate;
 use crate::storage::types::{
     CollectionSpec, DocumentStoreExt as _, Filter, Precondition, Query, Scope, Versioned,
@@ -215,12 +215,13 @@ impl StreamStore for FailAfterFirstAppend {
     }
 }
 
-/// Makes one nonempty legacy stream report an empty page before its declared
-/// end, as a failing backend can do during a read.
+/// Makes one nonempty legacy stream return an empty page or an error during a
+/// read, as a failing backend can do.
 #[derive(Debug)]
 struct EmptyFirstRead {
     inner: Arc<dyn StreamStore>,
     fail: AtomicBool,
+    return_error: bool,
 }
 
 #[tinystoragedrivers_api::async_trait]
@@ -259,6 +260,11 @@ impl StreamStore for EmptyFirstRead {
         limit: usize,
     ) -> crate::storage::types::Result<Vec<StreamEntry>> {
         if stream == "mcp_audit" && self.fail.swap(false, Ordering::SeqCst) {
+            if self.return_error {
+                return Err(crate::storage::types::StorageError::unavailable(
+                    "simulated audit read failure",
+                ));
+            }
             return Ok(Vec::new());
         }
         self.inner.read_window(stream, from, limit).await
@@ -964,6 +970,7 @@ fn audit_import_retries_after_an_empty_page_before_source_end() {
     let streams = Arc::new(EmptyFirstRead {
         inner: Arc::clone(fixture.storage.streams()),
         fail: AtomicBool::new(true),
+        return_error: false,
     });
     let documents = Arc::clone(fixture.storage.documents());
     let migrations = Migrations::new(&documents, OWNER);
@@ -984,6 +991,94 @@ fn audit_import_retries_after_an_empty_page_before_source_end() {
         .unwrap();
     assert_eq!(fixture.stream("mcp_audit"), Vec::<Value>::new());
     assert_eq!(fixture.stream(AUDIT_STREAM), entries);
+}
+
+#[test]
+fn audit_import_preserves_its_source_when_a_read_fails() {
+    let fixture = Fixture::new();
+    let entries = [json!({"timestamp_ms": 1})];
+    fixture.legacy_stream("mcp_audit", &entries);
+    let streams = EmptyFirstRead {
+        inner: Arc::clone(fixture.storage.streams()),
+        fail: AtomicBool::new(true),
+        return_error: true,
+    };
+    let migrations = Migrations::new(fixture.storage.documents(), OWNER);
+
+    let error = fixture
+        .blocking
+        .block_on(migrate::migrate_audit_streams(&streams, &migrations))
+        .unwrap_err();
+
+    assert_eq!(error.kind(), tinystoragedrivers_types::ErrorKind::Unavailable);
+    assert_eq!(fixture.stream("mcp_audit"), entries);
+    assert_eq!(fixture.stream(AUDIT_STREAM), Vec::<Value>::new());
+}
+
+#[test]
+fn audit_import_refuses_a_checkpoint_for_a_different_target() {
+    let fixture = Fixture::new();
+    fixture.legacy_stream("mcp_audit", &[json!({"timestamp_ms": 1})]);
+    let streams = Arc::clone(fixture.storage.streams());
+    let migrations = Migrations::new(fixture.storage.documents(), OWNER);
+    fixture
+        .blocking
+        .block_on(migrations.save_stream_progress(&StreamProgress {
+            owner: OWNER.to_owned(),
+            step: "audit_streams_v2".to_owned(),
+            source: "mcp_audit".to_owned(),
+            target: "mcp.audit/wrong".to_owned(),
+            source_offset: 0,
+            target_offset: 0,
+        }))
+        .unwrap();
+
+    let error = fixture
+        .blocking
+        .block_on(migrate::migrate_audit_source(
+            &*streams,
+            &migrations,
+            "mcp_audit",
+            AUDIT_STREAM,
+        ))
+        .unwrap_err();
+
+    assert_eq!(error.kind(), tinystoragedrivers_types::ErrorKind::Conflict);
+    assert_eq!(fixture.stream("mcp_audit").len(), 1);
+}
+
+#[test]
+fn audit_import_refuses_a_target_that_changed_after_its_checkpoint() {
+    let fixture = Fixture::new();
+    fixture.legacy_stream("mcp_audit", &[json!({"timestamp_ms": 1})]);
+    fixture.legacy_stream(AUDIT_STREAM, &[json!({"timestamp_ms": 9})]);
+    let streams = Arc::clone(fixture.storage.streams());
+    let migrations = Migrations::new(fixture.storage.documents(), OWNER);
+    fixture
+        .blocking
+        .block_on(migrations.save_stream_progress(&StreamProgress {
+            owner: OWNER.to_owned(),
+            step: "audit_streams_v2".to_owned(),
+            source: "mcp_audit".to_owned(),
+            target: AUDIT_STREAM.to_owned(),
+            source_offset: 0,
+            target_offset: 0,
+        }))
+        .unwrap();
+
+    let error = fixture
+        .blocking
+        .block_on(migrate::migrate_audit_source(
+            &*streams,
+            &migrations,
+            "mcp_audit",
+            AUDIT_STREAM,
+        ))
+        .unwrap_err();
+
+    assert_eq!(error.kind(), tinystoragedrivers_types::ErrorKind::Conflict);
+    assert_eq!(fixture.stream("mcp_audit").len(), 1);
+    assert_eq!(fixture.stream(AUDIT_STREAM), [json!({"timestamp_ms": 9})]);
 }
 
 #[test]
