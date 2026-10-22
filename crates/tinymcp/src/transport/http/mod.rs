@@ -480,8 +480,15 @@ impl McpHttpClient {
             state.initialize = Some(initialized.clone());
         }
 
-        self.send_notification("notifications/initialized", json!({}))
-            .await?;
+        // The session is not usable until the server has seen this
+        // notification, so a failure must not leave it cached as initialized.
+        if let Err(error) = self
+            .send_notification("notifications/initialized", json!({}))
+            .await
+        {
+            self.reset_session();
+            return Err(error);
+        }
 
         Ok(initialized)
     }
