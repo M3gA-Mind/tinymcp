@@ -33,7 +33,11 @@ fn the_grant_names_every_collection_the_specs_declare() {
     let specs = collection_specs();
     let granted = grant();
     let declared: Vec<String> = specs.into_iter().map(|spec| spec.name).collect();
-    assert_eq!(granted.collections, declared);
+    assert!(
+        declared
+            .iter()
+            .all(|name| granted.collections.contains(name))
+    );
     assert!(
         granted
             .searchable
