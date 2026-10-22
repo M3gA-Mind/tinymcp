@@ -14,9 +14,9 @@
 //! stay until a sync finishes, at which point any server it did not see again
 //! is removed.
 
+use crate::storage::types::{Capability, DocumentStore, Filter, Precondition, Query, WriteOp};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tinystoragedrivers_core::{Capability, DocumentStore, Filter, Precondition, Query, WriteOp};
 
 use super::types::{Store, now_ms};
 use crate::error::Result;
@@ -185,7 +185,7 @@ impl Store {
                     .map(|row| serde_json::from_value(row.doc))
                     .transpose()
                     .map_err(|error| {
-                        tinystoragedrivers_core::StorageError::serialization(error.to_string())
+                        crate::storage::types::StorageError::serialization(error.to_string())
                     })?;
                 let same_catalog = previous
                     .as_ref()
@@ -206,7 +206,7 @@ impl Store {
                         .filter(|_| same_catalog),
                 };
                 let value = serde_json::to_value(state).map_err(|error| {
-                    tinystoragedrivers_core::StorageError::serialization(error.to_string())
+                    crate::storage::types::StorageError::serialization(error.to_string())
                 })?;
                 documents
                     .put_with(
@@ -272,12 +272,12 @@ impl Store {
                 };
                 let mut state: StateDoc =
                     serde_json::from_value(found.doc.clone()).map_err(|error| {
-                        tinystoragedrivers_core::StorageError::serialization(error.to_string())
+                        crate::storage::types::StorageError::serialization(error.to_string())
                     })?;
                 state.cursor = next_cursor;
                 state.pages += 1;
                 let value = serde_json::to_value(state).map_err(|error| {
-                    tinystoragedrivers_core::StorageError::serialization(error.to_string())
+                    crate::storage::types::StorageError::serialization(error.to_string())
                 })?;
                 documents
                     .put_with(
@@ -309,7 +309,7 @@ impl Store {
                 };
                 let mut state: StateDoc =
                     serde_json::from_value(found.doc.clone()).map_err(|error| {
-                        tinystoragedrivers_core::StorageError::serialization(error.to_string())
+                        crate::storage::types::StorageError::serialization(error.to_string())
                     })?;
                 if let Some(started_ms) = state.started_ms {
                     documents
@@ -325,7 +325,7 @@ impl Store {
                 state.started_ms = None;
                 state.synced_ms = Some(now);
                 let value = serde_json::to_value(state).map_err(|error| {
-                    tinystoragedrivers_core::StorageError::serialization(error.to_string())
+                    crate::storage::types::StorageError::serialization(error.to_string())
                 })?;
                 documents
                     .put_with(
@@ -363,7 +363,7 @@ impl Store {
                 // inside a word (`ack` in `slack`) is not among its hits. The
                 // substring filter below is the contract, and candidates must
                 // be a superset of it: read the source's rows.
-                let page = tinystoragedrivers_core::DocumentStoreExt::query_all(
+                let page = crate::storage::types::DocumentStoreExt::query_all(
                     documents.as_ref(),
                     REGISTRY_INDEX,
                     &Query::filter(Filter::eq("source", source.clone())),
@@ -400,7 +400,7 @@ async fn write_chunk(
     documents: &dyn DocumentStore,
     chunk: Vec<WriteOp>,
     atomic: bool,
-) -> tinystoragedrivers_core::Result<()> {
+) -> crate::storage::types::Result<()> {
     if atomic {
         return documents.atomic_batch(chunk).await.map(|_| ());
     }

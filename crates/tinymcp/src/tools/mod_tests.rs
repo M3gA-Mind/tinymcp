@@ -448,6 +448,7 @@ async fn an_installed_server_is_callable_by_name_and_cached_for_the_next_boot() 
         let registry = dynamic_registry(
             Store::open(
                 crate::storage::installed_provider()
+                    .unwrap()
                     .ports_for(directory.path())
                     .unwrap(),
             )
@@ -498,6 +499,7 @@ async fn an_installed_server_is_callable_by_name_and_cached_for_the_next_boot() 
     let registry = dynamic_registry(
         Store::open(
             crate::storage::installed_provider()
+                .unwrap()
                 .ports_for(directory.path())
                 .unwrap(),
         )

@@ -30,6 +30,11 @@ mod service;
 pub use config::ModuleConfig;
 pub use service::McpService;
 
+#[cfg(test)]
+pub(crate) fn test_service(config: &ModuleConfig) -> crate::Result<McpService> {
+    McpService::with_provider(config, Arc::new(crate::storage::MemoryProvider::new()))
+}
+
 use std::sync::Arc;
 use tinybus::{Connection, Result as TinyBusResult};
 use tinymcp_bus::names;
@@ -55,37 +60,39 @@ pub(super) async fn setup(connection: Connection, config: ModuleConfig) -> TinyB
     //
     // Directory operations (`Open`, `OpenConfigured`, `HasStoredState`) build
     // services over the installed provider whatever the load-time `data_dir`
-    // was, so a host with no root directory still needs host storage. There the
-    // storage is best-effort: a root with nothing to persist keeps working
-    // without it, and the failure is logged rather than failing the load.
-    let provider = if crate::storage::provider_installed() {
-        None
-    } else {
-        host_storage_for(connection.clone(), &config).await?
-    };
+    // was, so even a static-only module needs host storage. Missing storage is
+    // a load failure; silently continuing in memory would lose state.
+    let provider = provider_for_setup(
+        connection.clone(),
+        &config,
+        crate::storage::provider_installed(),
+    )
+    .await?;
     if let Some(provider) = provider {
         crate::storage::install_provider(provider);
     }
     setup_over_installed_storage(connection, config).await
 }
 
-/// The host-storage provider to install for `config`, if one can be had.
-///
-/// `None` means the host has no storage to give a root that persists nothing,
-/// so directory operations stay on the in-memory default.
+async fn provider_for_setup(
+    connection: Connection,
+    config: &ModuleConfig,
+    provider_installed: bool,
+) -> TinyBusResult<Option<Arc<dyn crate::storage::StorageProvider>>> {
+    if provider_installed {
+        Ok(None)
+    } else {
+        host_storage_for(connection, config).await
+    }
+}
+
+/// The host-storage provider to install for `config`.
 pub(super) async fn host_storage_for(
     connection: Connection,
     config: &ModuleConfig,
 ) -> TinyBusResult<Option<Arc<dyn crate::storage::StorageProvider>>> {
-    match bus_provider(connection).await {
+    match bus_provider(connection, config).await {
         Ok(provider) => Ok(Some(provider)),
-        Err(error) if config.data_dir.is_none() => {
-            tracing::warn!(
-                %error,
-                "tinymcp: host storage unavailable; directory operations stay in memory"
-            );
-            Ok(None)
-        }
         Err(error) => Err(error),
     }
 }
@@ -93,8 +100,15 @@ pub(super) async fn host_storage_for(
 /// The provider that reaches the host's storage over `connection`.
 pub(super) async fn bus_provider(
     connection: Connection,
+    config: &ModuleConfig,
 ) -> TinyBusResult<Arc<dyn crate::storage::StorageProvider>> {
-    let provider = crate::storage::BusProvider::connect(connection)
+    let destination = config
+        .storage_callback
+        .as_deref()
+        .ok_or_else(|| tinybus::Error::failed("tinymcp has no host storage callback"))?;
+    let destination = tinybus::BusName::new(destination)
+        .map_err(|_| tinybus::Error::failed("tinymcp has an invalid host storage callback"))?;
+    let provider = crate::storage::BusProvider::connect_at(connection, destination)
         .await
         .map_err(|error| {
             tinybus::Error::failed(format!("tinymcp could not reach host storage: {error}"))
@@ -111,11 +125,19 @@ pub(super) fn stdio_launchers(
     connection: Option<&Connection>,
     client: &tinymcp_bus::McpClientConfig,
 ) -> crate::transport::stdio::jailed::StdioLaunchers {
-    use crate::transport::stdio::jailed::{BusJail, JailedSpawner, StdioLaunchers};
+    use crate::transport::stdio::jailed::BusJail;
+    stdio_launchers_for_bus(client, connection.map(BusJail::connect))
+}
+
+fn stdio_launchers_for_bus(
+    client: &tinymcp_bus::McpClientConfig,
+    bus: Option<Result<crate::transport::stdio::jailed::BusJail, tinybus::Error>>,
+) -> crate::transport::stdio::jailed::StdioLaunchers {
+    use crate::transport::stdio::jailed::{JailedSpawner, StdioLaunchers};
     let Some(sandbox) = client.stdio_sandbox.clone() else {
         return StdioLaunchers::new();
     };
-    if let Some(Ok(bus)) = connection.map(BusJail::connect) {
+    if let Some(Ok(bus)) = bus {
         return StdioLaunchers::sandboxed(Arc::new(JailedSpawner::new(Arc::new(bus), sandbox)));
     }
     tracing::warn!("a stdio sandbox is configured but the sandbox module is not reachable");
@@ -128,14 +150,16 @@ pub(super) async fn setup_over_installed_storage(
     config: ModuleConfig,
 ) -> TinyBusResult<()> {
     let supervisor = SupervisorConfig::default();
+    let stdio = stdio_launchers(Some(&connection), &config.client);
     let service = Arc::new(
-        McpService::new_with_stdio(&config, stdio_launchers(Some(&connection), &config.client))
+        McpService::new_with_stdio(&config, stdio)
             .map_err(|error| tinybus::Error::failed(format!("tinymcp could not start: {error}")))?
             .with_maintenance(supervisor.clone())
             .await
             .with_opener(connection.clone(), &config, supervisor)
             .map_err(|error| tinybus::Error::failed(format!("tinymcp could not start: {error}")))?,
     );
+    let service = Arc::new(service);
 
     service.register_root();
 

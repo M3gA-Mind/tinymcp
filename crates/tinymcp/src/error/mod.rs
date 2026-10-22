@@ -302,7 +302,7 @@ pub enum Error {
         action: String,
         /// What the storage port reported.
         #[source]
-        source: Box<tinystoragedrivers_core::StorageError>,
+        source: Box<crate::storage::types::StorageError>,
     },
 
     /// A host-supplied credential store could not do what was asked of it.
@@ -397,7 +397,7 @@ impl Error {
     /// Builds a [`Self::Store`] describing what was being attempted.
     pub(crate) fn store(
         action: impl Into<String>,
-        source: tinystoragedrivers_core::StorageError,
+        source: crate::storage::types::StorageError,
     ) -> Self {
         Self::Store {
             action: action.into(),

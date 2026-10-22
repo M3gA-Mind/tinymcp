@@ -22,9 +22,9 @@
 //! A read whose fingerprint differs misses, so editing a server's definition
 //! can never surface the old server's tools under the new one.
 
+use crate::storage::types::Precondition;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
-use tinystoragedrivers_core::Precondition;
 
 use super::types::{Store, now_ms};
 use crate::error::Result;
@@ -103,12 +103,6 @@ pub(super) fn keyed_fingerprint(key: &[u8; 32], value: &str) -> String {
     outer.update(outer_pad);
     outer.update(inner_digest);
     hex(&outer.finalize())
-}
-
-/// Lower-case hex of the SHA-256 of `bytes`: a document id that is safe for
-/// any key, however long or whatever it contains.
-pub(crate) fn hex_digest(bytes: &[u8]) -> String {
-    hex(&Sha256::digest(bytes))
 }
 
 /// Lower-case hex of `bytes`.

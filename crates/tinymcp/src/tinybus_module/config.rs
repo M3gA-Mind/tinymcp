@@ -10,7 +10,8 @@ use tinymcp_bus::McpClientConfig;
 ///
 /// Arrives as JSON in the loader's configuration slot. A host that configures
 /// nothing supplies either the empty object or `null`, so both decode to the
-/// same thing: a working module with no servers and an in-memory store.
+/// same empty configuration. Loading the module still requires the host to
+/// provision its storage callback; the module never falls back to memory.
 ///
 /// `#[serde(default)]` covers the empty object, because it fills in absent
 /// *fields*. It does not cover `null`, which is a whole document of the wrong
@@ -18,11 +19,14 @@ use tinymcp_bus::McpClientConfig;
 /// `null` would fail to load for exactly the host that asked nothing of it.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ModuleConfig {
+    /// The host-provisioned private storage callback destination for this
+    /// module instance. It is not a scope selector; the host binding chooses
+    /// the scope before the module connects.
+    pub storage_callback: Option<String>,
     /// Where the store and the audit log live.
     ///
-    /// `None` keeps both in memory, which is what a host that only wants the
-    /// statically declared servers should pass — there is nothing to persist,
-    /// and creating files for it would leave state nobody asked for.
+    /// `None` leaves the storage root unspecified. Storage itself is supplied
+    /// separately through [`ModuleConfig::storage_callback`].
     pub data_dir: Option<PathBuf>,
     /// The servers, credentials, identity, and proxy.
     pub client: McpClientConfig,
@@ -35,6 +39,7 @@ pub struct ModuleConfig {
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct Wire {
+    storage_callback: Option<String>,
     data_dir: Option<PathBuf>,
     client: McpClientConfig,
 }
@@ -49,6 +54,7 @@ impl<'de> Deserialize<'de> for ModuleConfig {
         let wire = Option::<Wire>::deserialize(deserializer)?.unwrap_or_default();
 
         Ok(Self {
+            storage_callback: wire.storage_callback,
             data_dir: wire.data_dir,
             client: wire.client,
         })

@@ -3,11 +3,10 @@
 use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::storage::Repo;
+use crate::storage::types::{DocumentStoreExt as _, ErrorKind, Filter, Precondition, Query, Sort};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tinystoragedrivers_core::{
-    DocumentStoreExt as _, ErrorKind, Filter, Precondition, Query, Repo, Sort,
-};
 
 use crate::error::{Error, Result};
 use crate::storage::{
@@ -160,11 +159,12 @@ impl Store {
     }
 
     /// Opens a store over a private in-memory backend, for tests and for a
-    /// host that wants no persistence.
+    /// unit tests.
     ///
     /// # Errors
     ///
     /// Returns [`Error::Store`] when the backend cannot be opened.
+    #[cfg(test)]
     pub fn open_in_memory() -> Result<Self> {
         Self::open(StoragePorts::memory()?)
     }
@@ -260,7 +260,7 @@ impl Store {
                 if !acquire_claim(documents.as_ref(), &claim_id, claim).await? {
                     return Ok(false);
                 }
-                let owns_claim = |held: Option<tinystoragedrivers_core::Versioned<Value>>| {
+                let owns_claim = |held: Option<crate::storage::types::Versioned<Value>>| {
                     held.filter(|claim| {
                         claim.doc.get("server_id").and_then(Value::as_str) == Some(id.as_str())
                     })
@@ -692,10 +692,10 @@ impl Store {
 /// is taken over once, but only after its lease: within it the holder may
 /// simply not have written its server yet.
 async fn acquire_claim(
-    documents: &dyn tinystoragedrivers_core::DocumentStore,
+    documents: &dyn crate::storage::types::DocumentStore,
     claim_id: &str,
     claim: Value,
-) -> tinystoragedrivers_core::Result<bool> {
+) -> crate::storage::types::Result<bool> {
     match documents
         .put_with(
             SERVER_NAMES,
@@ -800,7 +800,7 @@ fn load_cache_fingerprint_key(ports: &StoragePorts) -> Result<[u8; CACHE_FINGERP
     decode_hex_key(&stored).ok_or_else(|| {
         Error::store(
             "loading the cache key",
-            tinystoragedrivers_core::StorageError::serialization(
+            crate::storage::types::StorageError::serialization(
                 "the stored cache fingerprint key is malformed",
             ),
         )

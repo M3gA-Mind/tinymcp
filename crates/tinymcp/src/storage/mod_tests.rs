@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 fn dir(name: &str) -> PathBuf {
     std::env::temp_dir().join("tinymcp-test").join(name)
 }
-use tinystoragedrivers_core::{Filter, MemoryStorage};
+use crate::storage::types::Filter;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use crate::{AuditStore, Store};
 use tinymcp_bus::NewMcpWriteRecord;
@@ -143,20 +144,16 @@ fn an_installed_provider_replaces_the_default() {
     // A private slot, so this test cannot reroute the services other tests
     // build through the process-wide one.
     let slot = super::provider::ProviderSlot::new();
-    let first = slot.current();
+    assert!(slot.current().is_err());
+    let first: std::sync::Arc<dyn StorageProvider> = std::sync::Arc::new(MemoryProvider::new());
+    slot.install(std::sync::Arc::clone(&first));
+    assert!(std::sync::Arc::ptr_eq(&slot.current().unwrap(), &first));
     let replacement: std::sync::Arc<dyn StorageProvider> =
         std::sync::Arc::new(MemoryProvider::new());
     slot.install(std::sync::Arc::clone(&replacement));
-    assert!(std::sync::Arc::ptr_eq(&slot.current(), &replacement));
-    assert!(!std::sync::Arc::ptr_eq(&slot.current(), &first));
-}
-
-#[test]
-fn the_process_wide_provider_answers_for_a_directory() {
-    let ports = installed_provider()
-        .ports_for(&dir("process-wide"))
-        .unwrap();
-    assert!(!ports.has_state().unwrap());
+    let current = slot.current().unwrap();
+    assert!(std::sync::Arc::ptr_eq(&current, &replacement));
+    assert!(!std::sync::Arc::ptr_eq(&current, &first));
 }
 
 #[test]
@@ -184,13 +181,13 @@ fn the_memory_provider_refuses_a_relative_directory() {
 #[tokio::test]
 async fn failing_documents_refuse_every_call_except_declaring_collections() {
     use super::failing::FailingDocuments;
-    use tinystoragedrivers_core::{DocumentStore, Precondition, Query};
+    use crate::storage::types::{DocumentStore, Precondition, Query};
 
     let documents = FailingDocuments::default();
     assert!(
         !documents
             .capabilities()
-            .contains(tinystoragedrivers_core::Capability::Transactions)
+            .contains(crate::storage::types::Capability::Transactions)
     );
     for spec in collection_specs() {
         documents.ensure_collection(&spec).await.unwrap();

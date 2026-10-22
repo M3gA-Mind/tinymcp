@@ -3,11 +3,11 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use serde_json::Value;
-use tinystoragedrivers_core::{
+use crate::storage::types::{
     Capabilities, CollectionSpec, DocumentStore, Filter, Page, Precondition, Query, Result,
-    SearchHit, Sort, StorageError, Version, Versioned, async_trait,
+    SearchHit, Sort, StorageError, Version, Versioned,
 };
+use serde_json::Value;
 
 use super::StoragePorts;
 
@@ -28,7 +28,7 @@ impl FailingDocuments {
     }
 }
 
-#[async_trait]
+#[tinystoragedrivers_api::async_trait]
 impl DocumentStore for FailingDocuments {
     fn capabilities(&self) -> Capabilities {
         Capabilities::none()
@@ -39,17 +39,25 @@ impl DocumentStore for FailingDocuments {
     }
 
     async fn get(&self, _collection: &str, _id: &str) -> Result<Option<Versioned<Value>>> {
-        self.down()
+        if _collection == "tsd.migrations" {
+            Ok(None)
+        } else {
+            self.down()
+        }
     }
 
     async fn put(
         &self,
-        _collection: &str,
+        collection: &str,
         _id: &str,
         _doc: Value,
         _precondition: Precondition,
     ) -> Result<Version> {
-        self.down()
+        if collection == "tsd.migrations" {
+            Ok(Version::FIRST)
+        } else {
+            self.down()
+        }
     }
 
     async fn delete(
@@ -61,8 +69,15 @@ impl DocumentStore for FailingDocuments {
         self.down()
     }
 
-    async fn query(&self, _collection: &str, _query: &Query) -> Result<Page<Versioned<Value>>> {
-        self.down()
+    async fn query(&self, collection: &str, _query: &Query) -> Result<Page<Versioned<Value>>> {
+        if collection.starts_with("mcp_") {
+            Ok(Page {
+                items: Vec::new(),
+                next: None,
+            })
+        } else {
+            self.down()
+        }
     }
 
     async fn count(&self, _collection: &str, _filter: &Filter) -> Result<u64> {
