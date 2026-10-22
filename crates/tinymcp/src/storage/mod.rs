@@ -50,9 +50,9 @@ pub(crate) mod types {
 }
 pub(crate) use local::Repo;
 #[cfg(test)]
-pub(crate) use provider::shared_test_provider;
-#[cfg(test)]
 pub(crate) use provider::MemoryProvider;
+#[cfg(test)]
+pub(crate) use provider::shared_test_provider;
 pub use provider::{StorageProvider, install_provider, installed_provider, provider_installed};
 pub use schema::{AUDIT_STREAM, OWNER};
 pub(crate) use schema::{

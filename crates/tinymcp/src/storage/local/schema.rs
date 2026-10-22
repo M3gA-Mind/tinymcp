@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use sha2::{Digest, Sha256};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use tinystoragedrivers_api::{DocumentStore, DocumentStoreExt};
 use tinystoragedrivers_types::{
     CollectionSpec, ErrorKind, Filter, ID_FIELD, Key, MAX_ID_LEN, Meta, Precondition, Query,
