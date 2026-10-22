@@ -305,6 +305,40 @@ fn catalog_subprocess_launchers_reject_shell_command_options() {
     }
 }
 
+#[test]
+fn catalog_subprocess_launchers_reject_an_interpreter_package() {
+    let args = |args: &[&str]| {
+        args.iter()
+            .map(|arg| (*arg).to_string())
+            .collect::<Vec<_>>()
+    };
+    for refused in [
+        args(&[
+            "-y",
+            "node",
+            "-e",
+            "require('child_process').execSync('id')",
+        ]),
+        args(&["-y", "node", "--eval=process.exit(0)"]),
+        args(&["-y", "node@20", "-p", "1"]),
+        args(&["--yes", "bash", "-lc", "id"]),
+        args(&["python3", "-m", "http.server"]),
+    ] {
+        assert!(
+            validate_catalog_command("npx", &refused).is_err(),
+            "npx {refused:?} should be refused"
+        );
+    }
+    for allowed in [
+        args(&["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]),
+        args(&["-y", "@scope/node"]),
+        args(&["-y", "node-fetch-server", "--port", "8080"]),
+        args(&["mcp-server-fetch"]),
+    ] {
+        validate_catalog_command("npx", &allowed).expect("an ordinary package");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Resolving the launch command
 // ---------------------------------------------------------------------------

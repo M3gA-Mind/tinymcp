@@ -184,7 +184,46 @@ pub(crate) fn validate_catalog_command(command: &str, args: &[String]) -> Result
             "catalog subprocess cannot request a shell command",
         ));
     }
+    // The runner's first positional is the package it launches. An interpreter
+    // there (`npx -y node -e …`) turns the entry into an inline script. Any
+    // package still runs its own code, so the jail stays the real boundary;
+    // this only keeps the catalog from naming a shell or interpreter directly.
+    if args
+        .iter()
+        .find(|arg| !arg.starts_with('-'))
+        .is_some_and(|package| is_interpreter(package))
+    {
+        return Err(Error::malformed(
+            "catalog subprocess cannot launch an interpreter",
+        ));
+    }
     Ok(())
+}
+
+/// Whether a runner's package argument names a shell or script interpreter,
+/// ignoring a directory prefix and an `@version` suffix. A scoped package
+/// (`@scope/name`) is never an interpreter.
+fn is_interpreter(package: &str) -> bool {
+    if package.starts_with('@') {
+        return false;
+    }
+    let name = package.rsplit(['/', '\\']).next().unwrap_or(package);
+    let name = name.split_once('@').map_or(name, |(name, _)| name);
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "node"
+            | "nodejs"
+            | "bun"
+            | "deno"
+            | "python"
+            | "python3"
+            | "sh"
+            | "bash"
+            | "zsh"
+            | "pwsh"
+            | "powershell"
+            | "cmd"
+    )
 }
 
 /// Works out the command a subprocess install is launched with.
