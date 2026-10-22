@@ -115,7 +115,11 @@ fn the_storage_schema_composes_and_the_grant_is_generated_from_it() {
     assert!(granted.collections.contains(&"mcp_servers".to_owned()));
     assert_eq!(
         granted.streams,
-        vec![storage::AUDIT_STREAM.to_owned(), "mcp_audit".to_owned()]
+        vec![
+            storage::AUDIT_STREAM.to_owned(),
+            "mcp_audit".to_owned(),
+            "mcp_audit/".to_owned()
+        ]
     );
     assert!(
         collections
