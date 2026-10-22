@@ -95,7 +95,7 @@ async fn migrate_audit_source(
     target: &str,
 ) -> StorageResult<()> {
     const STEP: &str = "audit_streams_v2";
-    let source_len = streams.len(source).await?;
+    let source_len = stream_len(streams, source).await?;
     let mut progress =
         if let Some(progress) = migrations.stream_progress(OWNER, STEP, source).await? {
             progress
@@ -117,9 +117,26 @@ async fn migrate_audit_source(
         ));
     }
     while progress.source_offset < source_len {
-        let batch = streams
+        let batch = match streams
             .read_window(source, progress.source_offset, 256)
-            .await?;
+            .await
+        {
+            Ok(batch) => batch,
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                let current_len = stream_len(streams, source).await?;
+                let checkpoint = migrations
+                    .stream_progress(OWNER, STEP, source)
+                    .await?;
+                if current_len == 0
+                    && checkpoint.is_some_and(|saved| saved.source_offset >= source_len)
+                {
+                    progress.source_offset = source_len;
+                    break;
+                }
+                return Err(error);
+            }
+            Err(error) => return Err(error),
+        };
         if batch.is_empty() {
             return Err(tinystoragedrivers_types::StorageError::conflict(
                 "audit source ended before its reported length",
@@ -179,14 +196,27 @@ async fn migrate_audit_source(
         migrations.save_stream_progress(&progress).await?;
     }
     if progress.source_offset == source_len {
-        if streams.len(source).await? != source_len {
+        let current_len = stream_len(streams, source).await?;
+        if current_len != source_len && !(current_len == 0 && source_len > 0) {
             return Err(tinystoragedrivers_types::StorageError::conflict(
                 "audit source changed while it was being migrated",
             ));
         }
-        streams.delete_stream(source).await?;
+        match streams.delete_stream(source).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == ErrorKind::NotFound && current_len == 0 => {}
+            Err(error) => return Err(error),
+        }
     }
     Ok(())
+}
+
+async fn stream_len(streams: &dyn StreamStore, source: &str) -> StorageResult<u64> {
+    match streams.len(source).await {
+        Ok(length) => Ok(length),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(0),
+        Err(error) => Err(error),
+    }
 }
 
 /// A step reading the legacy collection `legacy` and writing `item`, applying
