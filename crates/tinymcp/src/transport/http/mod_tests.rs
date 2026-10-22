@@ -1661,6 +1661,86 @@ fn caps_the_redirect_chain_at_max_redirects() {
     ));
 }
 
+#[test]
+fn a_cross_origin_hop_is_refused_only_when_it_carries_a_custom_credential() {
+    use super::cross_origin_refusal;
+    let url = |s: &str| reqwest::Url::parse(s).unwrap();
+    let origin = url("https://mcp.example.com/mcp");
+
+    // reqwest does not strip a custom header or query-param credential.
+    assert!(cross_origin_refusal(&origin, &url("https://other.example.net/mcp"), true).is_some());
+    // A bearer or no credential: reqwest strips Authorization itself.
+    assert!(cross_origin_refusal(&origin, &url("https://other.example.net/mcp"), false).is_none());
+    // A same-origin hop keeps the credential where it was configured.
+    assert!(cross_origin_refusal(&origin, &url("https://mcp.example.com/v2"), true).is_none());
+}
+
+#[test]
+fn a_cross_origin_hop_onto_a_local_address_is_refused() {
+    use super::cross_origin_refusal;
+    let url = |s: &str| reqwest::Url::parse(s).unwrap();
+    let origin = url("https://mcp.example.com/mcp");
+
+    for target in [
+        "http://127.0.0.1:8080/",
+        "http://localhost/admin",
+        "http://api.localhost./",
+        "http://169.254.169.254/latest/meta-data",
+        "http://10.0.0.5/",
+        "http://[::1]:9000/",
+        "http://[::ffff:127.0.0.1]/",
+    ] {
+        assert!(
+            cross_origin_refusal(&origin, &url(target), false).is_some(),
+            "{target} should be refused"
+        );
+    }
+    // A loopback server may still redirect within itself.
+    let local = url("http://127.0.0.1:8080/mcp");
+    assert!(cross_origin_refusal(&local, &url("http://127.0.0.1:8080/v2"), false).is_none());
+}
+
+/// End to end: a custom-header credential is not carried to the host a
+/// redirect names. The target counts every request it receives.
+#[tokio::test]
+async fn a_custom_header_credential_does_not_follow_a_cross_origin_redirect() {
+    let hits = Arc::new(AtomicUsize::new(0));
+    let target_hits = Arc::clone(&hits);
+    let target = Router::new().fallback(move || {
+        let hits = Arc::clone(&target_hits);
+        async move {
+            hits.fetch_add(1, AtomicOrdering::SeqCst);
+            AxumStatus::OK
+        }
+    });
+    let target_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target_base = format!("http://{}", target_listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(target_listener, target).await.unwrap() });
+
+    let redirector = Router::new().fallback(move || {
+        let location = format!("{target_base}/mcp");
+        async move { (AxumStatus::TEMPORARY_REDIRECT, [("Location", location)]).into_response() }
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/mcp", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, redirector).await.unwrap() });
+
+    let client = McpHttpClient::builder(&endpoint)
+        .auth(McpAuthConfig::Header {
+            name: "X-Api-Key".into(),
+            value: "secret".into(),
+        })
+        .build()
+        .unwrap();
+
+    assert!(client.initialize().await.is_err());
+    assert_eq!(
+        hits.load(AtomicOrdering::SeqCst),
+        0,
+        "the redirect was followed"
+    );
+}
+
 /// A POST stream may send a notification or a server request before the reply;
 /// neither may be taken as the response.
 #[test]
