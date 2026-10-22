@@ -1,6 +1,4 @@
-//! An ignored smoke test against the official MCP registry and a listed server.
-
-#![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+//! An opt-in smoke test against the official MCP registry and a listed server.
 
 #[path = "support/live_official_registry.rs"]
 mod support;
@@ -10,8 +8,22 @@ use serde_json::{Value, json};
 /// Searches the official registry, installs its local npm calculator package,
 /// and calls one deterministic computation. Requires network access and `npx`.
 #[tokio::test]
-#[ignore = "live: official MCP registry and npm package server"]
+#[allow(clippy::expect_used, clippy::panic)]
 async fn live_official_registry_server_can_be_installed_connected_and_called() {
+    if std::env::var_os("TINYMCP_LIVE_REGISTRY").as_deref() != Some(std::ffi::OsStr::new("1")) {
+        eprintln!("skipping live registry test; set TINYMCP_LIVE_REGISTRY=1 to enable it");
+        return;
+    }
+
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(180), run_live_flow()).await;
+    assert!(
+        outcome.is_ok(),
+        "live registry acceptance flow exceeded 180 seconds"
+    );
+}
+
+#[allow(clippy::expect_used, clippy::panic)]
+async fn run_live_flow() {
     const SERVER_NAME: &str = "io.github.headlessherm-creator/polymath-megablaster-mcp";
 
     let fixture = support::IsolatedRegistry::new();
@@ -44,21 +56,38 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
         "{SERVER_NAME} unexpectedly advertises a hosted endpoint"
     );
 
+    let npm_package = detail
+        .connections
+        .iter()
+        .find(|connection| connection.r#type == "stdio")
+        .and_then(|connection| connection.example_config.as_ref())
+        .and_then(|config| config.get("args"))
+        .and_then(Value::as_array)
+        .and_then(|args| args.iter().filter_map(Value::as_str).next_back())
+        .expect("npm stdio connection advertises its package argument");
+    fixture
+        .cache_npm_package(npm_package)
+        .await
+        .expect("prefetch npm package before starting it in the offline sandbox");
+
     // The registry supplies an unversioned npx command, so npm resolves the
     // current package version when this live test installs it.
     let installed = registry
         .install(SERVER_NAME, fixture.server_env.clone(), None)
         .await
         .expect("install official npm package");
-    let connected = registry
-        .connect(&installed.server.server_id)
-        .await
-        .unwrap_or_else(|error| {
-            panic!(
-                "connect installed package failed: {error}; child stderr: {}",
-                support::child_diagnostics(&fixture.stderr_path)
-            )
-        });
+    let connected = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        registry.connect(&installed.server.server_id),
+    )
+    .await
+    .expect("stdio server initialization exceeded 30 seconds")
+    .unwrap_or_else(|error| {
+        panic!(
+            "connect installed package failed: {error}; child stderr: {}",
+            support::child_diagnostics(&fixture.stderr_path)
+        )
+    });
     let calculate = connected
         .tools
         .iter()
@@ -76,25 +105,34 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
         "local `calculate` tool's required argument schema changed: {}",
         calculate.input_schema
     );
+    call_calculate(registry, &installed.server.server_id, &fixture.stderr_path).await;
 
+    registry
+        .disconnect(&installed.server.server_id)
+        .await
+        .expect("disconnect installed package");
+}
+
+#[allow(clippy::expect_used, clippy::panic)]
+async fn call_calculate(
+    registry: &tinymcp::registry::McpRegistry,
+    server_id: &str,
+    stderr: &std::path::Path,
+) {
     let result = registry
-        .tool_call(
-            &installed.server.server_id,
-            "calculate",
-            json!({ "expression": "2 + 2" }),
-        )
+        .tool_call(server_id, "calculate", json!({ "expression": "2 + 2" }))
         .await
         .unwrap_or_else(|error| {
             panic!(
                 "local `calculate` call failed: {error}; child stderr: {}",
-                support::child_diagnostics(&fixture.stderr_path)
+                support::child_diagnostics(stderr)
             )
         });
     assert!(
         !result.is_error,
         "local `calculate` returned an MCP error: {}; child stderr: {}",
         result.result,
-        support::child_diagnostics(&fixture.stderr_path)
+        support::child_diagnostics(stderr)
     );
     let text = result
         .result
@@ -108,9 +146,8 @@ async fn live_official_registry_server_can_be_installed_connected_and_called() {
         Some(&json!("4")),
         "`calculate` did not return 4 for 2 + 2: {text}"
     );
-
-    registry
-        .disconnect(&installed.server.server_id)
-        .await
-        .expect("disconnect installed package");
 }
+
+#[cfg(test)]
+#[path = "support/live_official_registry_tests.rs"]
+mod tests;

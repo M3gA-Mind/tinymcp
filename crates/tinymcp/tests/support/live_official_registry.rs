@@ -28,18 +28,99 @@ impl StdioSpawner for IsolatedSpawner {
         let workspace = self.workspace.clone();
         let stderr_path = self.stderr_path.clone();
         Box::pin(async move {
+            let runtime_root = node_runtime_root(&launch)?;
+            let program = node_runtime_program(&launch, &runtime_root)?;
+            let program_relative = program.strip_prefix(&runtime_root).map_err(|_| {
+                io::Error::other("stdio program is outside the resolved Node runtime")
+            })?;
             let stderr = File::create(stderr_path)?;
-            let mut command = tokio::process::Command::new(&launch.program);
+            let mut args = vec![
+                "--tmpfs".to_owned(),
+                "/".to_owned(),
+                "--dir".to_owned(),
+                "/usr".to_owned(),
+                "--dir".to_owned(),
+                "/usr/bin".to_owned(),
+                "--dir".to_owned(),
+                "/usr/lib".to_owned(),
+                "--dir".to_owned(),
+                "/lib".to_owned(),
+                "--dir".to_owned(),
+                "/lib64".to_owned(),
+                "--dir".to_owned(),
+                "/proc".to_owned(),
+                "--dir".to_owned(),
+                "/dev".to_owned(),
+                "--dir".to_owned(),
+                "/tmp".to_owned(),
+                "--dir".to_owned(),
+                "/node".to_owned(),
+                "--ro-bind".to_owned(),
+                runtime_root.to_string_lossy().into_owned(),
+                "/node".to_owned(),
+                "--ro-bind".to_owned(),
+                "/usr/bin".to_owned(),
+                "/usr/bin".to_owned(),
+                "--ro-bind".to_owned(),
+                "/usr/lib".to_owned(),
+                "/usr/lib".to_owned(),
+                "--ro-bind".to_owned(),
+                "/lib".to_owned(),
+                "/lib".to_owned(),
+                "--ro-bind".to_owned(),
+                "/lib64".to_owned(),
+                "/lib64".to_owned(),
+                "--tmpfs".to_owned(),
+                "/tmp".to_owned(),
+                "--unshare-pid".to_owned(),
+                "--unshare-ipc".to_owned(),
+                "--new-session".to_owned(),
+                "--proc".to_owned(),
+                "/proc".to_owned(),
+                "--dev".to_owned(),
+                "/dev".to_owned(),
+                "--unshare-net".to_owned(),
+                "--die-with-parent".to_owned(),
+                "--bind".to_owned(),
+                workspace.to_string_lossy().into_owned(),
+                "/sandbox".to_owned(),
+                "--chdir".to_owned(),
+                "/sandbox".to_owned(),
+                "--".to_owned(),
+                format!("/node/{}", program_relative.to_string_lossy()),
+            ];
+            if runtime_root.join("etc").is_dir() {
+                let bind_index = args
+                    .windows(3)
+                    .position(|window| window[0] == "--ro-bind" && window[2] == "/node")
+                    .map_or(args.len(), |index| index + 3);
+                args.splice(
+                    bind_index..bind_index,
+                    ["--tmpfs", "/node/etc"].map(str::to_owned),
+                );
+            }
+            let path = launch_path(&launch).to_owned();
+            args.extend(launch.args);
+            let bwrap =
+                resolve_host_executable("bwrap", &std::env::var("PATH").unwrap_or_default())?;
+            let mut command = tokio::process::Command::new(bwrap);
             command
-                .args(&launch.args)
+                .args(args)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::from(stderr))
                 .kill_on_drop(true)
                 .env_clear()
-                .current_dir(launch.cwd.as_ref().unwrap_or(&workspace));
+                .current_dir(&workspace);
             for (key, value) in &launch.env {
+                let value = value
+                    .replace(&workspace.to_string_lossy().to_string(), "/sandbox")
+                    .replace(&runtime_root.to_string_lossy().to_string(), "/node");
                 command.env(key, value);
+            }
+            command.env("PATH", sandbox_path(&path, &runtime_root));
+            if launch.program.file_name().is_some_and(|name| name == "npx") {
+                command.env("npm_config_offline", "true");
             }
             command.spawn()
         })
@@ -53,9 +134,11 @@ pub(crate) struct IsolatedRegistry {
     pub(crate) catalog_store: Store,
     pub(crate) server_env: BTreeMap<String, String>,
     pub(crate) stderr_path: PathBuf,
+    npm_cache: PathBuf,
 }
 
 impl IsolatedRegistry {
+    #[allow(clippy::expect_used)]
     pub(crate) fn new() -> Self {
         let scratch = tempfile::tempdir().expect("create isolated npm home");
         let npm_cache = scratch.path().join("npm-cache");
@@ -133,10 +216,149 @@ impl IsolatedRegistry {
             catalog_store,
             server_env,
             stderr_path,
+            npm_cache,
+        }
+    }
+
+    pub(crate) async fn cache_npm_package(&self, package: &str) -> Result<(), String> {
+        if !is_registry_package_spec(package) {
+            return Err("official registry returned an invalid npm package spec".to_owned());
+        }
+        let prefix = self.npm_cache.with_file_name("npm-prefetch");
+        std::fs::create_dir_all(&prefix)
+            .map_err(|error| format!("could not create npm prefetch prefix: {error}"))?;
+        let mut command = tokio::process::Command::new("npm");
+        command
+            .args([
+                "install",
+                "--ignore-scripts",
+                "--no-audit",
+                "--no-fund",
+                "--prefix",
+            ])
+            .arg(&prefix)
+            .arg(package)
+            .arg("--cache")
+            .arg(&self.npm_cache)
+            .env_clear()
+            .envs(&self.server_env)
+            .kill_on_drop(true);
+        let output = tokio::time::timeout(std::time::Duration::from_secs(90), command.output())
+            .await
+            .map_err(|_| "npm package cache prefetch exceeded 90 seconds".to_owned())?
+            .map_err(|error| format!("could not prefetch npm package: {error}"))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "npm package cache prefetch failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ))
         }
     }
 }
 
+pub(crate) fn is_registry_package_spec(package: &str) -> bool {
+    !package.is_empty()
+        && !package.starts_with('.')
+        && !package.starts_with('/')
+        && !package.contains("..")
+        && package
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "@/._-".contains(character))
+        && package.matches('/').count() <= 1
+        && package.split_once('/').is_none_or(|(scope, name)| {
+            scope.starts_with('@') && scope.len() > 1 && !name.is_empty()
+        })
+}
+
+fn node_runtime_root(launch: &StdioLaunch) -> io::Result<PathBuf> {
+    let path = launch_path(launch);
+    for directory in std::env::split_paths(path) {
+        let node = directory.join("node");
+        if node.is_file() {
+            let output = std::process::Command::new(&node)
+                .args(["-p", "process.execPath"])
+                .output()?;
+            if !output.status.success() {
+                continue;
+            }
+            let node = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+            let node = node.canonicalize()?;
+            return node
+                .parent()
+                .and_then(Path::parent)
+                .map(Path::to_path_buf)
+                .ok_or_else(|| io::Error::other("resolved Node executable has no runtime root"));
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::NotFound,
+        "could not resolve Node from the stdio launch PATH",
+    ))
+}
+
+pub(crate) fn launch_path(launch: &StdioLaunch) -> &str {
+    launch
+        .env
+        .iter()
+        .rev()
+        .find(|(key, _)| key == "PATH")
+        .map_or("", |(_, value)| value.as_str())
+}
+
+fn node_runtime_program(launch: &StdioLaunch, runtime_root: &Path) -> io::Result<PathBuf> {
+    if let Ok(program) = launch.program.canonicalize()
+        && program.starts_with(runtime_root)
+    {
+        return Ok(program);
+    }
+
+    [
+        runtime_root.join("lib/node_modules/npm/bin/npx-cli.js"),
+        runtime_root.join("lib/node_modules/npm/bin/npx.js"),
+    ]
+    .into_iter()
+    .find(|program| program.is_file())
+    .ok_or_else(|| {
+        io::Error::other("could not find the npm npx entry point in the resolved Node runtime")
+    })
+}
+
+fn sandbox_path(path: &str, runtime_root: &Path) -> String {
+    let entries = std::env::split_paths(path)
+        .filter_map(|entry| {
+            if let Ok(relative) = entry.strip_prefix(runtime_root) {
+                Some(format!("/node/{}", relative.to_string_lossy()))
+            } else if entry == Path::new("/usr/bin") {
+                Some(entry.to_string_lossy().into_owned())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    std::env::join_paths(entries).map_or_else(
+        |_| "/node/bin:/usr/bin".to_owned(),
+        |path| path.to_string_lossy().into_owned(),
+    )
+}
+
+pub(crate) fn resolve_host_executable(program: &str, path: &str) -> io::Result<PathBuf> {
+    std::env::split_paths(path)
+        .map(|directory| directory.join(program))
+        .find(|candidate| candidate.is_file())
+        .map_or_else(
+            || {
+                Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("could not find {program} on the host PATH"),
+                ))
+            },
+            |candidate| candidate.canonicalize(),
+        )
+}
+
+#[allow(clippy::expect_used, clippy::panic)]
 pub(crate) async fn assert_search_lists(
     registries: &Registries,
     store: &Store,

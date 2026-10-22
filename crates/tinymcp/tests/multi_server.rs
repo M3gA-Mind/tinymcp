@@ -1,7 +1,5 @@
 //! Multiple installed MCP servers remain independent through the public API.
 
-#![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
-
 #[path = "support/mcp_server.rs"]
 mod mcp_server_fixture;
 #[path = "support/storage.rs"]
@@ -19,6 +17,7 @@ use mcp_server_fixture::{
     mcp_server, mcp_server_with_reply, mcp_server_with_reply_and_initialization_failure,
 };
 
+#[allow(clippy::expect_used)]
 fn registry_with_servers(servers: &[InstalledServer]) -> McpRegistry {
     let store = storage_fixture::open_memory_store();
     for server in servers {
@@ -54,12 +53,14 @@ fn remote_server(server_id: &str, qualified_name: &str, endpoint: &str) -> Insta
     }
 }
 
+#[allow(clippy::expect_used)]
 fn tool_text(result: &Value) -> &str {
     result["content"][0]["text"]
         .as_str()
         .expect("tool call returns a text block")
 }
 
+#[allow(clippy::expect_used, clippy::panic)]
 async fn call_forecast(registry: &McpRegistry, server_id: &str) -> String {
     let result = registry
         .tool_call(server_id, "forecast", json!({}))
@@ -75,6 +76,7 @@ fn assert_one_forecast_tool(tools: &[tinymcp::McpTool]) {
 }
 
 #[tokio::test]
+#[allow(clippy::expect_used, clippy::panic)]
 async fn same_named_tools_from_two_servers_keep_distinct_ids_and_routes() {
     let (endpoint_a, state_a) = mcp_server().await;
     let (endpoint_b, state_b) = mcp_server_with_reply("answer from B").await;
@@ -111,6 +113,7 @@ async fn same_named_tools_from_two_servers_keep_distinct_ids_and_routes() {
 }
 
 #[tokio::test]
+#[allow(clippy::expect_used, clippy::panic)]
 async fn failed_connect_does_not_block_a_healthy_server() {
     let (endpoint, healthy_state) = mcp_server_with_reply("still healthy").await;
     let (unhealthy_endpoint, _unhealthy_state) =
