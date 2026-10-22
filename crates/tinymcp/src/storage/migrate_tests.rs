@@ -302,6 +302,77 @@ struct CompetingAuditAppend {
     competing_batch: Option<Vec<Value>>,
 }
 
+/// Completes the same source migration through another opener before the
+/// first opener reads its next source batch.
+#[derive(Debug)]
+struct CompetingAuditDelete {
+    inner: Arc<dyn StreamStore>,
+    migrations: Migrations,
+    raced: AtomicBool,
+}
+
+#[tinystoragedrivers_api::async_trait]
+impl StreamStore for CompetingAuditDelete {
+    fn capabilities(&self) -> tinystoragedrivers_types::Capabilities {
+        self.inner.capabilities()
+    }
+
+    async fn append(&self, stream: &str, value: Value) -> crate::storage::types::Result<u64> {
+        self.inner.append(stream, value).await
+    }
+
+    async fn append_batch(
+        &self,
+        stream: &str,
+        values: Vec<Value>,
+    ) -> crate::storage::types::Result<u64> {
+        self.inner.append_batch(stream, values).await
+    }
+
+    async fn append_batch_if_offset(
+        &self,
+        stream: &str,
+        expected_next_offset: u64,
+        values: Vec<Value>,
+    ) -> crate::storage::types::Result<u64> {
+        self.inner
+            .append_batch_if_offset(stream, expected_next_offset, values)
+            .await
+    }
+
+    async fn read_window(
+        &self,
+        stream: &str,
+        from: u64,
+        limit: usize,
+    ) -> crate::storage::types::Result<Vec<StreamEntry>> {
+        if stream == "mcp_audit" && !self.raced.swap(true, Ordering::SeqCst) {
+            migrate::migrate_audit_streams(&*self.inner, &self.migrations).await?;
+        }
+        self.inner.read_window(stream, from, limit).await
+    }
+
+    async fn len(&self, stream: &str) -> crate::storage::types::Result<u64> {
+        self.inner.len(stream).await
+    }
+
+    async fn truncate_before(
+        &self,
+        stream: &str,
+        offset: u64,
+    ) -> crate::storage::types::Result<u64> {
+        self.inner.truncate_before(stream, offset).await
+    }
+
+    async fn delete_stream(&self, stream: &str) -> crate::storage::types::Result<bool> {
+        self.inner.delete_stream(stream).await
+    }
+
+    async fn streams(&self, prefix: &str) -> crate::storage::types::Result<Vec<String>> {
+        self.inner.streams(prefix).await
+    }
+}
+
 #[tinystoragedrivers_api::async_trait]
 impl StreamStore for CompetingAuditAppend {
     fn capabilities(&self) -> tinystoragedrivers_types::Capabilities {
@@ -944,6 +1015,35 @@ fn audit_import_rechecks_source_length_before_deleting_it() {
     assert_eq!(
         fixture.stream(AUDIT_STREAM),
         [json!({"timestamp_ms": 1}), json!({"timestamp_ms": 2})]
+    );
+}
+
+#[test]
+fn audit_import_accepts_a_source_removed_by_a_competing_opener() {
+    let fixture = Fixture::new();
+    let entry = json!({"timestamp_ms": 1, "tool_name": "copied"});
+    fixture.legacy_stream("mcp_audit", std::slice::from_ref(&entry));
+    let storage =
+        StoragePorts::from_storage(&fixture.storage, Arc::clone(fixture.storage.secrets()));
+    let migrations = Migrations::new(&storage.documents, OWNER);
+    let racing = CompetingAuditDelete {
+        inner: Arc::clone(&storage.streams),
+        migrations: migrations.clone(),
+        raced: AtomicBool::new(false),
+    };
+
+    fixture
+        .blocking
+        .block_on(migrate::migrate_audit_streams(&racing, &migrations))
+        .expect("a concurrently completed import is accepted");
+
+    assert_eq!(fixture.stream("mcp_audit"), Vec::<Value>::new());
+    assert_eq!(fixture.stream(AUDIT_STREAM), [entry]);
+    assert!(
+        fixture
+            .blocking
+            .block_on(migrations.done(OWNER, "audit_streams_v2"))
+            .unwrap()
     );
 }
 
