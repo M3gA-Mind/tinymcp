@@ -1,6 +1,7 @@
 //! Pure collection names and shapes for MCP storage.
 
-use tinystoragedrivers_types::{CollectionSpec, IndexSpec, Key, WriteOptions};
+use sha2::{Digest, Sha256};
+use tinystoragedrivers_types::{CollectionSpec, IndexSpec, Key, MAX_ID_LEN, WriteOptions};
 
 /// The owner every name below starts with.
 pub const OWNER: &str = "mcp";
@@ -72,6 +73,14 @@ pub fn doc_id(parts: &[&str]) -> tinystoragedrivers_types::Result<String> {
                 other => encoded.push(other),
             }
         }
+    }
+    if encoded.len() > MAX_ID_LEN {
+        encoded = format!(
+            "~{}",
+            data_encoding::BASE32_NOPAD
+                .encode(&Sha256::digest(encoded.as_bytes()))
+                .to_ascii_lowercase()
+        );
     }
     Key::new(encoded).map(|key| key.as_str().to_owned())
 }

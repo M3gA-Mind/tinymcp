@@ -124,6 +124,7 @@ tinystoragedrivers-secrets = { git = "https://github.com/tinyhumansai/tinystorag
 # Locating a user's home directory, to find the version-manager shim
 # directories a desktop launch's stripped PATH leaves out.
 dirs = "7"
+data-encoding = "2"
 # SHA-256: PKCE code challenges in the authorization-code flow, and the digest
 # in an action tool's name (`tinymcp-bus`'s `agent_tools::searchable_name`).
 sha2 = "0.11"

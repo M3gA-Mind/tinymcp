@@ -2,12 +2,13 @@
 
 use std::sync::Arc;
 
+use sha2::{Digest, Sha256};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tinystoragedrivers_api::{DocumentStore, DocumentStoreExt};
 use tinystoragedrivers_types::{
-    CollectionSpec, ErrorKind, Filter, ID_FIELD, Key, Meta, Precondition, Query, Result, Sort,
-    StorageError, WriteOptions,
+    CollectionSpec, ErrorKind, Filter, ID_FIELD, Key, MAX_ID_LEN, Meta, Precondition, Query,
+    Result, Sort, StorageError, WriteOptions,
 };
 
 const PAGE_SIZE: usize = 100;
@@ -36,6 +37,14 @@ pub(crate) fn composite_key(parts: &[&str]) -> Result<Key> {
                 other => encoded.push(other),
             }
         }
+    }
+    if encoded.len() > MAX_ID_LEN {
+        encoded = format!(
+            "~{}",
+            data_encoding::BASE32_NOPAD
+                .encode(&Sha256::digest(encoded.as_bytes()))
+                .to_ascii_lowercase()
+        );
     }
     Key::new(encoded)
 }
