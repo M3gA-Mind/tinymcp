@@ -1854,10 +1854,12 @@ name = "tinymcp-bus"
 version = "0.20.0"
 dependencies = [
  "base64 0.23.1",
+ "data-encoding",
  "regex",
  "schemars",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "tinystoragedrivers-testkit",
  "tinystoragedrivers-types",
  "tokio",
