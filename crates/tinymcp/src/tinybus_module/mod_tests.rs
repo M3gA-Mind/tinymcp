@@ -1790,9 +1790,7 @@ use tinybus::transport::memory::MemoryBus;
 async fn in_process_connection() -> Connection {
     static INSTALL_TEST_PROVIDER: std::sync::Once = std::sync::Once::new();
     INSTALL_TEST_PROVIDER.call_once(|| {
-        crate::storage::install_provider(
-            std::sync::Arc::new(crate::storage::MemoryProvider::new()),
-        );
+        crate::storage::install_provider(crate::storage::provider::shared_test_provider());
     });
     let bus = MemoryBus::new();
     Broker::new().spawn(bus.clone());
@@ -2631,6 +2629,7 @@ async fn a_module_comes_up_without_waiting_for_a_server_that_never_answers() {
     });
 
     let directory = tempfile::tempdir().unwrap();
+    let connection = in_process_connection().await;
     let store = crate::Store::open(
         crate::storage::installed_provider()
             .unwrap()
@@ -2647,7 +2646,7 @@ async fn a_module_comes_up_without_waiting_for_a_server_that_never_answers() {
     tokio::time::timeout(
         std::time::Duration::from_secs(10),
         super::setup_over_installed_storage(
-            in_process_connection().await,
+            connection,
             ModuleConfig {
                 data_dir: Some(directory.path().to_path_buf()),
                 storage_callback: None,

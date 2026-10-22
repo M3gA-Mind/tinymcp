@@ -47,9 +47,7 @@ async fn serve_root(config: &ModuleConfig) -> TestBus {
     // Installed once: the slot is process-wide, so replacing it per test would
     // swap the store out from under tests running in parallel.
     INSTALL_ONCE.call_once(|| {
-        crate::storage::install_provider(
-            std::sync::Arc::new(crate::storage::MemoryProvider::new()),
-        );
+        crate::storage::install_provider(crate::storage::provider::shared_test_provider());
     });
     let host = tinybus::module::ModuleHost::new(broker.clone());
     let module = test_linked_module().unwrap();

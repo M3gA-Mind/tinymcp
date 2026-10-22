@@ -26,6 +26,7 @@ use super::{
     tools_for,
 };
 use crate::registry::Store;
+use crate::storage::StorageProvider;
 use crate::{McpRegistry, McpServerRegistry};
 
 // ---------------------------------------------------------------------------

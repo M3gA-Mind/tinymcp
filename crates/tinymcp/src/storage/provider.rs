@@ -96,6 +96,14 @@ pub fn installed_provider() -> Result<Arc<dyn StorageProvider>> {
 pub(crate) use memory::MemoryProvider;
 
 #[cfg(test)]
+pub(crate) fn shared_test_provider() -> Arc<dyn StorageProvider> {
+    static PROVIDER: OnceLock<Arc<MemoryProvider>> = OnceLock::new();
+    PROVIDER
+        .get_or_init(|| Arc::new(MemoryProvider::new()))
+        .clone()
+}
+
+#[cfg(test)]
 mod memory {
     //! Explicit test-only memory provider.
 
