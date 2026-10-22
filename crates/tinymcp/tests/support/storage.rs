@@ -12,9 +12,7 @@ use tinystoragedrivers_types::Scope;
 pub(crate) fn open_memory_store() -> Store {
     let backend = MemoryBackend::new();
     let scope = Scope::new("integration-test").expect("valid test scope");
-    let storage = backend
-        .for_scope(&scope)
-        .expect("open in-memory storage");
+    let storage = backend.for_scope(&scope).expect("open in-memory storage");
     let ports = StoragePorts::from_storage(&storage, Arc::clone(storage.secrets()));
     Store::open(ports).expect("open in-memory store")
 }
