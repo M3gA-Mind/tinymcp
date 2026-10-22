@@ -1010,7 +1010,10 @@ fn audit_import_preserves_its_source_when_a_read_fails() {
         .block_on(migrate::migrate_audit_streams(&streams, &migrations))
         .unwrap_err();
 
-    assert_eq!(error.kind(), tinystoragedrivers_types::ErrorKind::Unavailable);
+    assert_eq!(
+        error.kind(),
+        tinystoragedrivers_types::ErrorKind::Unavailable
+    );
     assert_eq!(fixture.stream("mcp_audit"), entries);
     assert_eq!(fixture.stream(AUDIT_STREAM), Vec::<Value>::new());
 }
