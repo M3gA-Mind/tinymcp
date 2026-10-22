@@ -1812,3 +1812,52 @@ async fn a_failed_initialized_notification_does_not_cache_the_session() {
     assert_eq!(inits.load(AtomicOrdering::SeqCst), 2, "no fresh handshake");
     assert_eq!(notifications.load(AtomicOrdering::SeqCst), 2);
 }
+
+/// A server that answers 404 for a reason other than an expired session must
+/// cost one reinitialize and one retry, then fail, rather than loop.
+#[tokio::test]
+async fn a_server_that_always_answers_404_is_retried_once_not_forever() {
+    let inits = Arc::new(AtomicUsize::new(0));
+    let lists = Arc::new(AtomicUsize::new(0));
+    let (server_inits, server_lists) = (Arc::clone(&inits), Arc::clone(&lists));
+    let app = Router::new().route(
+        "/",
+        post(move |Json(body): Json<Value>| {
+            let (inits, lists) = (Arc::clone(&server_inits), Arc::clone(&server_lists));
+            async move {
+                match body["method"].as_str() {
+                    Some("initialize") => {
+                        inits.fetch_add(1, AtomicOrdering::SeqCst);
+                        (
+                            [(HEADER_SESSION_ID, "session-404")],
+                            Json(json!({
+                                "jsonrpc": "2.0",
+                                "id": body["id"].clone(),
+                                "result": {
+                                    "protocolVersion": LATEST_PROTOCOL_VERSION,
+                                    "capabilities": { "tools": {} },
+                                    "serverInfo": { "name": "always-404", "version": "1.0.0" },
+                                },
+                            })),
+                        )
+                            .into_response()
+                    }
+                    Some("notifications/initialized") => AxumStatus::ACCEPTED.into_response(),
+                    _ => {
+                        lists.fetch_add(1, AtomicOrdering::SeqCst);
+                        (AxumStatus::NOT_FOUND, "no such route").into_response()
+                    }
+                }
+            }
+        }),
+    );
+    let client = McpHttpClient::new(serve(app).await, 5).unwrap();
+
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(10), client.list_tools())
+        .await
+        .expect("the 404 retry is not bounded");
+
+    assert!(outcome.is_err());
+    assert_eq!(inits.load(AtomicOrdering::SeqCst), 2);
+    assert_eq!(lists.load(AtomicOrdering::SeqCst), 2);
+}
