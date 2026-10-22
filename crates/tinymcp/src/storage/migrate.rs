@@ -124,9 +124,7 @@ async fn migrate_audit_source(
             Ok(batch) => batch,
             Err(error) if error.kind() == ErrorKind::NotFound => {
                 let current_len = stream_len(streams, source).await?;
-                let checkpoint = migrations
-                    .stream_progress(OWNER, STEP, source)
-                    .await?;
+                let checkpoint = migrations.stream_progress(OWNER, STEP, source).await?;
                 if current_len == 0
                     && checkpoint.is_some_and(|saved| saved.source_offset >= source_len)
                 {
