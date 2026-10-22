@@ -188,19 +188,27 @@ async fn migrate_audit_source(
         migrations.save_stream_progress(&progress).await?;
     }
     if progress.source_offset == source_len {
-        let current_len = stream_len(streams, source).await?;
-        if current_len != source_len && !(current_len == 0 && source_len > 0) {
-            return Err(tinystoragedrivers_types::StorageError::conflict(
-                "audit source changed while it was being migrated",
-            ));
-        }
-        match streams.delete_stream(source).await {
-            Ok(_) => {}
-            Err(error) if error.kind() == ErrorKind::NotFound && current_len == 0 => {}
-            Err(error) => return Err(error),
-        }
+        delete_migrated_source(streams, source, source_len).await?;
     }
     Ok(())
+}
+
+async fn delete_migrated_source(
+    streams: &dyn StreamStore,
+    source: &str,
+    source_len: u64,
+) -> StorageResult<()> {
+    let current_len = stream_len(streams, source).await?;
+    if current_len != source_len && !(current_len == 0 && source_len > 0) {
+        return Err(tinystoragedrivers_types::StorageError::conflict(
+            "audit source changed while it was being migrated",
+        ));
+    }
+    match streams.delete_stream(source).await {
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound && current_len == 0 => Ok(()),
+        Err(error) => Err(error),
+    }
 }
 
 async fn stream_len(streams: &dyn StreamStore, source: &str) -> StorageResult<u64> {
