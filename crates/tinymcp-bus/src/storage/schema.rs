@@ -46,4 +46,3 @@ pub fn collection_specs() -> Vec<CollectionSpec> {
 pub fn write_options() -> WriteOptions {
     WriteOptions::new().schema(SCHEMA_VERSION)
 }
-
