@@ -18,7 +18,8 @@ use serde_json::Value;
 use crate::error::{Error, Result};
 use tinymcp_bus::McpSseEvent;
 
-/// Returns the first `data:` frame from a fully-received SSE body.
+/// Returns the first JSON-RPC response frame from a fully-received SSE body.
+/// Notifications and server requests streamed before it are skipped.
 ///
 /// # Errors
 ///
@@ -27,18 +28,26 @@ use tinymcp_bus::McpSseEvent;
 pub(super) fn parse_sse_message(body: &str) -> Result<Value> {
     parse_sse_events(body)?
         .into_iter()
-        .find_map(|event| event.data)
+        .find_map(|event| event.data.filter(is_response))
         .ok_or_else(|| Error::malformed(format!("no sse data frame in response: {body}")))
 }
 
-/// Returns the first JSON `data:` frame from the fully-terminated prefix of a
+/// Whether a frame can be the reply. A POST stream may carry notifications and
+/// server requests before the response; both have a `method`, a response never
+/// does.
+fn is_response(value: &Value) -> bool {
+    value.get("method").is_none()
+}
+
+/// Returns the first JSON-RPC response frame from the fully-terminated prefix of a
 /// partially-received buffer, or `None` if no complete frame has arrived.
 ///
 /// Only the portion up to the last blank-line event boundary is parsed, so a
 /// half-received final `data:` line is never decoded as truncated JSON.
-/// Keepalive comments and frames with no data are skipped — those return `None`
-/// and mean "keep reading" rather than "give up". `\r\n` is normalized first so
-/// a CRLF stream splits on the same boundary as an LF one.
+/// Keepalive comments, frames with no data and non-response frames are
+/// skipped — those return `None` and mean "keep reading" rather than "give up".
+/// `\r\n` is normalized first so a CRLF stream splits on the same boundary as
+/// an LF one.
 ///
 /// # Errors
 ///
@@ -53,7 +62,7 @@ pub(super) fn first_complete_sse_data(buffer: &str) -> Result<Option<Value>> {
     let complete = &normalized[..=boundary];
     Ok(parse_sse_events(complete)?
         .into_iter()
-        .find_map(|event| event.data))
+        .find_map(|event| event.data.filter(is_response)))
 }
 
 /// Parses every event in an SSE body.

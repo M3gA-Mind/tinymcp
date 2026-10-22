@@ -1660,3 +1660,32 @@ fn caps_the_redirect_chain_at_max_redirects() {
         RedirectDecision::Error(_)
     ));
 }
+
+/// A POST stream may send a notification or a server request before the reply;
+/// neither may be taken as the response.
+#[test]
+fn a_notification_frame_before_the_response_is_skipped() {
+    let buffer = "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\",\"params\":{}}\n\n\
+                  data: {\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"ping\"}\n\n\
+                  data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n\n";
+    for data in [
+        first_complete_sse_data(buffer)
+            .expect("no error")
+            .expect("a frame"),
+        parse_sse_message(buffer).expect("a frame"),
+    ] {
+        assert_eq!(
+            data["id"], 1,
+            "took a non-response frame as the response: {data}"
+        );
+        assert!(data.get("result").is_some(), "{data}");
+    }
+    assert_eq!(
+        first_complete_sse_data(
+            "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\"}\n\n"
+        )
+        .expect("no error"),
+        None,
+        "a notification alone means keep reading"
+    );
+}
