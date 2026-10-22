@@ -88,12 +88,14 @@ tests keep secrets in a local store.
 
 ## Schema v2
 
-The module's declarations are `tinymcp::storage::storage_schema()` (owner `mcp`,
-scope class Module, tinystoragedrivers v1.0.0); the storage grant is generated
-from it. v1 names become `mcp.*`, `*_at` times become `*_ms` fields, ids are
-`Key::of` keys, and JSON kept inside strings (`body_json`, `record_json`)
-becomes an object body. Steps `servers_v2`, `server_names_v2`,
+The module's private declaration is composed from the public
+`tinymcp_bus::storage::collection_specs()` (owner `mcp`, tenant-scoped data,
+tinystoragedrivers v2.1); the storage grant includes those destinations and
+the legacy migration sources. v1 names become `mcp.*`, `*_at` times become
+`*_ms` fields, ids use the released escaped composite-key encoding with its
+overlength digest fallback, and JSON kept inside strings (`body_json`,
+`record_json`) becomes an object body. Steps `servers_v2`, `server_names_v2`,
 `registry_cache_v2`, `tool_cache_v2`, `registry_index_v2`,
-`registry_index_state_v2` and the stream step `audit_v2` migrate a v1 database.
+`registry_index_state_v2` and the stream step `audit_streams_v2` migrate a v1 database.
 Secret names are unchanged (a secret cannot be renamed by a step, and they sit
 outside the `mcp/` owner prefix).

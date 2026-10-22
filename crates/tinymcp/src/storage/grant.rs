@@ -16,6 +16,16 @@ pub const ENV_SECRET_PREFIX: &str = "mcp_client_env/";
 /// The secret holding the key the tool-cache fingerprints are keyed with.
 pub const CACHE_KEY_SECRET: &str = "mcp_cache_fingerprint_key";
 
+const LEGACY_COLLECTIONS: [&str; 6] = [
+    "mcp_servers",
+    "mcp_server_names",
+    "mcp_registry_cache",
+    "mcp_tool_cache",
+    "mcp_registry_index",
+    "mcp_registry_index_state",
+];
+const LEGACY_AUDIT_STREAM: &str = "mcp_audit";
+
 /// Everything the module reads or writes through the storage ports.
 ///
 /// A host that serves storage to this module over the bus uses it as the
@@ -36,14 +46,15 @@ pub struct StorageGrant {
 /// The module's storage grant, generated from the private `storage_schema` helper.
 #[must_use]
 pub fn grant() -> StorageGrant {
-    let collections = collection_specs()
+    let mut collections: Vec<String> = collection_specs()
         .into_iter()
         .map(|spec| spec.name)
         .collect();
+    collections.extend(LEGACY_COLLECTIONS.map(str::to_owned));
     StorageGrant {
         collections,
         searchable: Vec::new(),
-        streams: vec![AUDIT_STREAM.to_owned()],
+        streams: vec![AUDIT_STREAM.to_owned(), LEGACY_AUDIT_STREAM.to_owned()],
         secrets: vec![
             format!("{ENV_SECRET_PREFIX}*"),
             CACHE_KEY_SECRET.to_string(),

@@ -40,7 +40,9 @@ fn the_grant_names_every_collection_the_specs_declare() {
             .iter()
             .all(|name| declared.contains(name))
     );
-    assert_eq!(granted.streams, [AUDIT_STREAM]);
+    assert!(granted.collections.contains(&"mcp_servers".to_owned()));
+    assert!(granted.collections.contains(&"mcp_registry_index_state".to_owned()));
+    assert_eq!(granted.streams, [AUDIT_STREAM, "mcp_audit"]);
     assert!(granted.secrets.contains(&format!("{ENV_SECRET_PREFIX}*")));
     assert!(granted.secrets.contains(&CACHE_KEY_SECRET.to_string()));
 }
