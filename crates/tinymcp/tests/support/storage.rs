@@ -9,6 +9,7 @@ use tinystoragedrivers_testkit::MemoryBackend;
 use tinystoragedrivers_types::Scope;
 
 /// Opens a store backed by fresh in-memory document, stream, and secret ports.
+#[allow(clippy::expect_used)]
 pub(crate) fn open_memory_store() -> Store {
     let backend = MemoryBackend::new();
     let scope = Scope::new("integration-test").expect("valid test scope");
