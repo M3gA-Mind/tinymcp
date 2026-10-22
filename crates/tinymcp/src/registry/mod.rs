@@ -26,7 +26,7 @@ pub use connections::{Connections, ProbeOutcome, REMOTE_REQUEST_TIMEOUT};
 pub use oauth::{
     AuthDetection, AuthKind, DEFAULT_CLIENT_NAME, MemoryPendingStore, OAuthBundle,
     OAuthCredentialStore, OAuthFlow, PENDING_TTL_SECS, PendingAuthorization,
-    PendingAuthorizationStore,
+    PendingAuthorizationStore, guard_public_endpoint,
 };
 pub use ops::McpRegistry;
 pub use setup::{SecretRef, SecretVault};
