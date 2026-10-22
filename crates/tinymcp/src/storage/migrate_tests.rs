@@ -297,6 +297,8 @@ impl StreamStore for EmptyFirstRead {
 struct AppendDuringRead {
     inner: Arc<dyn StreamStore>,
     append: AtomicBool,
+    before_read: bool,
+    missing_empty_streams: bool,
 }
 
 /// Models a second, independent opener winning the target append after this
@@ -499,8 +501,13 @@ impl StreamStore for AppendDuringRead {
         from: u64,
         limit: usize,
     ) -> crate::storage::types::Result<Vec<StreamEntry>> {
+        if stream == "mcp_audit" && self.before_read && self.append.swap(false, Ordering::SeqCst) {
+            self.inner
+                .append(stream, json!({"timestamp_ms": 2}))
+                .await?;
+        }
         let page = self.inner.read_window(stream, from, limit).await?;
-        if stream == "mcp_audit" && self.append.swap(false, Ordering::SeqCst) {
+        if stream == "mcp_audit" && !self.before_read && self.append.swap(false, Ordering::SeqCst) {
             self.inner
                 .append(stream, json!({"timestamp_ms": 2}))
                 .await?;
@@ -509,7 +516,13 @@ impl StreamStore for AppendDuringRead {
     }
 
     async fn len(&self, stream: &str) -> crate::storage::types::Result<u64> {
-        self.inner.len(stream).await
+        let len = self.inner.len(stream).await?;
+        if len == 0 && self.missing_empty_streams {
+            return Err(crate::storage::types::StorageError::not_found(
+                "simulated missing stream",
+            ));
+        }
+        Ok(len)
     }
 
     async fn truncate_before(
@@ -1091,6 +1104,8 @@ fn audit_import_rechecks_source_length_before_deleting_it() {
     let streams = Arc::new(AppendDuringRead {
         inner: Arc::clone(fixture.storage.streams()),
         append: AtomicBool::new(true),
+        before_read: false,
+        missing_empty_streams: false,
     });
     let documents = Arc::clone(fixture.storage.documents());
     let migrations = Migrations::new(&documents, OWNER);
@@ -1114,6 +1129,65 @@ fn audit_import_rechecks_source_length_before_deleting_it() {
         fixture.stream(AUDIT_STREAM),
         [json!({"timestamp_ms": 1}), json!({"timestamp_ms": 2})]
     );
+}
+
+#[test]
+fn audit_import_rejects_an_append_before_reading_the_captured_source_length() {
+    let fixture = Fixture::new();
+    fixture.legacy_stream("mcp_audit", &[json!({"timestamp_ms": 1})]);
+    let streams = Arc::new(AppendDuringRead {
+        inner: Arc::clone(fixture.storage.streams()),
+        append: AtomicBool::new(true),
+        before_read: true,
+        missing_empty_streams: false,
+    });
+    let documents = Arc::clone(fixture.storage.documents());
+    let migrations = Migrations::new(&documents, OWNER);
+
+    let first = fixture
+        .blocking
+        .block_on(migrate::migrate_audit_streams(&*streams, &migrations));
+    assert!(
+        first.is_err(),
+        "a source appended after its length read must be preserved"
+    );
+    assert_eq!(
+        fixture.stream("mcp_audit"),
+        [json!({"timestamp_ms": 1}), json!({"timestamp_ms": 2})]
+    );
+    assert_eq!(fixture.stream(AUDIT_STREAM), [json!({"timestamp_ms": 1})]);
+
+    fixture
+        .blocking
+        .block_on(migrate::migrate_audit_streams(&*streams, &migrations))
+        .unwrap();
+    assert_eq!(fixture.stream("mcp_audit"), Vec::<Value>::new());
+    assert_eq!(
+        fixture.stream(AUDIT_STREAM),
+        [json!({"timestamp_ms": 1}), json!({"timestamp_ms": 2})]
+    );
+}
+
+#[test]
+fn audit_import_treats_a_missing_target_stream_as_empty() {
+    let fixture = Fixture::new();
+    fixture.legacy_stream("mcp_audit", &[json!({"timestamp_ms": 1})]);
+    let streams = Arc::new(AppendDuringRead {
+        inner: Arc::clone(fixture.storage.streams()),
+        append: AtomicBool::new(false),
+        before_read: false,
+        missing_empty_streams: true,
+    });
+    let documents = Arc::clone(fixture.storage.documents());
+    let migrations = Migrations::new(&documents, OWNER);
+
+    fixture
+        .blocking
+        .block_on(migrate::migrate_audit_streams(&*streams, &migrations))
+        .unwrap();
+
+    assert_eq!(fixture.stream("mcp_audit"), Vec::<Value>::new());
+    assert_eq!(fixture.stream(AUDIT_STREAM), [json!({"timestamp_ms": 1})]);
 }
 
 #[test]
