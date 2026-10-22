@@ -405,6 +405,36 @@ mod against_a_fake_server {
         );
     }
 
+    /// `close_session` must not wait behind a request the server never answers.
+    #[tokio::test]
+    async fn closing_a_session_does_not_wait_for_an_unanswered_request() {
+        let body = format!(
+            "read -r _l\nprintf '%s\\n' '{init}'\ncat > /dev/null\n",
+            init = initialize_reply()
+        );
+        let client = Arc::new(client_for(body));
+        client.initialize().await.expect("the handshake");
+        let inflight = {
+            let client = client.clone();
+            tokio::spawn(async move { client.call_tool("hang", serde_json::json!({})).await })
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+        let closed =
+            tokio::time::timeout(std::time::Duration::from_secs(3), client.close_session()).await;
+        let call = tokio::time::timeout(std::time::Duration::from_secs(3), inflight).await;
+
+        assert!(
+            closed.is_ok(),
+            "close_session hung behind the in-flight tools/call"
+        );
+        let call = call.expect("the in-flight call ended").expect("no panic");
+        assert!(
+            call.is_err(),
+            "the abandoned call reports an error: {call:?}"
+        );
+    }
+
     #[tokio::test]
     async fn closing_a_session_terminates_the_child_and_forgets_it() {
         // Replies carry the id of the request they answer: the reopened
