@@ -11,7 +11,7 @@
 
 use serde_json::{Map, Value};
 use tinystoragedrivers_api::StreamStore;
-use tinystoragedrivers_types::{ErrorKind, Result as StorageResult};
+use tinystoragedrivers_types::{ErrorKind, Result as StorageResult, StreamEntry};
 
 use super::local::{Migrations, SourceRecord, Step, StreamProgress, TargetRecord};
 use super::schema::{
@@ -117,23 +117,17 @@ async fn migrate_audit_source(
         ));
     }
     while progress.source_offset < source_len {
-        let batch = match streams
-            .read_window(source, progress.source_offset, 256)
-            .await
-        {
-            Ok(batch) => batch,
-            Err(error) if error.kind() == ErrorKind::NotFound => {
-                let current_len = stream_len(streams, source).await?;
-                let checkpoint = migrations.stream_progress(OWNER, STEP, source).await?;
-                if current_len == 0
-                    && checkpoint.is_some_and(|saved| saved.source_offset >= source_len)
-                {
-                    progress.source_offset = source_len;
-                    break;
-                }
-                return Err(error);
-            }
-            Err(error) => return Err(error),
+        let Some(batch) = source_batch(
+            streams,
+            migrations,
+            source,
+            progress.source_offset,
+            source_len,
+        )
+        .await?
+        else {
+            progress.source_offset = source_len;
+            break;
         };
         if batch.is_empty() {
             return Err(tinystoragedrivers_types::StorageError::conflict(
@@ -213,6 +207,31 @@ async fn stream_len(streams: &dyn StreamStore, source: &str) -> StorageResult<u6
     match streams.len(source).await {
         Ok(length) => Ok(length),
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(0),
+        Err(error) => Err(error),
+    }
+}
+
+async fn source_batch(
+    streams: &dyn StreamStore,
+    migrations: &Migrations,
+    source: &str,
+    source_offset: u64,
+    source_len: u64,
+) -> StorageResult<Option<Vec<StreamEntry>>> {
+    match streams.read_window(source, source_offset, 256).await {
+        Ok(batch) => Ok(Some(batch)),
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            let current_len = stream_len(streams, source).await?;
+            let checkpoint = migrations
+                .stream_progress(OWNER, "audit_streams_v2", source)
+                .await?;
+            if current_len == 0 && checkpoint.is_some_and(|saved| saved.source_offset >= source_len)
+            {
+                Ok(None)
+            } else {
+                Err(error)
+            }
+        }
         Err(error) => Err(error),
     }
 }
