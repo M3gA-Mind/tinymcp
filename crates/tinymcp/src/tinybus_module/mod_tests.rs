@@ -1790,7 +1790,7 @@ use tinybus::transport::memory::MemoryBus;
 async fn in_process_connection() -> Connection {
     static INSTALL_TEST_PROVIDER: std::sync::Once = std::sync::Once::new();
     INSTALL_TEST_PROVIDER.call_once(|| {
-        crate::storage::install_provider(crate::storage::provider::shared_test_provider());
+        crate::storage::install_provider(crate::storage::shared_test_provider());
     });
     let bus = MemoryBus::new();
     Broker::new().spawn(bus.clone());

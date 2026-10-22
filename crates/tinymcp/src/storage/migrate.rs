@@ -201,7 +201,7 @@ async fn migrate_audit_source(
             ));
         }
         match streams.delete_stream(source).await {
-            Ok(()) => {}
+            Ok(_) => {}
             Err(error) if error.kind() == ErrorKind::NotFound && current_len == 0 => {}
             Err(error) => return Err(error),
         }
