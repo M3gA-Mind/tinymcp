@@ -26,13 +26,16 @@ schemars = { workspace = true, optional = true }
 # Decoding a widget document a tool result embedded as a base64 `blob`, for
 # the pure tool-UI rules in `ui`. No dependencies of its own.
 base64 = { workspace = true }
-# The storage *ports* only (`Schema`, `Step`, `CollectionSpec`): no driver and
-# no I/O. Its sole tokio features are io-util and time, so this adds no runtime
-# to a host that links the contract. Backs `storage::storage_schema`; optional,
-# enabled only by the `storage` feature so the default closure stays pure.
-tinystoragedrivers-core = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v1.5.0", default-features = false, optional = true }
+# Encode stable document identifiers for storage migration compatibility.
+data-encoding = { workspace = true, optional = true }
+# Hash overlong composite document identifiers used by the storage schema.
+sha2 = { workspace = true, optional = true }
+# Pure collection declaration types for the module's storage grant. The bus
+# contract does not run migrations or depend on storage implementation code.
+tinystoragedrivers-types = { workspace = true, optional = true }
 
 [dev-dependencies]
+tinystoragedrivers-testkit = { workspace = true }
 # The WHATWG parser the `ui` link splitter must agree with: its differential
 # tests check every web link the splitter accepts against `url`'s reading.
 url = { workspace = true }
@@ -45,9 +48,8 @@ tokio = { workspace = true, features = ["rt"] }
 default = []
 # Derive `JsonSchema` on the configuration payloads. See `src/config/mod.rs`.
 schemars = ["dep:schemars"]
-# `storage::storage_schema` and its v1 to v2 migration steps. Off by default: the
-# only extra dependency is the storage ports crate (no driver, no I/O).
-storage = ["dep:tinystoragedrivers-core"]
+# Pure storage collection payloads. Migration behavior belongs to `tinymcp`.
+storage = ["dep:data-encoding", "dep:sha2", "dep:tinystoragedrivers-types"]
 
 [lints]
 workspace = true

@@ -7,9 +7,19 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::BTreeMap;
-
+use std::sync::Arc;
 use tinymcp::storage::{self, StoragePorts};
 use tinymcp::{AuditStore, CommandKind, InstalledServer, NewMcpWriteRecord, Store, Transport};
+use tinystoragedrivers_api::StorageBackend;
+use tinystoragedrivers_testkit::MemoryBackend;
+use tinystoragedrivers_types::Scope;
+
+fn memory_ports() -> StoragePorts {
+    let backend = MemoryBackend::new();
+    let scope = Scope::new("test").unwrap();
+    let storage = backend.for_scope(&scope).unwrap();
+    StoragePorts::from_storage(&storage, Arc::clone(storage.secrets()))
+}
 
 fn server(id: &str, name: &str) -> InstalledServer {
     InstalledServer {
@@ -32,7 +42,7 @@ fn server(id: &str, name: &str) -> InstalledServer {
 
 #[test]
 fn installs_and_credentials_survive_reopening_over_the_same_ports() {
-    let ports = StoragePorts::memory().unwrap();
+    let ports = memory_ports();
     let store = Store::open(ports.clone()).unwrap();
     store
         .insert_server(&server("srv-1", "@acme/weather"))
@@ -56,7 +66,7 @@ fn installs_and_credentials_survive_reopening_over_the_same_ports() {
 
 #[test]
 fn the_audit_log_and_the_servers_share_ports_but_not_records() {
-    let ports = StoragePorts::memory().unwrap();
+    let ports = memory_ports();
     let store = Store::open(ports.clone()).unwrap();
     let audit = AuditStore::open(ports).unwrap();
     store
@@ -95,27 +105,34 @@ fn the_declared_grant_covers_the_collections_a_store_creates() {
 
 #[test]
 fn the_storage_schema_composes_and_the_grant_is_generated_from_it() {
-    use tinystoragedrivers_core::schema::{Item, Registry};
-
-    let schema = storage::storage_schema();
-    Registry::compose([schema.clone()]).expect("the module's schema composes on its own");
-
-    let mut collections = Vec::new();
-    let mut streams = Vec::new();
-    for item in &schema.items {
-        match item {
-            Item::Collection { name, .. } => collections.push(name.clone()),
-            Item::Stream { name, .. } => streams.push(name.clone()),
-            Item::Blobs { .. } | Item::Secrets { .. } => {}
-        }
-    }
+    let collections: Vec<_> = storage::collection_specs()
+        .into_iter()
+        .map(|spec| spec.name)
+        .collect();
     let granted = storage::grant();
-    assert_eq!(granted.collections, collections);
-    assert_eq!(granted.streams, streams);
     assert!(
         collections
             .iter()
-            .chain(&streams)
+            .all(|name| granted.collections.contains(name))
+    );
+    assert!(granted.collections.contains(&"mcp_servers".to_owned()));
+    assert_eq!(
+        granted.streams,
+        vec![
+            storage::AUDIT_STREAM.to_owned(),
+            "mcp_audit".to_owned(),
+            "mcp_audit/".to_owned()
+        ]
+    );
+    assert!(
+        collections
+            .iter()
+            .any(|name| name == tinymcp_bus::storage::MIGRATIONS)
+    );
+    assert!(
+        collections
+            .iter()
+            .filter(|name| name.as_str() != tinymcp_bus::storage::MIGRATIONS)
             .all(|name| name.starts_with(&format!("{}.", storage::OWNER)))
     );
 }

@@ -52,7 +52,7 @@ if [[ -n "$verifier_bin" ]]; then
     echo "verifier binary must be an executable repository file" >&2
     exit 2
   }
-  "$verifier_bin" "$library"
+  TINYMCP_MODULE_PATH="$library" "$verifier_bin" "$library"
 else
-  cargo run --locked --release --manifest-path Cargo.toml --package tinymcp --example verify_module -- "$library"
+  TINYMCP_MODULE_PATH="$library" cargo run --locked --release --manifest-path Cargo.toml --package tinymcp --example verify_module -- "$library"
 fi

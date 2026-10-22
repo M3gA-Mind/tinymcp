@@ -13,6 +13,7 @@
 
 use std::io;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use tinybus::Connection;
@@ -20,6 +21,12 @@ use tinybus::broker::Broker;
 use tinybus::module::ModuleHost;
 use tinybus::transport::memory::MemoryBus;
 use tinymcp::{ConnectedServerOverview, InstalledServer, McpTool, names};
+use tinystoragedrivers_api::StorageBackend;
+use tinystoragedrivers_busproxy::{
+    PerCallerEndpoint, StorageServer, prepare_storage_host_callbacks, serve_with_host_callbacks,
+};
+use tinystoragedrivers_testkit::MemoryBackend;
+use tinystoragedrivers_types::Scope;
 
 /// How long to wait for the module to claim its name.
 const CLAIM_TIMEOUT: Duration = Duration::from_secs(5);
@@ -32,9 +39,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let broker = Broker::new();
     let broker_task = broker.spawn(bus.clone());
 
+    // A module must get storage from its host. The explicit memory engine is
+    // confined to this verification host; production module startup has no
+    // local fallback.
     let module_host = ModuleHost::new(broker);
-    let info = module_host.load_file(&module)?;
+    let binding = prepare_storage_host_callbacks(&module_host).await?;
+    let storage_backend = MemoryBackend::new();
+    let storage = storage_backend.for_scope(&Scope::new("mcp-module-e2e")?)?;
+    let endpoint = PerCallerEndpoint::new(move |_| Some(StorageServer::new(storage.clone())));
+    let _served_storage =
+        serve_with_host_callbacks(Arc::clone(&binding), Arc::new(endpoint)).await?;
 
+    // The host callback loader verifies the artifact against its adjacent
+    // `modules.toml` before granting this exact module the callback binding.
+    // The destination is host-provisioned configuration, never a scope input.
+    let info = module_host
+        .load_file_with_host_callbacks(
+            &module,
+            serde_json::json!({
+                "storage_callback": binding.unique_name().as_str(),
+            }),
+            &binding,
+        )
+        .await?;
+
+    verify_module_calls(&module_host, &bus, &module, info).await?;
+    broker_task.abort();
+    Ok(())
+}
+
+async fn verify_module_calls(
+    module_host: &ModuleHost,
+    bus: &MemoryBus,
+    module: &std::path::Path,
+    info: tinybus::module::ModuleInfo,
+) -> Result<(), Box<dyn std::error::Error>> {
     if info.name != env!("CARGO_PKG_NAME") {
         return Err(io::Error::other(format!(
             "loaded module `{}` instead of `{}`",
@@ -75,12 +114,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::task::yield_now().await;
         }
     })
-    .await??;
+    .await
+    .map_err(|error| {
+        io::Error::other(format!(
+            "the loaded module did not claim its interface; state: {:?}; {error}",
+            module_host.list()
+        ))
+    })??;
 
     let proxy = client.proxy(names::INTERFACE, names::OBJECT_PATH, names::INTERFACE)?;
 
     // Needs nothing configured: this is dispatch working at all.
-    let declared: Vec<String> = proxy.call(names::methods::STATIC_LIST, ()).await?;
+    let declared: Vec<String> =
+        proxy
+            .call(names::methods::STATIC_LIST, ())
+            .await
+            .map_err(|error| {
+                io::Error::other(format!(
+                    "StaticList did not respond; module state: {:?}; {error}",
+                    module_host.list()
+                ))
+            })?;
     if !declared.is_empty() {
         return Err(io::Error::other(format!(
             "an unconfigured module declared {} static servers",
@@ -130,7 +184,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         names::INTERFACE
     );
 
-    broker_task.abort();
     Ok(())
 }
 

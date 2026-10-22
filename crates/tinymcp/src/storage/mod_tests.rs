@@ -10,7 +10,10 @@ use std::path::{Path, PathBuf};
 fn dir(name: &str) -> PathBuf {
     std::env::temp_dir().join("tinymcp-test").join(name)
 }
-use tinystoragedrivers_core::{Filter, MemoryStorage};
+use crate::storage::types::{CollectionSpec, Filter, Precondition, Scope};
+use std::sync::Arc;
+use tinystoragedrivers_api::StorageBackend;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use crate::{AuditStore, Store};
 use tinymcp_bus::NewMcpWriteRecord;
@@ -32,14 +35,24 @@ fn the_grant_names_every_collection_the_specs_declare() {
     let specs = collection_specs();
     let granted = grant();
     let declared: Vec<String> = specs.into_iter().map(|spec| spec.name).collect();
-    assert_eq!(granted.collections, declared);
+    assert!(
+        declared
+            .iter()
+            .all(|name| granted.collections.contains(name))
+    );
     assert!(
         granted
             .searchable
             .iter()
             .all(|name| declared.contains(name))
     );
-    assert_eq!(granted.streams, [AUDIT_STREAM]);
+    assert!(granted.collections.contains(&"mcp_servers".to_owned()));
+    assert!(
+        granted
+            .collections
+            .contains(&"mcp_registry_index_state".to_owned())
+    );
+    assert_eq!(granted.streams, [AUDIT_STREAM, "mcp_audit", "mcp_audit/"]);
     assert!(granted.secrets.contains(&format!("{ENV_SECRET_PREFIX}*")));
     assert!(granted.secrets.contains(&CACHE_KEY_SECRET.to_string()));
 }
@@ -101,6 +114,47 @@ fn installed_servers_count_as_stored_state() {
 }
 
 #[test]
+fn legacy_mcp_collections_and_audit_streams_count_as_stored_state() {
+    let backend = MemoryStorage::new();
+    let scope = Scope::new("legacy-state-probe").unwrap();
+    let storage = backend.for_scope(&scope).unwrap();
+    let documents = Arc::clone(storage.documents());
+    let streams = Arc::clone(storage.streams());
+    let ports = StoragePorts::from_storage(&storage, Arc::clone(storage.secrets()));
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+
+    runtime.block_on(async {
+        documents
+            .ensure_collection(&CollectionSpec::new("mcp_servers"))
+            .await
+            .unwrap();
+        documents
+            .put(
+                "mcp_servers",
+                "legacy-server",
+                serde_json::json!({"server_id": "legacy-server"}),
+                Precondition::Absent,
+            )
+            .await
+            .unwrap();
+    });
+    assert!(ports.has_state().unwrap());
+
+    runtime.block_on(async {
+        streams
+            .append(
+                "mcp_audit/workspace/legacy",
+                serde_json::json!({"event": true}),
+            )
+            .await
+            .unwrap();
+    });
+    assert!(ports.has_state().unwrap());
+}
+
+#[test]
 fn the_memory_provider_answers_the_same_state_for_one_directory() {
     let provider = MemoryProvider::new();
     let first = provider.ports_for(&dir("a")).unwrap();
@@ -143,20 +197,16 @@ fn an_installed_provider_replaces_the_default() {
     // A private slot, so this test cannot reroute the services other tests
     // build through the process-wide one.
     let slot = super::provider::ProviderSlot::new();
-    let first = slot.current();
+    assert!(slot.current().is_err());
+    let first: std::sync::Arc<dyn StorageProvider> = std::sync::Arc::new(MemoryProvider::new());
+    slot.install(std::sync::Arc::clone(&first));
+    assert!(std::sync::Arc::ptr_eq(&slot.current().unwrap(), &first));
     let replacement: std::sync::Arc<dyn StorageProvider> =
         std::sync::Arc::new(MemoryProvider::new());
     slot.install(std::sync::Arc::clone(&replacement));
-    assert!(std::sync::Arc::ptr_eq(&slot.current(), &replacement));
-    assert!(!std::sync::Arc::ptr_eq(&slot.current(), &first));
-}
-
-#[test]
-fn the_process_wide_provider_answers_for_a_directory() {
-    let ports = installed_provider()
-        .ports_for(&dir("process-wide"))
-        .unwrap();
-    assert!(!ports.has_state().unwrap());
+    let current = slot.current().unwrap();
+    assert!(std::sync::Arc::ptr_eq(&current, &replacement));
+    assert!(!std::sync::Arc::ptr_eq(&current, &first));
 }
 
 #[test]
@@ -184,13 +234,13 @@ fn the_memory_provider_refuses_a_relative_directory() {
 #[tokio::test]
 async fn failing_documents_refuse_every_call_except_declaring_collections() {
     use super::failing::FailingDocuments;
-    use tinystoragedrivers_core::{DocumentStore, Precondition, Query};
+    use crate::storage::types::{DocumentStore, Precondition, Query};
 
     let documents = FailingDocuments::default();
     assert!(
         !documents
             .capabilities()
-            .contains(tinystoragedrivers_core::Capability::Transactions)
+            .contains(crate::storage::types::Capability::Transactions)
     );
     for spec in collection_specs() {
         documents.ensure_collection(&spec).await.unwrap();

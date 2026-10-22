@@ -17,6 +17,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use crate::storage::StorageProvider;
 use tinybus::service::Interface;
 
 use super::config::ModuleConfig;
@@ -26,7 +27,7 @@ use tinymcp_bus::{McpClientConfig, McpServerConfig, names};
 
 /// A service over nothing, for inspecting its interface.
 fn service() -> McpService {
-    McpService::new(&ModuleConfig::default()).expect("the service builds")
+    super::test_service(&ModuleConfig::default()).expect("the service builds")
 }
 
 // ---------------------------------------------------------------------------
@@ -189,7 +190,8 @@ async fn prepare_bridge_tools_returns_the_owner_declarations() {
 #[tokio::test]
 async fn the_stored_state_probe_reports_installs_without_creating_any() {
     let requested = tempfile::tempdir().unwrap();
-    let service = service();
+    let provider = std::sync::Arc::new(crate::storage::MemoryProvider::new());
+    let service = McpService::with_provider(&ModuleConfig::default(), provider.clone()).unwrap();
 
     assert_eq!(
         ok(
@@ -201,9 +203,7 @@ async fn the_stored_state_probe_reports_installs_without_creating_any() {
         json!(false)
     );
 
-    let ports = crate::storage::installed_provider()
-        .ports_for(requested.path())
-        .unwrap();
+    let ports = provider.ports_for(requested.path()).unwrap();
     crate::Store::open(ports)
         .unwrap()
         .insert_server(&remote_install("srv-1", "http://127.0.0.1:1/"))
@@ -252,6 +252,7 @@ fn an_absent_configuration_decodes_to_a_working_default() {
     let config: ModuleConfig = serde_json::from_str("{}").expect("the empty object decodes");
 
     assert_eq!(config.data_dir, None);
+    assert_eq!(config.storage_callback, None);
     assert_eq!(config.client.servers.len(), 0);
     assert!(config.client.enabled);
 }
@@ -260,6 +261,7 @@ fn an_absent_configuration_decodes_to_a_working_default() {
 fn a_configuration_round_trips() {
     let config = ModuleConfig {
         data_dir: Some("/data/tinymcp".into()),
+        storage_callback: Some("ai.tinyhumans.storage.mcp-123".into()),
         client: McpClientConfig {
             servers: vec![McpServerConfig {
                 name: "weather".into(),
@@ -274,6 +276,7 @@ fn a_configuration_round_trips() {
     let decoded: ModuleConfig = serde_json::from_value(encoded).unwrap();
 
     assert_eq!(decoded.data_dir, config.data_dir);
+    assert_eq!(decoded.storage_callback, config.storage_callback);
     assert_eq!(decoded.client.servers.len(), 1);
 }
 
@@ -305,7 +308,7 @@ impl crate::storage::StorageProvider for RefusingProvider {
     ) -> crate::Result<crate::storage::StoragePorts> {
         Err(crate::Error::store(
             "opening storage",
-            tinystoragedrivers_core::StorageError::unavailable("no storage here"),
+            crate::storage::types::StorageError::unavailable("no storage here"),
         ))
     }
 }
@@ -315,6 +318,7 @@ fn a_service_whose_provider_has_no_storage_fails_to_build() {
     let error = McpService::with_provider(
         &ModuleConfig {
             data_dir: Some(std::path::PathBuf::from("/srv/mcp")),
+            storage_callback: None,
             client: McpClientConfig::default(),
         },
         std::sync::Arc::new(RefusingProvider),
@@ -324,29 +328,33 @@ fn a_service_whose_provider_has_no_storage_fails_to_build() {
 }
 
 #[test]
-fn a_service_without_a_data_directory_never_asks_the_provider() {
-    McpService::with_provider(
+fn a_static_service_requires_host_storage_even_without_a_data_directory() {
+    let error = McpService::with_provider(
         &ModuleConfig::default(),
         std::sync::Arc::new(RefusingProvider),
     )
-    .expect("an in-memory service needs no provider");
+    .expect_err("a host must bind storage for a static-only service");
+    assert!(matches!(error, crate::Error::Store { .. }), "{error}");
 }
 
 #[test]
 fn a_service_with_a_data_directory_creates_its_stores() {
     let directory = tempfile::tempdir().unwrap();
+    let provider = std::sync::Arc::new(crate::storage::MemoryProvider::new());
 
-    let service = McpService::new(&ModuleConfig {
-        data_dir: Some(directory.path().to_path_buf()),
-        client: McpClientConfig::default(),
-    })
+    let service = McpService::with_provider(
+        &ModuleConfig {
+            data_dir: Some(directory.path().to_path_buf()),
+            storage_callback: None,
+            client: McpClientConfig::default(),
+        },
+        provider.clone(),
+    )
     .expect("the service builds");
 
     // The service's stores write through the provider's ports for the
     // directory, so what it records is what a state probe then finds.
-    let ports = crate::storage::installed_provider()
-        .ports_for(directory.path())
-        .unwrap();
+    let ports = provider.ports_for(directory.path()).unwrap();
     assert!(!ports.has_state().unwrap());
     service
         .dynamic()
@@ -358,8 +366,9 @@ fn a_service_with_a_data_directory_creates_its_stores() {
 
 #[test]
 fn a_service_registers_the_statically_declared_servers() {
-    let service = McpService::new(&ModuleConfig {
+    let service = super::test_service(&ModuleConfig {
         data_dir: None,
+        storage_callback: None,
         client: McpClientConfig {
             servers: vec![McpServerConfig {
                 name: "weather".into(),
@@ -378,11 +387,16 @@ fn a_service_registers_the_statically_declared_servers() {
 #[test]
 fn a_service_reopens_an_existing_store() {
     let directory = tempfile::tempdir().unwrap();
+    let provider = std::sync::Arc::new(crate::storage::MemoryProvider::new());
 
-    let first = McpService::new(&ModuleConfig {
-        data_dir: Some(directory.path().to_path_buf()),
-        client: McpClientConfig::default(),
-    })
+    let first = McpService::with_provider(
+        &ModuleConfig {
+            data_dir: Some(directory.path().to_path_buf()),
+            storage_callback: None,
+            client: McpClientConfig::default(),
+        },
+        provider.clone(),
+    )
     .unwrap();
     first
         .audit()
@@ -398,10 +412,14 @@ fn a_service_reopens_an_existing_store() {
         .unwrap();
     drop(first);
 
-    let second = McpService::new(&ModuleConfig {
-        data_dir: Some(directory.path().to_path_buf()),
-        client: McpClientConfig::default(),
-    })
+    let second = McpService::with_provider(
+        &ModuleConfig {
+            data_dir: Some(directory.path().to_path_buf()),
+            storage_callback: None,
+            client: McpClientConfig::default(),
+        },
+        provider,
+    )
     .unwrap();
 
     assert_eq!(
@@ -493,8 +511,9 @@ async fn catalog() -> (String, Arc<AtomicUsize>) {
 
 /// A service over a temporary workspace, browsing `catalog_base`.
 fn service_at(directory: &std::path::Path, catalog_base: &str) -> McpService {
-    McpService::new(&ModuleConfig {
+    super::test_service(&ModuleConfig {
         data_dir: Some(directory.to_path_buf()),
+        storage_callback: None,
         client: McpClientConfig {
             registry_auth: McpRegistryAuthConfig {
                 mcp_official_base: Some(catalog_base.to_string()),
@@ -980,8 +999,9 @@ async fn installing_and_connecting_with_a_bad_handle_is_refused_before_anything_
 
 #[tokio::test]
 async fn the_static_list_names_what_the_host_declared() {
-    let service = McpService::new(&ModuleConfig {
+    let service = super::test_service(&ModuleConfig {
         data_dir: None,
+        storage_callback: None,
         client: McpClientConfig {
             servers: vec![McpServerConfig {
                 name: "weather".into(),
@@ -1001,8 +1021,9 @@ async fn the_static_list_names_what_the_host_declared() {
 
 #[tokio::test]
 async fn static_server_summaries_keep_legacy_fields_and_redact_endpoint_secrets() {
-    let service = McpService::new(&ModuleConfig {
+    let service = super::test_service(&ModuleConfig {
         data_dir: None,
+        storage_callback: None,
         client: McpClientConfig {
             servers: vec![McpServerConfig {
                 name: "weather".into(),
@@ -1431,8 +1452,9 @@ async fn static_tool_call_redacts_the_configured_credential_before_bus_return() 
         ),
     );
     let endpoint = serve(app).await;
-    let service = McpService::new(&ModuleConfig {
+    let service = super::test_service(&ModuleConfig {
         data_dir: None,
+        storage_callback: None,
         client: McpClientConfig {
             servers: vec![McpServerConfig {
                 name: "secret-server".into(),
@@ -1472,8 +1494,9 @@ async fn static_tool_call_redacts_the_configured_credential_before_bus_return() 
 #[tokio::test]
 async fn static_tool_metadata_redacts_configured_credentials_before_bus_return() {
     let credential = "mcp-static-metadata-secret-731";
-    let service = McpService::new(&ModuleConfig {
+    let service = super::test_service(&ModuleConfig {
         data_dir: None,
+        storage_callback: None,
         client: McpClientConfig {
             servers: vec![McpServerConfig {
                 name: "weather".into(),
@@ -1544,8 +1567,9 @@ async fn classified_static_call_scrubs_rendered_success_and_envelope() {
         }),
     );
     let endpoint = serve(app).await;
-    let service = McpService::new(&ModuleConfig {
+    let service = super::test_service(&ModuleConfig {
         data_dir: None,
+        storage_callback: None,
         client: McpClientConfig {
             servers: vec![McpServerConfig {
                 name: "secret-server".into(),
@@ -1595,8 +1619,9 @@ async fn classified_static_call_preserves_unauthorized_oauth_signals() {
         }),
     );
     let endpoint = serve(app).await;
-    let service = McpService::new(&ModuleConfig {
+    let service = super::test_service(&ModuleConfig {
         data_dir: None,
+        storage_callback: None,
         client: McpClientConfig {
             servers: vec![McpServerConfig {
                 name: "oauth-server".into(),
@@ -1763,6 +1788,10 @@ use tinybus::transport::memory::MemoryBus;
 
 /// A connection to a broker running in this process.
 async fn in_process_connection() -> Connection {
+    static INSTALL_TEST_PROVIDER: std::sync::Once = std::sync::Once::new();
+    INSTALL_TEST_PROVIDER.call_once(|| {
+        crate::storage::install_provider(crate::storage::shared_test_provider());
+    });
     let bus = MemoryBus::new();
     Broker::new().spawn(bus.clone());
     Connection::connect(bus.connect().await.expect("a transport"))
@@ -1779,6 +1808,7 @@ async fn setting_up_serves_the_interface_and_claims_its_name() {
         connection,
         ModuleConfig {
             data_dir: Some(directory.path().to_path_buf()),
+            storage_callback: None,
             client: McpClientConfig::default(),
         },
     )
@@ -1805,6 +1835,7 @@ async fn a_module_that_came_up_answers_a_call_on_its_object_path() {
         serving,
         ModuleConfig {
             data_dir: Some(directory.path().to_path_buf()),
+            storage_callback: None,
             client: McpClientConfig::default(),
         },
     )
@@ -1842,6 +1873,7 @@ async fn a_module_that_cannot_open_its_store_fails_to_come_up() {
         ModuleConfig {
             // An empty directory names nothing a provider could serve.
             data_dir: Some(std::path::PathBuf::new()),
+            storage_callback: None,
             client: McpClientConfig::default(),
         },
     )
@@ -1865,6 +1897,7 @@ fn a_null_configuration_decodes_to_a_working_default() {
         serde_json::from_value(serde_json::Value::Null).expect("null decodes");
 
     assert_eq!(config.data_dir, None);
+    assert_eq!(config.storage_callback, None);
     assert_eq!(config.client.servers.len(), 0);
     assert!(config.client.enabled);
 }
@@ -1874,7 +1907,7 @@ fn a_service_builds_from_a_null_configuration() {
     // The whole path the loader takes, not just the decode.
     let config: ModuleConfig = serde_json::from_value(serde_json::Value::Null).unwrap();
 
-    let service = McpService::new(&config).expect("the service builds");
+    let service = super::test_service(&config).expect("the service builds");
 
     assert!(service.static_servers().is_empty());
 }
@@ -1955,8 +1988,10 @@ async fn the_cached_overview_replays_persisted_tools_without_dialling() {
 async fn static_cached_tools_survive_service_reopen_without_dialling() {
     let directory = tempfile::tempdir().unwrap();
     let (url, hits) = mock_mcp_server_counted().await;
+    let provider = std::sync::Arc::new(crate::storage::MemoryProvider::new());
     let config = ModuleConfig {
         data_dir: Some(directory.path().to_path_buf()),
+        storage_callback: None,
         client: McpClientConfig {
             servers: vec![McpServerConfig {
                 name: "weather".into(),
@@ -1966,7 +2001,7 @@ async fn static_cached_tools_survive_service_reopen_without_dialling() {
             ..McpClientConfig::default()
         },
     };
-    let service = McpService::new(&config).unwrap();
+    let service = McpService::with_provider(&config, provider.clone()).unwrap();
 
     let listed = ok(
         &service,
@@ -1978,7 +2013,7 @@ async fn static_cached_tools_survive_service_reopen_without_dialling() {
     let calls_after_listing = hits.load(Ordering::SeqCst);
     assert!(calls_after_listing > 0);
 
-    let service = McpService::new(&config).unwrap();
+    let service = McpService::with_provider(&config, provider).unwrap();
     let cached = ok(&service, "StaticCachedListTools", json!(["weather"])).await;
 
     assert_eq!(cached[0]["name"], json!("forecast"));
@@ -2047,8 +2082,9 @@ async fn service_with_connected_app_server(directory: &std::path::Path, url: &st
 /// A service declaring the app server at `url` as the static server `apps`,
 /// authenticated with `token`.
 fn service_with_static_app_server(url: &str, token: &str) -> McpService {
-    McpService::new(&ModuleConfig {
+    super::test_service(&ModuleConfig {
         data_dir: None,
+        storage_callback: None,
         client: McpClientConfig {
             servers: vec![McpServerConfig {
                 name: "apps".into(),
@@ -2593,8 +2629,10 @@ async fn a_module_comes_up_without_waiting_for_a_server_that_never_answers() {
     });
 
     let directory = tempfile::tempdir().unwrap();
+    let connection = in_process_connection().await;
     let store = crate::Store::open(
         crate::storage::installed_provider()
+            .unwrap()
             .ports_for(directory.path())
             .unwrap(),
     )
@@ -2608,9 +2646,10 @@ async fn a_module_comes_up_without_waiting_for_a_server_that_never_answers() {
     tokio::time::timeout(
         std::time::Duration::from_secs(10),
         super::setup_over_installed_storage(
-            in_process_connection().await,
+            connection,
             ModuleConfig {
                 data_dir: Some(directory.path().to_path_buf()),
+                storage_callback: None,
                 client: McpClientConfig::default(),
             },
         ),
@@ -3008,7 +3047,7 @@ async fn the_stored_state_probe_asks_the_provider_the_service_was_built_over() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_module_with_a_data_directory_cannot_come_up_without_host_storage() {
+async fn bus_provider_requires_an_explicit_host_callback_destination() {
     use tinybus::{broker::Broker, transport::memory::MemoryBus};
 
     let bus = MemoryBus::new();
@@ -3016,13 +3055,65 @@ async fn a_module_with_a_data_directory_cannot_come_up_without_host_storage() {
     let connection = tinybus::Connection::connect(bus.connect().await.unwrap())
         .await
         .unwrap();
-    let error = super::bus_provider(connection).await.err().unwrap();
+    let error = super::bus_provider(connection, &ModuleConfig::default())
+        .await
+        .err()
+        .unwrap();
 
+    assert!(
+        error.to_string().contains("host storage callback"),
+        "{error}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bus_provider_rejects_an_invalid_host_callback_destination() {
+    use tinybus::{broker::Broker, transport::memory::MemoryBus};
+
+    let bus = MemoryBus::new();
+    Broker::new().spawn(bus.clone());
+    let connection = tinybus::Connection::connect(bus.connect().await.unwrap())
+        .await
+        .unwrap();
+    let config = ModuleConfig {
+        storage_callback: Some("not a valid bus name".into()),
+        ..ModuleConfig::default()
+    };
+
+    let error = super::bus_provider(connection, &config)
+        .await
+        .expect_err("invalid callback destinations must fail closed");
+
+    assert!(error.to_string().contains("invalid host storage callback"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn setup_uses_host_storage_only_when_no_provider_was_installed() {
+    use tinybus::{broker::Broker, transport::memory::MemoryBus};
+
+    let bus = MemoryBus::new();
+    Broker::new().spawn(bus.clone());
+    let connection = tinybus::Connection::connect(bus.connect().await.unwrap())
+        .await
+        .unwrap();
+    let callback = ModuleConfig {
+        storage_callback: Some("org.example.Storage".into()),
+        ..ModuleConfig::default()
+    };
+    assert!(
+        super::provider_for_setup(connection.clone(), &callback, true)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let error = super::provider_for_setup(connection, &callback, false)
+        .await
+        .expect_err("missing attested host capability must fail closed");
     assert!(error.to_string().contains("host storage"), "{error}");
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_module_without_a_data_directory_runs_without_host_storage() {
+async fn a_module_without_a_data_directory_still_requires_host_storage() {
     use tinybus::{broker::Broker, transport::memory::MemoryBus};
 
     let bus = MemoryBus::new();
@@ -3033,11 +3124,8 @@ async fn a_module_without_a_data_directory_runs_without_host_storage() {
 
     let provider = super::host_storage_for(connection.clone(), &ModuleConfig::default())
         .await
-        .unwrap();
-    assert!(
-        provider.is_none(),
-        "no host storage means the memory default"
-    );
+        .expect_err("a host must provide storage even for a static-only module");
+    assert!(provider.to_string().contains("host storage"), "{provider}");
 
     let config = ModuleConfig {
         data_dir: Some(std::env::temp_dir()),
@@ -3045,8 +3133,7 @@ async fn a_module_without_a_data_directory_runs_without_host_storage() {
     };
     let error = super::host_storage_for(connection, &config)
         .await
-        .err()
-        .unwrap();
+        .unwrap_err();
     assert!(error.to_string().contains("host storage"), "{error}");
 }
 
@@ -3070,6 +3157,56 @@ fn stdio_launchers_need_a_configured_sandbox_and_a_reachable_bus() {
     };
     // A sandbox with no bus to reach TinyBox is not a sandbox: refuse.
     assert!(!super::stdio_launchers(None, &configured).has_sandbox());
+}
+
+#[test]
+fn configured_stdio_sandbox_refuses_a_connection_without_tinybox() {
+    use tinymcp_bus::StdioSandboxConfig;
+
+    let config = McpClientConfig {
+        stdio_sandbox: Some(StdioSandboxConfig {
+            workspace: "/work".into(),
+            read_only: Vec::new(),
+            read_write: Vec::new(),
+            deny_read: Vec::new(),
+            allow_net: true,
+            allow_subprocess: true,
+            require_process_isolation: true,
+            enforcement: tinymcp_bus::StdioSandboxEnforcement::default(),
+        }),
+        ..McpClientConfig::default()
+    };
+    let refused = super::stdio_launchers_for_bus(
+        &config,
+        Some(Err(tinybus::Error::failed("TinyBox unavailable"))),
+    );
+    assert!(!refused.has_sandbox());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn configured_stdio_sandbox_builds_a_launcher_for_a_bus_connection() {
+    use tinybus::{broker::Broker, transport::memory::MemoryBus};
+    use tinymcp_bus::StdioSandboxConfig;
+
+    let bus = MemoryBus::new();
+    Broker::new().spawn(bus.clone());
+    let connection = tinybus::Connection::connect(bus.connect().await.unwrap())
+        .await
+        .unwrap();
+    let config = McpClientConfig {
+        stdio_sandbox: Some(StdioSandboxConfig {
+            workspace: "/work".into(),
+            read_only: Vec::new(),
+            read_write: Vec::new(),
+            deny_read: Vec::new(),
+            allow_net: true,
+            allow_subprocess: true,
+            require_process_isolation: true,
+            enforcement: tinymcp_bus::StdioSandboxEnforcement::default(),
+        }),
+        ..McpClientConfig::default()
+    };
+    assert!(super::stdio_launchers(Some(&connection), &config).has_sandbox());
 }
 
 #[derive(Debug, Default)]
@@ -3123,7 +3260,7 @@ async fn configured_tool_call_uses_the_services_sandbox_not_an_empty_launcher_se
     );
 
     // With no sandbox the same call is refused before any launch.
-    let bare = McpService::new(&ModuleConfig::default()).expect("the service builds");
+    let bare = super::test_service(&ModuleConfig::default()).expect("the service builds");
     let reply = ok(
         &bare,
         names::methods::CONFIGURED_TOOL_CALL,

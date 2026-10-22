@@ -5,9 +5,12 @@
 
 use std::sync::Arc;
 
-use tinybus::{Connection, broker::Broker, transport::memory::MemoryBus};
-use tinystoragedrivers_core::MemoryStorage;
+use serde_json::json;
+use tinybus::{BusName, Connection, broker::Broker, transport::memory::MemoryBus};
+use tinystoragedrivers_api::StorageBackend;
 use tinystoragedrivers_secrets::{MemorySecrets, SecretStore};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
+use tinystoragedrivers_types::{CollectionSpec, Precondition, Scope, WriteOptions};
 
 use super::test_host::{TestHost, serve_storage};
 use super::*;
@@ -45,7 +48,7 @@ async fn module(bus: &MemoryBus, secrets: &Arc<MemorySecrets>) -> BusProvider {
     let connection = Connection::connect(bus.connect().await.unwrap())
         .await
         .unwrap();
-    BusProvider::connect_with(connection, Some(secrets.clone() as Arc<dyn SecretStore>))
+    BusProvider::connect_ordinary_with(connection, Some(secrets.clone() as Arc<dyn SecretStore>))
         .await
         .unwrap()
 }
@@ -105,23 +108,53 @@ async fn connecting_without_a_host_is_an_error_not_a_silent_memory_store() {
     let lonely = Connection::connect(bus.connect().await.unwrap())
         .await
         .unwrap();
-    assert!(BusProvider::connect(lonely).await.is_err());
+    assert!(
+        BusProvider::connect_ordinary_with(lonely, None)
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_default_connect_routes_secrets_to_the_attested_host_store_only() {
+async fn callback_connection_requires_a_live_admitted_host_capability() {
+    let bus = MemoryBus::new();
+    Broker::new().spawn(bus.clone());
+    let connection = Connection::connect(bus.connect().await.unwrap())
+        .await
+        .unwrap();
+    let destination = BusName::new("org.example.Storage").unwrap();
+    let error = BusProvider::connect_at(connection, destination)
+        .await
+        .expect_err("ordinary peers cannot impersonate a provisioned host callback");
+    assert!(matches!(error, crate::Error::Store { .. }));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_ordinary_unattested_connection_cannot_use_the_secret_store() {
     let backend = MemoryStorage::new();
     let (bus, _host) = host(&backend, "module-tinymcp").await;
     let connection = Connection::connect(bus.connect().await.unwrap())
         .await
         .unwrap();
-    let provider = BusProvider::connect(connection).await.unwrap();
+    let provider = BusProvider::connect_ordinary_with(connection, None)
+        .await
+        .unwrap();
     let ports = provider.ports_for(&std::env::temp_dir().join("c")).unwrap();
     ports.prepare().unwrap();
     // An in-process broker cannot attest the caller, so the confidential
     // secret route is refused rather than silently served.
     let refused = Store::open(ports).unwrap_err();
-    assert!(refused.to_string().contains("NotAttested"), "{refused}");
+    assert!(
+        matches!(
+            &refused,
+            crate::Error::Store { source, .. }
+                if matches!(
+                    source.kind(),
+                    tinystoragedrivers_types::ErrorKind::Unsupported(_)
+                )
+        ),
+        "{refused}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -138,4 +171,82 @@ async fn a_provider_over_ready_ports_hands_out_clones_of_them() {
     again.prepare().unwrap();
     assert!(!again.has_state().unwrap());
     assert!(format!("{provider:?}").contains("BusProvider"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn owner_migration_omits_host_only_creation_time_on_the_bus() {
+    let backend = MemoryStorage::new();
+    let storage = backend
+        .for_scope(&Scope::new("module-tinymcp").unwrap())
+        .unwrap();
+    let local_docs = Arc::clone(storage.documents());
+    local_docs
+        .ensure_collection(&CollectionSpec::new("flows.items"))
+        .await
+        .unwrap();
+    local_docs
+        .put_with(
+            "flows.items",
+            "one",
+            json!({"value": "before"}),
+            Precondition::Absent,
+            WriteOptions::new().schema(1).created_ms(123),
+        )
+        .await
+        .unwrap();
+
+    let (bus, _host) = host(&backend, "module-tinymcp").await;
+    let secrets = Arc::new(MemorySecrets::new());
+    let ports = module(&bus, &secrets)
+        .await
+        .ports_for(&std::env::temp_dir().join("schema-created-ms"))
+        .unwrap();
+    let before = ports
+        .documents
+        .get("flows.items", "one")
+        .await
+        .unwrap()
+        .unwrap();
+    let schema =
+        crate::storage::local::Schema::new(crate::storage::local::Owner::new("flows").unwrap())
+            .collection_with(
+                2,
+                CollectionSpec::new("flows.items"),
+                crate::storage::local::ScopeClass::Tenant,
+            )
+            .step(crate::storage::local::Step::new(
+                "items_v2",
+                "flows.items",
+                1,
+                2,
+                |rows| {
+                    Ok(rows
+                        .into_iter()
+                        .map(|row| {
+                            crate::storage::local::TargetRecord::new(
+                                "flows.items",
+                                row.id,
+                                json!({"value": "after"}),
+                            )
+                        })
+                        .collect())
+                },
+            ));
+
+    schema
+        .migrate(
+            &ports.documents,
+            &crate::storage::local::MigrateOptions::default(),
+        )
+        .await
+        .unwrap();
+    let after = ports
+        .documents
+        .get("flows.items", "one")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.doc["value"], "after");
+    assert_eq!(after.meta.schema, 2);
+    assert_eq!(after.meta.created_ms, before.meta.created_ms);
 }

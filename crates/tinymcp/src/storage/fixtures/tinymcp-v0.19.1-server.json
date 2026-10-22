@@ -1,0 +1,1 @@
+{"args":["-y","@test/server"],"catalog_managed":false,"command":"npx","command_kind":"node","description":"A test server","display_name":"Test Server","enabled":true,"env_keys":["API_KEY"],"installed_ms":1700000000000,"qualified_name":"@test/server","server_id":"released-fixture-server","transport":"stdio"}

@@ -2,9 +2,9 @@
 
 use crate::McpWriteListQueryExt;
 
+use crate::storage::types::{StorageError, StreamEntry};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tinystoragedrivers_core::{StorageError, StreamEntry};
 
 use crate::error::{Error, Result};
 use crate::storage::{AUDIT_STREAM, StoragePorts};
@@ -44,6 +44,9 @@ impl AuditStore {
     ///
     /// Returns [`Error::Store`] when the stream cannot be reached.
     pub fn open(ports: StoragePorts) -> Result<Self> {
+        // Opening this owner handle also runs the owner's schema and stream
+        // migrations, including when callers do not open the registry store.
+        ports.prepare()?;
         ports.run("opening the audit log", |ports| async move {
             ports.streams.len(AUDIT_STREAM).await.map(|_| ())
         })?;
@@ -55,6 +58,7 @@ impl AuditStore {
     /// # Errors
     ///
     /// Returns [`Error::Store`] when the backend cannot be opened.
+    #[cfg(test)]
     pub fn open_in_memory() -> Result<Self> {
         Self::open(StoragePorts::memory()?)
     }

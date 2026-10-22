@@ -1,0 +1,75 @@
+//! Tests for the blocking bridge that runs storage futures for synchronous callers.
+
+use super::*;
+
+type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
+#[test]
+fn bridge_runs_futures_from_sync_and_current_thread_runtime_contexts() -> TestResult {
+    let bridge = Blocking::new()?;
+    assert_eq!(bridge.run(async { 42 })?, 42);
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    assert_eq!(
+        runtime.block_on(async { bridge.run(async { "ready" }) })?,
+        "ready"
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bridge_runs_from_a_multithread_worker() -> TestResult {
+    let bridge = Blocking::new()?;
+    assert_eq!(bridge.run(async { 7usize })?, 7);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bridge_runs_from_a_spawn_blocking_thread() -> TestResult {
+    let bridge = Blocking::new()?;
+    assert_eq!(
+        tokio::task::spawn_blocking(move || bridge.run(async { 11usize })).await??,
+        11
+    );
+    Ok(())
+}
+
+#[test]
+fn a_future_cannot_reenter_its_own_bridge() -> TestResult {
+    let bridge = Blocking::new()?;
+    let inner = bridge.clone();
+    let inner_result = bridge.run(async move { inner.run(async {}) })?;
+    let error = inner_result.err().ok_or("reentry would deadlock")?;
+    assert_eq!(error.kind(), tinystoragedrivers_types::ErrorKind::Backend);
+    Ok(())
+}
+
+#[test]
+fn panicking_jobs_are_reported_to_the_waiting_caller() -> TestResult {
+    let bridge = Blocking::new()?;
+    let result =
+        bridge.run(async { std::panic::resume_unwind(Box::new("intentional bridge job failure")) });
+    let error = result
+        .err()
+        .ok_or("panicking job should close its reply channel")?;
+    assert_eq!(error.kind(), tinystoragedrivers_types::ErrorKind::Backend);
+    Ok(())
+}
+
+#[test]
+fn bridge_reports_closed_worker_and_startup_io_failures() -> TestResult {
+    let (jobs, receiver) = tokio::sync::mpsc::unbounded_channel();
+    drop(receiver);
+    let bridge = Blocking { jobs };
+    let error = bridge
+        .run(async {})
+        .err()
+        .ok_or("closed bridge accepted work")?;
+    assert_eq!(error.kind(), tinystoragedrivers_types::ErrorKind::Backend);
+    let error = startup_error("cannot start test bridge")(std::io::Error::other("denied"));
+    assert_eq!(error.kind(), tinystoragedrivers_types::ErrorKind::Backend);
+    assert!(format!("{bridge:?}").contains("Blocking"));
+    Ok(())
+}

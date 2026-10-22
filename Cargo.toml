@@ -110,23 +110,21 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 # Structured diagnostics. Endpoints are always passed through `redact_endpoint`
 # before they reach a log line.
 tracing = { version = "0.1", default-features = false, features = ["std"] }
-# The storage ports (documents, streams) the installed-server store and the audit
-# log are written against, and the `Blocking` bridge that lets the synchronous
-# store call them. A git tag, like every other tinystoragedrivers consumer, so a
-# host that vendors the repository once redirects it with a `[patch]`. This
-# crate links no database: the host picks the backend.
-tinystoragedrivers-core = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v1.5.0", features = ["blocking"] }
-# The `SecretStore` port: server environment values and OAuth bundles are kept
-# there, never in a document. Its release is pinned independently from core.
-tinystoragedrivers-secrets = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v1.5.0" }
+# Runtime-neutral storage ports and their shared serialized types. TinyMCP
+# owns its typed repositories and migrations; the host chooses the engines.
+tinystoragedrivers-api = { git = "https://github.com/tinyhumansai/tinystoragedrivers", version = "2.1.0", rev = "2856dfa6f5b4de981a4db2801ae6be80c6432b3b" }
+tinystoragedrivers-types = { git = "https://github.com/tinyhumansai/tinystoragedrivers", version = "2.1.0", rev = "2856dfa6f5b4de981a4db2801ae6be80c6432b3b" }
 # The module-side storage bus: `connect_storage` over the module's TinyBus
 # connection, giving the same port traits the host serves. Used only by the
 # `module` feature (a cdylib reaches storage through the host, never a file).
-tinystoragedrivers-busproxy = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v1.5.0" }
-tinystoragedrivers-client = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v1.5.0" }
+tinystoragedrivers-busproxy = { git = "https://github.com/tinyhumansai/tinystoragedrivers", version = "2.1.0", rev = "2856dfa6f5b4de981a4db2801ae6be80c6432b3b" }
+tinystoragedrivers-testkit = { git = "https://github.com/tinyhumansai/tinystoragedrivers", version = "2.1.0", rev = "2856dfa6f5b4de981a4db2801ae6be80c6432b3b" }
+tinystoragedrivers-document = { git = "https://github.com/tinyhumansai/tinystoragedrivers", version = "2.1.0", rev = "2856dfa6f5b4de981a4db2801ae6be80c6432b3b", default-features = false, features = ["memory"] }
+tinystoragedrivers-secrets = { git = "https://github.com/tinyhumansai/tinystoragedrivers", version = "2.1.0", rev = "2856dfa6f5b4de981a4db2801ae6be80c6432b3b" }
 # Locating a user's home directory, to find the version-manager shim
 # directories a desktop launch's stripped PATH leaves out.
 dirs = "7"
+data-encoding = "2"
 # SHA-256: PKCE code challenges in the authorization-code flow, and the digest
 # in an action tool's name (`tinymcp-bus`'s `agent_tools::searchable_name`).
 sha2 = "0.11"
@@ -199,4 +197,10 @@ tinybus-macros = { path = "vendor/tinybus/crates/tinybus-macros" }
 # tinystoragedrivers names tinybus by git rev; point it at the same checkout so
 # the module's `Connection` and the storage transport's are one type.
 [patch."https://github.com/tinyhumansai/tinybus"]
+tinybus = { path = "vendor/tinybus/crates/tinybus" }
+
+# The storage-driver fork pins its TinyBus SDK commit until the canonical
+# source and release pin are updated together. Keep all bus types on this
+# workspace checkout while consuming that commit.
+[patch."https://github.com/senamakel/tinybus"]
 tinybus = { path = "vendor/tinybus/crates/tinybus" }
