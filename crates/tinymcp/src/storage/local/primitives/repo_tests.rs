@@ -1,3 +1,5 @@
+//! Tests for the typed `Repo` compare-and-swap loop and its retry policy.
+
 use super::*;
 
 use serde::{Deserialize, Serialize};

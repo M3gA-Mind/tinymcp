@@ -1,3 +1,5 @@
+//! Tests for the blocking bridge that runs storage futures for synchronous callers.
+
 use super::*;
 
 type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;

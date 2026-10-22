@@ -133,8 +133,8 @@ pub struct ServerDocumentBody {
 pub fn convert_legacy_server(
     record: LegacyServerDocument,
 ) -> tinystoragedrivers_types::Result<ServerDocument> {
-    let id = doc_id(&[&record.storage_id])?;
     let body = record.body;
+    let id = doc_id(&[&body.server_id])?;
     Ok(ServerDocument {
         id,
         body: ServerDocumentBody {

@@ -1,3 +1,5 @@
+//! Tests for the TinyBus-backed storage provider's port wiring.
+
 use super::*;
 
 use tinystoragedrivers_api::StorageBackend;

@@ -1,3 +1,5 @@
+//! Tests for owner collection migrations and the shared `tsd.migrations` progress ledger.
+
 use super::*;
 
 type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
