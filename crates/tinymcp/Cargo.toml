@@ -38,6 +38,7 @@ base64 = { workspace = true }
 futures-util = { workspace = true }
 tracing = { workspace = true }
 dirs = { workspace = true }
+data-encoding = { workspace = true }
 tinystoragedrivers-api = { workspace = true }
 tinystoragedrivers-types = { workspace = true }
 tinystoragedrivers-busproxy = { workspace = true, optional = true }
