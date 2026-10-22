@@ -47,6 +47,14 @@ fn composite_ids_escape_reserved_bytes_without_changing_component_boundaries() {
 }
 
 #[test]
+fn overlong_composite_ids_keep_the_legacy_digest_encoding() {
+    let component = "x".repeat(513);
+    let id = doc_id(&[&component]).unwrap();
+    assert_eq!(id.len(), 53);
+    assert_eq!(id, "~gww6aciomttu22wqiicabhbdutruxav56d2pgf73zrpsn6nrajaq");
+}
+
+#[test]
 fn write_options_pin_the_collection_schema_version() {
     assert_eq!(write_options().schema, SCHEMA_VERSION);
 }

@@ -442,16 +442,12 @@ fn a_rendered_result_keeps_its_error_flag_and_markdown() {
 async fn an_installed_server_is_callable_by_name_and_cached_for_the_next_boot() {
     let (url, calls) = mcp_server().await;
     let directory = tempfile::tempdir().unwrap();
+    let provider = Arc::new(crate::storage::MemoryProvider::new());
 
     // First process: install and connect, which caches the listing.
     {
         let registry = dynamic_registry(
-            Store::open(
-                crate::storage::installed_provider()
-                    .unwrap()
-                    .ports_for(directory.path())
-                    .unwrap(),
-            )
+            Store::open(provider.ports_for(directory.path()).unwrap())
             .unwrap(),
         );
         registry
@@ -497,12 +493,7 @@ async fn an_installed_server_is_callable_by_name_and_cached_for_the_next_boot() 
 
     // Second process: nothing is connected, but the tools are offered.
     let registry = dynamic_registry(
-        Store::open(
-            crate::storage::installed_provider()
-                .unwrap()
-                .ports_for(directory.path())
-                .unwrap(),
-        )
+        Store::open(provider.ports_for(directory.path()).unwrap())
         .unwrap(),
     );
     let overview = registry.cached_overview().await.unwrap();

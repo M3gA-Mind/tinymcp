@@ -273,6 +273,8 @@ fn owner_and_progress_keys_validate_and_keep_the_legacy_encoding() -> TestResult
         "%7Eflows%25/step%2Fone%00"
     );
     assert!(composite_key(&[]).is_err());
+    let long = "x".repeat(513);
+    assert_eq!(composite_key(&[&long])?.as_str().len(), 53);
     Ok(())
 }
 

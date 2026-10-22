@@ -569,11 +569,14 @@ fn a_server_never_connected_keeps_no_last_connected_field() {
 #[test]
 fn a_server_id_with_a_slash_is_escaped_into_its_v2_key() {
     let fixture = Fixture::new();
-    fixture.legacy("mcp_servers", "a/b", v1_server());
+    let mut server = v1_server();
+    server["server_id"] = json!("a/b");
+    fixture.legacy("mcp_servers", "a%2Fb", server);
 
     fixture.migrate();
 
     assert!(fixture.get(SERVERS, "a%2Fb").is_some());
+    assert!(fixture.get(SERVERS, "a%252Fb").is_none());
 }
 
 #[test]
