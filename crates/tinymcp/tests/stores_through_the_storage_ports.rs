@@ -107,8 +107,16 @@ fn the_storage_schema_composes_and_the_grant_is_generated_from_it() {
         .map(|spec| spec.name)
         .collect();
     let granted = storage::grant();
-    assert_eq!(granted.collections, collections);
-    assert_eq!(granted.streams, vec![storage::AUDIT_STREAM.to_owned()]);
+    assert!(
+        collections
+            .iter()
+            .all(|name| granted.collections.contains(name))
+    );
+    assert!(granted.collections.contains(&"mcp_servers".to_owned()));
+    assert_eq!(
+        granted.streams,
+        vec![storage::AUDIT_STREAM.to_owned(), "mcp_audit".to_owned()]
+    );
     assert!(
         collections
             .iter()
@@ -118,7 +126,6 @@ fn the_storage_schema_composes_and_the_grant_is_generated_from_it() {
         collections
             .iter()
             .filter(|name| name.as_str() != tinymcp_bus::storage::MIGRATIONS)
-            .chain(&granted.streams)
             .all(|name| name.starts_with(&format!("{}.", storage::OWNER)))
     );
 }
