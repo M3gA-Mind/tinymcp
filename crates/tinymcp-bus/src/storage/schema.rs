@@ -1,7 +1,6 @@
 //! Pure collection names and shapes for MCP storage.
 
-use sha2::{Digest, Sha256};
-use tinystoragedrivers_types::{CollectionSpec, IndexSpec, Key, MAX_ID_LEN, WriteOptions};
+use tinystoragedrivers_types::{CollectionSpec, IndexSpec, WriteOptions};
 
 /// The owner every name below starts with.
 pub const OWNER: &str = "mcp";
@@ -46,41 +45,4 @@ pub fn collection_specs() -> Vec<CollectionSpec> {
 #[must_use]
 pub fn write_options() -> WriteOptions {
     WriteOptions::new().schema(SCHEMA_VERSION)
-}
-
-/// The document id for `parts`, using the released TSD composite-key encoding.
-///
-/// # Errors
-///
-/// Returns the storage error for an empty key.
-pub fn doc_id(parts: &[&str]) -> tinystoragedrivers_types::Result<String> {
-    if parts.is_empty() {
-        return Err(tinystoragedrivers_types::StorageError::invalid_input(
-            "a key needs at least one part",
-        ));
-    }
-    let mut encoded = String::new();
-    for (index, part) in parts.iter().enumerate() {
-        if index != 0 {
-            encoded.push('/');
-        }
-        for (character_index, character) in part.chars().enumerate() {
-            match character {
-                '%' => encoded.push_str("%25"),
-                '/' => encoded.push_str("%2F"),
-                '\0' => encoded.push_str("%00"),
-                '~' if index == 0 && character_index == 0 => encoded.push_str("%7E"),
-                other => encoded.push(other),
-            }
-        }
-    }
-    if encoded.len() > MAX_ID_LEN {
-        encoded = format!(
-            "~{}",
-            data_encoding::BASE32_NOPAD
-                .encode(&Sha256::digest(encoded.as_bytes()))
-                .to_ascii_lowercase()
-        );
-    }
-    Key::new(encoded).map(|key| key.as_str().to_owned())
 }

@@ -9,9 +9,9 @@ cargo test --locked --workspace --all-features
 default_tree="$(cargo tree -p tinymcp-bus -e normal,build --prefix none)"
 storage_tree="$(cargo tree -p tinymcp-bus --features storage -e normal,build --prefix none)"
 forbidden="$(printf '%s\n' "$default_tree" \
-  | grep -Ei 'tinybus|tokio|reqwest|ureq|hyper|rusqlite|git2' || true)"
+  | grep -Ei 'tinybus|tokio|reqwest|ureq|hyper|rusqlite|git2|data-encoding|sha2' || true)"
 storage_forbidden="$(printf '%s\n' "$storage_tree" \
-  | grep -Ei 'tinybus|reqwest|ureq|hyper|rusqlite|git2' || true)"
+  | grep -Ei 'tinybus|reqwest|ureq|hyper|rusqlite|git2|data-encoding|sha2' || true)"
 if [ -n "$storage_forbidden" ]; then
   forbidden="${forbidden:+$forbidden$'\n'}$storage_forbidden"
 fi

@@ -7,7 +7,7 @@ mod schema;
 
 pub use schema::{
     AUDIT_STREAM, MIGRATIONS, OWNER, REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE,
-    SCHEMA_VERSION, SERVER_NAMES, SERVERS, TOOL_CACHE, collection_specs, doc_id, write_options,
+    SCHEMA_VERSION, SERVER_NAMES, SERVERS, TOOL_CACHE, collection_specs, write_options,
 };
 
 #[cfg(test)]
