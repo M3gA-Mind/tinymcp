@@ -29,7 +29,9 @@ fn legacy_server(storage_id: &str) -> LegacyServerDocument {
 
 #[test]
 fn server_conversion_rekeys_and_renames_times_without_losing_optional_or_unknown_fields() {
-    let converted = convert_legacy_server(legacy_server("srv/a%~")).unwrap();
+    let mut record = legacy_server("srv/a%~");
+    record.body.server_id = "srv/a%~".to_owned();
+    let converted = convert_legacy_server(record).unwrap();
     assert_eq!(converted.id, "srv%2Fa%25~");
     assert_eq!(converted.body.installed_ms, 1_700_000_000_000);
     assert_eq!(converted.body.last_connected_ms, Some(1_700_000_100_000));
