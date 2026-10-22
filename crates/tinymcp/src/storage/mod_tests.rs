@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 fn dir(name: &str) -> PathBuf {
     std::env::temp_dir().join("tinymcp-test").join(name)
 }
-use crate::storage::types::Filter;
+use crate::storage::types::{CollectionSpec, Filter, Precondition, Scope};
+use std::sync::Arc;
+use tinystoragedrivers_api::StorageBackend;
 use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use crate::{AuditStore, Store};
@@ -50,7 +52,7 @@ fn the_grant_names_every_collection_the_specs_declare() {
             .collections
             .contains(&"mcp_registry_index_state".to_owned())
     );
-    assert_eq!(granted.streams, [AUDIT_STREAM, "mcp_audit"]);
+    assert_eq!(granted.streams, [AUDIT_STREAM, "mcp_audit", "mcp_audit/"]);
     assert!(granted.secrets.contains(&format!("{ENV_SECRET_PREFIX}*")));
     assert!(granted.secrets.contains(&CACHE_KEY_SECRET.to_string()));
 }
@@ -108,6 +110,47 @@ fn installed_servers_count_as_stored_state() {
         enabled: true,
     };
     store.insert_server(&server).unwrap();
+    assert!(ports.has_state().unwrap());
+}
+
+#[test]
+fn legacy_mcp_collections_and_audit_streams_count_as_stored_state() {
+    let backend = MemoryStorage::new();
+    let scope = Scope::new("legacy-state-probe").unwrap();
+    let storage = backend.for_scope(&scope).unwrap();
+    let documents = Arc::clone(storage.documents());
+    let streams = Arc::clone(storage.streams());
+    let ports = StoragePorts::from_storage(&storage, Arc::clone(storage.secrets()));
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+
+    runtime.block_on(async {
+        documents
+            .ensure_collection(&CollectionSpec::new("mcp_servers"))
+            .await
+            .unwrap();
+        documents
+            .put(
+                "mcp_servers",
+                "legacy-server",
+                serde_json::json!({"server_id": "legacy-server"}),
+                Precondition::Absent,
+            )
+            .await
+            .unwrap();
+    });
+    assert!(ports.has_state().unwrap());
+
+    runtime.block_on(async {
+        streams
+            .append(
+                "mcp_audit/workspace/legacy",
+                serde_json::json!({"event": true}),
+            )
+            .await
+            .unwrap();
+    });
     assert!(ports.has_state().unwrap());
 }
 

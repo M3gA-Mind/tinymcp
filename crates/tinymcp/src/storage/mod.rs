@@ -35,6 +35,7 @@ mod failing;
 mod grant;
 mod local;
 mod migrate;
+mod migration_legacy;
 mod ports;
 mod provider;
 mod schema;

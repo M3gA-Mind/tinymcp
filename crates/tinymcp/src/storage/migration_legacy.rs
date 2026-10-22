@@ -8,16 +8,16 @@ use super::schema::{AUDIT_STREAM, doc_id};
 
 /// A server document written by the previous `mcp_servers` collection.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LegacyServerDocument {
+pub(super) struct LegacyServerDocument {
     /// The document key in the old collection.
-    pub storage_id: String,
+    pub(super) storage_id: String,
     /// The old server body, including any fields unknown to this contract.
-    pub body: LegacyServerBody,
+    pub(super) body: LegacyServerBody,
 }
 
 /// The previous release's server record shape.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LegacyServerBody {
+pub(super) struct LegacyServerBody {
     /// The server's stable owner ID.
     pub server_id: String,
     /// Its qualified registry name.
@@ -67,16 +67,16 @@ pub struct LegacyServerBody {
 
 /// A server record in the current `mcp.servers` document shape.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ServerDocument {
+pub(super) struct ServerDocument {
     /// The composite-key-escaped document ID.
-    pub id: String,
+    pub(super) id: String,
     /// The current server body.
-    pub body: ServerDocumentBody,
+    pub(super) body: ServerDocumentBody,
 }
 
 /// The current owner document body for an installed MCP server.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ServerDocumentBody {
+pub(super) struct ServerDocumentBody {
     /// The server's stable owner ID.
     pub server_id: String,
     /// Its qualified registry name.
@@ -130,7 +130,7 @@ pub struct ServerDocumentBody {
 ///
 /// Returns a storage error when the old body is malformed or its ID cannot be
 /// represented as a storage key.
-pub fn convert_legacy_server(
+pub(super) fn convert_legacy_server(
     record: LegacyServerDocument,
 ) -> tinystoragedrivers_types::Result<ServerDocument> {
     let body = record.body;
@@ -161,7 +161,7 @@ pub fn convert_legacy_server(
 
 /// A qualified-name claim written by the previous collection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LegacyServerNameClaim {
+pub(super) struct LegacyServerNameClaim {
     /// The qualified name held by this claim.
     pub qualified_name: String,
     /// The server ID that owns the claim.
@@ -176,16 +176,16 @@ pub struct LegacyServerNameClaim {
 
 /// A qualified-name claim in the current `mcp.server_names` collection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ServerNameClaim {
+pub(super) struct ServerNameClaim {
     /// The composite-key-escaped ID, derived from `qualified_name`.
-    pub id: String,
+    pub(super) id: String,
     /// The current owner document body.
-    pub body: ServerNameClaimBody,
+    pub(super) body: ServerNameClaimBody,
 }
 
 /// The current owner body for one qualified-name claim.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ServerNameClaimBody {
+pub(super) struct ServerNameClaimBody {
     /// The qualified name held by this claim.
     pub qualified_name: String,
     /// The server ID that owns the claim.
@@ -203,7 +203,7 @@ pub struct ServerNameClaimBody {
 ///
 /// Returns a storage error when the qualified name cannot be represented as
 /// a storage key.
-pub fn convert_legacy_server_name_claim(
+pub(super) fn convert_legacy_server_name_claim(
     claim: LegacyServerNameClaim,
 ) -> tinystoragedrivers_types::Result<ServerNameClaim> {
     Ok(ServerNameClaim {
@@ -221,7 +221,7 @@ pub fn convert_legacy_server_name_claim(
 ///
 /// Only the exact legacy family and its slash-delimited descendants match.
 #[must_use]
-pub fn legacy_audit_stream_target(source: &str) -> Option<String> {
+pub(super) fn legacy_audit_stream_target(source: &str) -> Option<String> {
     if source == "mcp_audit" {
         Some(AUDIT_STREAM.to_owned())
     } else {

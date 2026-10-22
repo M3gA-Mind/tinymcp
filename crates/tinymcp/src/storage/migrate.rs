@@ -14,13 +14,13 @@ use tinystoragedrivers_api::StreamStore;
 use tinystoragedrivers_types::{ErrorKind, Result as StorageResult, StreamEntry};
 
 use super::local::{Migrations, SourceRecord, Step, StreamProgress, TargetRecord};
+use super::migration_legacy::{
+    LegacyServerDocument, convert_legacy_server, convert_legacy_server_name_claim,
+    legacy_audit_stream_target,
+};
 use super::schema::{
     OWNER, REGISTRY_CACHE, REGISTRY_INDEX, REGISTRY_INDEX_STATE, SERVER_NAMES, SERVERS, TOOL_CACHE,
     doc_id,
-};
-use tinymcp_bus::storage::{
-    LegacyServerDocument, convert_legacy_server, convert_legacy_server_name_claim,
-    legacy_audit_stream_target,
 };
 
 /// The version the steps read.

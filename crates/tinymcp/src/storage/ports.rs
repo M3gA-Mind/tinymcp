@@ -8,6 +8,7 @@ use tinystoragedrivers_api::StorageBackend;
 use tinystoragedrivers_api::{DocumentStore, SecretStore, Storage, StreamStore};
 use tinystoragedrivers_types::{ErrorKind, Filter, Result as StorageResult};
 
+use super::grant::LEGACY_COLLECTIONS;
 use super::local::{Blocking, MigrateOptions, Migrations};
 
 use super::schema::SERVERS;
@@ -123,22 +124,33 @@ impl StoragePorts {
     /// Returns [`Error::Store`] when the port fails.
     pub fn has_state(&self) -> Result<bool> {
         self.run("checking for stored state", |ports| async move {
-            let servers = ports
-                .documents
-                .count(SERVERS, &Filter::default())
-                .await
-                .or_else(|error| {
-                    // A collection never declared here holds nothing, and the
-                    // probe must not create it; any other failure (an
-                    // unavailable or refusing port) is not "no installs".
-                    if error.kind() == ErrorKind::NotFound {
-                        Ok(0)
-                    } else {
-                        Err(error)
-                    }
-                })?;
+            for collection in std::iter::once(SERVERS).chain(LEGACY_COLLECTIONS) {
+                let count = ports
+                    .documents
+                    .count(collection, &Filter::default())
+                    .await
+                    .or_else(|error| {
+                        // A collection never declared here holds nothing, and
+                        // the probe must not create it; any other failure (an
+                        // unavailable or refusing port) is not "no installs".
+                        if error.kind() == ErrorKind::NotFound {
+                            Ok(0)
+                        } else {
+                            Err(error)
+                        }
+                    })?;
+                if count > 0 {
+                    return Ok(true);
+                }
+            }
             let audited = ports.streams.len(super::schema::AUDIT_STREAM).await?;
-            Ok(servers > 0 || audited > 0)
+            if audited > 0 {
+                return Ok(true);
+            }
+            let legacy_audit = ports.streams.streams("mcp_audit").await?;
+            Ok(legacy_audit
+                .iter()
+                .any(|name| name == "mcp_audit" || name.starts_with("mcp_audit/")))
         })
     }
 

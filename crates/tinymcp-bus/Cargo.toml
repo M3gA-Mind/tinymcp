@@ -26,8 +26,8 @@ schemars = { workspace = true, optional = true }
 # Decoding a widget document a tool result embedded as a base64 `blob`, for
 # the pure tool-UI rules in `ui`. No dependencies of its own.
 base64 = { workspace = true }
-data-encoding = { workspace = true }
-sha2 = { workspace = true }
+data-encoding = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
 # Pure collection declaration types for the module's storage grant. The bus
 # contract does not run migrations or depend on storage implementation code.
 tinystoragedrivers-types = { git = "https://github.com/tinyhumansai/tinystoragedrivers", version = "2.1.0", rev = "2856dfa6f5b4de981a4db2801ae6be80c6432b3b", optional = true }
@@ -47,7 +47,7 @@ default = []
 # Derive `JsonSchema` on the configuration payloads. See `src/config/mod.rs`.
 schemars = ["dep:schemars"]
 # Pure storage collection payloads. Migration behavior belongs to `tinymcp`.
-storage = ["dep:tinystoragedrivers-types"]
+storage = ["dep:data-encoding", "dep:sha2", "dep:tinystoragedrivers-types"]
 
 [lints]
 workspace = true

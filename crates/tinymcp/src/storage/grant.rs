@@ -16,7 +16,7 @@ pub const ENV_SECRET_PREFIX: &str = "mcp_client_env/";
 /// The secret holding the key the tool-cache fingerprints are keyed with.
 pub const CACHE_KEY_SECRET: &str = "mcp_cache_fingerprint_key";
 
-const LEGACY_COLLECTIONS: [&str; 6] = [
+pub(super) const LEGACY_COLLECTIONS: [&str; 6] = [
     "mcp_servers",
     "mcp_server_names",
     "mcp_registry_cache",
@@ -37,7 +37,7 @@ pub struct StorageGrant {
     pub collections: Vec<String>,
     /// Collections that need full-text search.
     pub searchable: Vec<String>,
-    /// Stream names (exact) the module appends to and reads.
+    /// Stream names and prefixes the module appends to and reads.
     pub streams: Vec<String>,
     /// Secret names the module uses, as exact names or `prefix*` patterns.
     pub secrets: Vec<String>,
@@ -54,7 +54,11 @@ pub fn grant() -> StorageGrant {
     StorageGrant {
         collections,
         searchable: Vec::new(),
-        streams: vec![AUDIT_STREAM.to_owned(), LEGACY_AUDIT_STREAM.to_owned()],
+        streams: vec![
+            AUDIT_STREAM.to_owned(),
+            LEGACY_AUDIT_STREAM.to_owned(),
+            format!("{LEGACY_AUDIT_STREAM}/"),
+        ],
         secrets: vec![
             format!("{ENV_SECRET_PREFIX}*"),
             CACHE_KEY_SECRET.to_string(),
