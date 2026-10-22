@@ -14,6 +14,9 @@ use tinymcp::transport::stdio::jailed::StdioLaunchers;
 use tinymcp::transport::stdio::{StdioLaunch, StdioSpawner};
 use tinymcp::{McpClientIdentityConfig, McpRegistryAuthConfig};
 
+#[path = "storage.rs"]
+mod storage_fixture;
+
 #[derive(Debug)]
 struct IsolatedSpawner {
     workspace: PathBuf,
@@ -101,7 +104,7 @@ impl IsolatedRegistry {
         });
         let auth = McpRegistryAuthConfig::default();
         let registry = McpRegistry::new(
-            Store::open_in_memory().expect("open in-memory store"),
+            storage_fixture::open_memory_store(),
             auth.clone(),
             McpClientIdentityConfig::default(),
             None,
@@ -121,7 +124,7 @@ impl IsolatedRegistry {
             .expect("build official registry client with live-test budgets"),
         )
         .expect("build configured catalog dispatcher");
-        let catalog_store = Store::open_in_memory().expect("open catalog cache");
+        let catalog_store = storage_fixture::open_memory_store();
 
         Self {
             _scratch: scratch,

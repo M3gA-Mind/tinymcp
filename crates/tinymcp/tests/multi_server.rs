@@ -4,11 +4,12 @@
 
 #[path = "support/mcp_server.rs"]
 mod mcp_server_fixture;
+#[path = "support/storage.rs"]
+mod storage_fixture;
 
 use std::sync::atomic::Ordering;
 
 use serde_json::{Value, json};
-use tinymcp::registry::Store;
 use tinymcp::{
     CommandKind, InstalledServer, McpClientIdentityConfig, McpRegistry, McpRegistryAuthConfig,
     ServerStatus, Transport,
@@ -19,7 +20,7 @@ use mcp_server_fixture::{
 };
 
 fn registry_with_servers(servers: &[InstalledServer]) -> McpRegistry {
-    let store = Store::open_in_memory().expect("open in-memory store");
+    let store = storage_fixture::open_memory_store();
     for server in servers {
         store.insert_server(server).expect("insert server");
     }
