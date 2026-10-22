@@ -7,15 +7,18 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use tinymcp::storage::{self, StoragePorts};
 use tinymcp::{AuditStore, CommandKind, InstalledServer, NewMcpWriteRecord, Store, Transport};
-use tinystoragedrivers_testkit::memory_storage;
+use tinystoragedrivers_api::StorageBackend;
+use tinystoragedrivers_testkit::MemoryBackend;
 use tinystoragedrivers_types::Scope;
 
 fn memory_ports() -> StoragePorts {
+    let backend = MemoryBackend::new();
     let scope = Scope::new("test").unwrap();
-    let storage = memory_storage(&scope);
-    StoragePorts::from_storage(&storage, std::sync::Arc::clone(storage.secrets()))
+    let storage = backend.for_scope(&scope).unwrap();
+    StoragePorts::from_storage(&storage, Arc::clone(storage.secrets()))
 }
 
 fn server(id: &str, name: &str) -> InstalledServer {
