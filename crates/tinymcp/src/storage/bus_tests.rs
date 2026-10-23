@@ -250,3 +250,33 @@ async fn owner_migration_omits_host_only_creation_time_on_the_bus() {
     assert_eq!(after.meta.schema, 2);
     assert_eq!(after.meta.created_ms, before.meta.created_ms);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_bound_provider_leaves_the_schema_and_migrations_to_the_host() {
+    let backend = MemoryStorage::new();
+    let (bus, _host) = host(&backend, "module-tinymcp").await;
+    let secrets = Arc::new(MemorySecrets::new());
+    let ports = module(&bus, &secrets)
+        .await
+        .ports_for(&std::env::temp_dir().join("tinymcp-host-managed"))
+        .unwrap();
+
+    ports.prepare().unwrap();
+
+    // A host's grant keeps the shared migration ledger and the v1 source
+    // collections out of a module's reach, so preparing must not ask for them.
+    let documents = backend
+        .for_scope(&Scope::new("module-tinymcp").unwrap())
+        .unwrap();
+    let declared = documents.documents().collections().await.unwrap();
+    assert!(
+        declared.iter().any(|name| name == "mcp.servers"),
+        "{declared:?}"
+    );
+    assert!(
+        declared
+            .iter()
+            .all(|name| !name.starts_with("tsd.") && !name.starts_with("mcp_")),
+        "{declared:?}"
+    );
+}
