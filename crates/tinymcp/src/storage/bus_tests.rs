@@ -284,3 +284,17 @@ async fn a_host_bound_provider_leaves_the_schema_and_migrations_to_the_host() {
     ports.prepare().unwrap();
     assert_eq!(ledger_rows(&backend, "module-tinymcp").await, 0);
 }
+
+#[test]
+fn host_managed_ports_declare_only_their_own_collections() {
+    // The bus contract lists the migration ledger among the module's
+    // collections, but a host's grant refuses it. Preparing over a host's ports
+    // must not declare it, and must not start a migration it cannot finish.
+    StoragePorts::with_host_owned_schema()
+        .host_managed()
+        .prepare()
+        .expect("only the granted collections are declared");
+    StoragePorts::with_host_owned_schema()
+        .prepare()
+        .expect_err("the module's own migration reaches for the ledger");
+}

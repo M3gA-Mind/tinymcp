@@ -124,7 +124,10 @@ impl StoragePorts {
             // confirms host and module agree on them. Running the migrations
             // would reach for collections the host's grant keeps out of reach.
             return self.run("declaring the collections", |ports| async move {
-                for spec in tinymcp_bus::storage::collection_specs() {
+                for spec in tinymcp_bus::storage::collection_specs()
+                    .into_iter()
+                    .filter(|spec| !spec.name.starts_with("tsd."))
+                {
                     ports.documents.ensure_collection(&spec).await?;
                 }
                 Ok(())
