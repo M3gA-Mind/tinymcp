@@ -271,7 +271,7 @@ mod against_a_fake_server {
 
     #[tokio::test]
     async fn tools_are_listed_after_the_handshake() {
-        let tools = r#"{"jsonrpc":"2.0","id":3,"result":{"tools":[{"name":"forecast","description":"weather"}]}}"#;
+        let tools = r#"{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"forecast","description":"weather"}]}}"#;
         let command = responder(&[&initialize_reply(), "", tools]);
 
         let listed = client_for(command).list_tools().await.expect("tools/list");
@@ -350,19 +350,85 @@ mod against_a_fake_server {
         );
     }
 
+    /// A notification and a late reply to an earlier request arrive before the
+    /// real `tools/call` reply; only the reply carrying the request's id counts.
+    #[tokio::test]
+    async fn a_call_skips_notifications_and_replies_to_other_requests() {
+        let body = format!(
+            "read -r _l\nprintf '%s\\n' '{init}'\nread -r _l\nread -r _l\n\
+             printf '%s\\n' '{{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{{}}}}'\n\
+             printf '%s\\n' '{{\"jsonrpc\":\"2.0\",\"id\":999,\"result\":{{\"tools\":[]}}}}'\n\
+             printf '%s\\n' '{{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{{\"content\":[{{\"type\":\"text\",\"text\":\"real\"}}]}}}}'\n\
+             cat > /dev/null\n",
+            init = initialize_reply()
+        );
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            client_for(body).call_tool("echo", serde_json::json!({})),
+        )
+        .await
+        .expect("call_tool must not hang")
+        .expect("call_tool must return the real reply");
+
+        assert!(
+            result.raw_result.to_string().contains("\"real\""),
+            "{:?}",
+            result.raw_result
+        );
+    }
+
+    /// A server `ping` sent while a request is pending is answered with `{}`.
+    #[tokio::test]
+    async fn a_server_ping_during_a_call_is_answered() {
+        let body = format!(
+            "read -r _l\nprintf '%s\\n' '{init}'\nread -r _l\nread -r _l\n\
+             printf '%s\\n' '{{\"jsonrpc\":\"2.0\",\"id\":\"srv-1\",\"method\":\"ping\"}}'\n\
+             read -r pong\n\
+             if printf '%s' \"$pong\" | grep -q '\"id\":\"srv-1\"' \
+                && printf '%s' \"$pong\" | grep -q '\"result\":{{}}'; then text=answered; else text=unanswered; fi\n\
+             printf '%s\\n' \"{{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":2,\\\"result\\\":{{\\\"content\\\":[{{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"$text\\\"}}]}}}}\"\n\
+             cat > /dev/null\n",
+            init = initialize_reply()
+        );
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            client_for(body).call_tool("echo", serde_json::json!({})),
+        )
+        .await
+        .expect("call_tool must not hang")
+        .expect("call_tool must return the reply");
+
+        assert!(
+            result.raw_result.to_string().contains("\"answered\""),
+            "{:?}",
+            result.raw_result
+        );
+    }
+
     #[tokio::test]
     async fn closing_a_session_terminates_the_child_and_forgets_it() {
-        let command = responder(&[&initialize_reply()]);
+        // Replies carry the id of the request they answer: the reopened
+        // session's handshake is not request 1, and a reply to the wrong id is
+        // (rightly) never taken as its answer.
+        let reply = initialize_reply().replace(r#""id":1"#, r#""id":'"$id"'"#);
+        let command = format!(
+            "read -r line\nid=$(printf '%s' \"$line\" | sed 's/.*\"id\":\\([0-9]*\\).*/\\1/')\n\
+             printf '%s\\n' '{reply}'\ncat > /dev/null\n"
+        );
         let client = client_for(command);
+        let within = |what| tokio::time::timeout(std::time::Duration::from_secs(10), what);
 
-        client.initialize().await.expect("the handshake");
+        within(client.initialize())
+            .await
+            .expect("the handshake must not hang")
+            .expect("the handshake");
         client.close_session().await.expect("closing");
 
         // The session is gone, so this would have to spawn again. The script
         // answers once more only because a fresh child starts from the top.
-        client
-            .initialize()
+        within(client.initialize())
             .await
+            .expect("reopening must not hang")
             .expect("a closed session can be reopened");
     }
 }
