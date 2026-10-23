@@ -3112,8 +3112,7 @@ async fn bus_provider_fails_when_the_named_storage_service_has_no_owner() {
 
     let error = super::bus_provider(connection, &config)
         .await
-        .err()
-        .expect("no host serves storage, so the load fails rather than using memory");
+        .expect_err("no host serves storage, so the load fails rather than using memory");
 
     assert!(error.to_string().contains("host storage"), "{error}");
 }
