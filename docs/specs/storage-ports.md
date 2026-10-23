@@ -73,6 +73,20 @@ fails the load rather than falling back to memory, which would lose every
 install at the next restart. A host that links the module into its own
 process installs its own provider before `setup` and skips the bus.
 
+A host that serves one storage service for every module, rather than binding a
+private callback to each instance, names that service as the destination:
+`storage_callback = "ai.tinyhumans.tinystorage.Storage"`. `setup` then connects
+to the peer that owns the name (`BusProvider::connect_service`). The host still
+binds the scope from the broker-authenticated caller and enforces the grant.
+The name is explicit and exact, so an absent destination, or a service nobody
+owns, still fails the load rather than falling back to memory.
+
+Ports reached over the bus are host-managed: the host declared the module's
+collections when it bound the scope and its grant is the allowlist, so
+`prepare` only re-declares the current collections. It does not run the
+in-module migrations, whose shared progress ledger and v1 source collections
+lie outside a host grant. Migration of v1 records is the host's import.
+
 Secrets travel on the confidential route, which the broker completes only to
 an attested recipient. The host's storage objects must therefore be served by
 an attested artifact before a released module can use the bus provider in

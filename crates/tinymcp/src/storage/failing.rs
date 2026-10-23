@@ -16,6 +16,9 @@ use super::StoragePorts;
 pub(crate) struct FailingDocuments {
     /// Fail with `NotFound` (a collection never declared) instead of an outage.
     pub(crate) missing: bool,
+    /// Refuse to declare the storage layer's own `tsd.` collections, as a
+    /// host's grant does.
+    pub(crate) refuse_ledger: bool,
 }
 
 impl FailingDocuments {
@@ -34,7 +37,10 @@ impl DocumentStore for FailingDocuments {
         Capabilities::none()
     }
 
-    async fn ensure_collection(&self, _spec: &CollectionSpec) -> Result<()> {
+    async fn ensure_collection(&self, spec: &CollectionSpec) -> Result<()> {
+        if self.refuse_ledger && spec.name.starts_with("tsd.") {
+            return Err(StorageError::invalid_input("schema is host-only"));
+        }
         Ok(())
     }
 
@@ -121,7 +127,19 @@ impl StoragePorts {
 
     /// Ports whose collections were never declared: counts answer `NotFound`.
     pub(crate) fn with_undeclared_collections() -> Self {
-        Self::with_documents(FailingDocuments { missing: true })
+        Self::with_documents(FailingDocuments {
+            missing: true,
+            ..FailingDocuments::default()
+        })
+    }
+
+    /// Ports as a host leaves them: its collections are declared, the shared
+    /// migration ledger is refused, and nothing else is reachable.
+    pub(crate) fn with_host_owned_schema() -> Self {
+        Self::with_documents(FailingDocuments {
+            refuse_ledger: true,
+            ..FailingDocuments::default()
+        })
     }
 
     fn with_documents(documents: FailingDocuments) -> Self {

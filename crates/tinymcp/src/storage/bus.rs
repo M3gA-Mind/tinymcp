@@ -13,9 +13,7 @@ use std::sync::Arc;
 use crate::storage::types::SecretStore;
 use tinybus::{BusName, Connection};
 use tinystoragedrivers_api::Storage;
-#[cfg(test)]
-use tinystoragedrivers_busproxy::connect_storage;
-use tinystoragedrivers_busproxy::connect_storage_at;
+use tinystoragedrivers_busproxy::{connect_storage, connect_storage_at};
 
 use super::{StoragePorts, StorageProvider};
 use crate::error::{Error, Result};
@@ -61,13 +59,26 @@ impl BusProvider {
     fn from_storage(storage: &Storage, secrets: Option<Arc<dyn SecretStore>>) -> Self {
         let secrets = secrets.unwrap_or_else(|| Arc::clone(storage.secrets()));
         Self {
-            ports: StoragePorts::from_storage(storage, secrets),
+            ports: StoragePorts::from_storage(storage, secrets).host_managed(),
         }
     }
 
-    /// Ordinary, non-attested bus connections are used only by the in-process
-    /// port tests. Production module setup always uses [`connect_at`].
-    #[cfg(test)]
+    /// Connects to the storage service the host serves under its well-known
+    /// name. The host, not this module, binds the scope from the
+    /// broker-authenticated sender and enforces the grant, as with a private
+    /// callback; the difference is only that every module reaches the one
+    /// service rather than an instance-bound destination.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Store`] when no peer serves the storage objects or the
+    /// host refuses the capability calls. There is no memory fallback.
+    pub async fn connect_service(connection: Connection) -> Result<Self> {
+        Self::connect_ordinary_with(connection, None).await
+    }
+
+    /// Ordinary, non-attested bus connection with explicit `secrets`; the
+    /// in-process port tests supply their own secret store.
     pub(crate) async fn connect_ordinary_with(
         connection: Connection,
         secrets: Option<Arc<dyn SecretStore>>,

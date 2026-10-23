@@ -108,11 +108,18 @@ pub(super) async fn bus_provider(
         .ok_or_else(|| tinybus::Error::failed("tinymcp has no host storage callback"))?;
     let destination = tinybus::BusName::new(destination)
         .map_err(|_| tinybus::Error::failed("tinymcp has an invalid host storage callback"))?;
-    let provider = crate::storage::BusProvider::connect_at(connection, destination)
-        .await
-        .map_err(|error| {
-            tinybus::Error::failed(format!("tinymcp could not reach host storage: {error}"))
-        })?;
+    // A host that serves one storage service for every module names it
+    // instead of a per-instance unique destination. The name is explicit and
+    // exact: an absent destination still fails, and so does a service nobody
+    // owns, so there is no fallback to memory.
+    let provider = if destination.as_str() == crate::storage::STORAGE_SERVICE {
+        crate::storage::BusProvider::connect_service(connection).await
+    } else {
+        crate::storage::BusProvider::connect_at(connection, destination).await
+    }
+    .map_err(|error| {
+        tinybus::Error::failed(format!("tinymcp could not reach host storage: {error}"))
+    })?;
     Ok(Arc::new(provider))
 }
 
