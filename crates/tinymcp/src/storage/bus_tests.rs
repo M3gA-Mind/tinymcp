@@ -279,7 +279,7 @@ async fn a_host_bound_provider_leaves_the_schema_and_migrations_to_the_host() {
             .unwrap(),
         0
     );
-    for absent in ["tsd.migrations", "mcp_servers"] {
+    for absent in ["never.declared"] {
         let error = documents
             .documents()
             .get(absent, "probe")
