@@ -253,6 +253,27 @@ async fn owner_migration_omits_host_only_creation_time_on_the_bus() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_host_bound_provider_leaves_the_schema_and_migrations_to_the_host() {
+    let filter = tinystoragedrivers_types::Filter::default();
+    let ledger_rows = |backend: &MemoryStorage, scope: &str| {
+        let documents = backend.for_scope(&Scope::new(scope).unwrap()).unwrap();
+        let documents = Arc::clone(documents.documents());
+        let filter = filter.clone();
+        async move { documents.count("tsd.migrations", &filter).await.unwrap() }
+    };
+
+    // Run by the module itself, the first-open migrations record their
+    // progress in the shared ledger.
+    let local = MemoryStorage::new();
+    let scope = Scope::new("local-scope").unwrap();
+    let scoped = local.for_scope(&scope).unwrap();
+    StoragePorts::from_storage(&scoped, Arc::new(MemorySecrets::new()))
+        .prepare()
+        .unwrap();
+    assert!(ledger_rows(&local, "local-scope").await > 0);
+
+    // Over the bus the host owns the schema, and its grant keeps the ledger
+    // and the v1 source collections out of a module's reach, so preparing
+    // declares the module's collections and runs nothing else.
     let backend = MemoryStorage::new();
     let (bus, _host) = host(&backend, "module-tinymcp").await;
     let secrets = Arc::new(MemorySecrets::new());
@@ -260,35 +281,6 @@ async fn a_host_bound_provider_leaves_the_schema_and_migrations_to_the_host() {
         .await
         .ports_for(&std::env::temp_dir().join("tinymcp-host-managed"))
         .unwrap();
-
     ports.prepare().unwrap();
-
-    // A host's grant keeps the shared migration ledger and the v1 source
-    // collections out of a module's reach, so preparing must not ask for them.
-    let documents = backend
-        .for_scope(&Scope::new("module-tinymcp").unwrap())
-        .unwrap();
-    let filter = tinystoragedrivers_types::Filter::default();
-    // The module's own collections exist; the ledger and v1 sources were
-    // never created.
-    assert_eq!(
-        documents
-            .documents()
-            .count("mcp.servers", &filter)
-            .await
-            .unwrap(),
-        0
-    );
-    for absent in ["never.declared"] {
-        let error = documents
-            .documents()
-            .get(absent, "probe")
-            .await
-            .expect_err(absent);
-        assert_eq!(
-            error.kind(),
-            tinystoragedrivers_types::ErrorKind::NotFound,
-            "{absent}"
-        );
-    }
+    assert_eq!(ledger_rows(&backend, "module-tinymcp").await, 0);
 }
