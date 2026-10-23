@@ -191,7 +191,8 @@ where
         client_id: client_id.to_string(),
         client_secret: client_secret.map(ToString::to_string),
         token_endpoint: token_endpoint.to_string(),
-        expires_at: now_unix() + tokens.expires_in.unwrap_or(DEFAULT_TOKEN_LIFETIME_SECS),
+        expires_at: now_unix()
+            .saturating_add(tokens.expires_in.unwrap_or(DEFAULT_TOKEN_LIFETIME_SECS)),
     };
 
     let mut env = store.load_credentials(server_id).await?;
