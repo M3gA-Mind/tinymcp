@@ -117,9 +117,9 @@ pub(super) async fn bus_provider(
     } else {
         crate::storage::BusProvider::connect_at(connection, destination).await
     }
-        .map_err(|error| {
-            tinybus::Error::failed(format!("tinymcp could not reach host storage: {error}"))
-        })?;
+    .map_err(|error| {
+        tinybus::Error::failed(format!("tinymcp could not reach host storage: {error}"))
+    })?;
     Ok(Arc::new(provider))
 }
 
