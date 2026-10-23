@@ -268,7 +268,7 @@ async fn a_host_bound_provider_leaves_the_schema_and_migrations_to_the_host() {
     let documents = backend
         .for_scope(&Scope::new("module-tinymcp").unwrap())
         .unwrap();
-    let declared = documents.documents().collections().await.unwrap();
+    let declared = documents.documents().collections("").await.unwrap();
     assert!(
         declared.iter().any(|name| name == "mcp.servers"),
         "{declared:?}"
