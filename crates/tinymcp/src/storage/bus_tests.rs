@@ -268,15 +268,27 @@ async fn a_host_bound_provider_leaves_the_schema_and_migrations_to_the_host() {
     let documents = backend
         .for_scope(&Scope::new("module-tinymcp").unwrap())
         .unwrap();
-    let declared = documents.documents().collections("").await.unwrap();
-    assert!(
-        declared.iter().any(|name| name == "mcp.servers"),
-        "{declared:?}"
+    let filter = tinystoragedrivers_types::Filter::default();
+    // The module's own collections exist; the ledger and v1 sources were
+    // never created.
+    assert_eq!(
+        documents
+            .documents()
+            .count("mcp.servers", &filter)
+            .await
+            .unwrap(),
+        0
     );
-    assert!(
-        declared
-            .iter()
-            .all(|name| !name.starts_with("tsd.") && !name.starts_with("mcp_")),
-        "{declared:?}"
-    );
+    for absent in ["tsd.migrations", "mcp_servers"] {
+        let error = documents
+            .documents()
+            .count(absent, &filter)
+            .await
+            .expect_err(absent);
+        assert_eq!(
+            error.kind(),
+            tinystoragedrivers_types::ErrorKind::NotFound,
+            "{absent}"
+        );
+    }
 }
