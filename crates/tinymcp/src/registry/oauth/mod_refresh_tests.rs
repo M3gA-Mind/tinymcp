@@ -246,3 +246,30 @@ async fn exchanging_a_bundle_without_a_refresh_token_sends_nothing() {
     }
     assert_eq!(requests.count.load(Ordering::SeqCst), 0);
 }
+
+/// A token endpoint that answers an absurd `expires_in` must not overflow the
+/// expiry: an overflow panics in debug and, in release, wraps to a time in the
+/// past that triggers a refresh on every call.
+#[tokio::test]
+async fn an_absurd_expires_in_saturates_instead_of_overflowing() {
+    let store = store_with_remote("https://example.test/mcp");
+    let tokens = crate::registry::oauth::types::TokenResponse {
+        access_token: "a1".into(),
+        refresh_token: None,
+        expires_in: Some(u64::MAX),
+    };
+    crate::registry::oauth::tokens::persist(
+        &store,
+        "srv-1",
+        "cli-1",
+        None,
+        "https://auth.example/token",
+        &tokens,
+    )
+    .await
+    .unwrap();
+
+    let env = store.load_env_values("srv-1").unwrap();
+    let bundle: OAuthBundle = serde_json::from_str(&env[OAUTH_BUNDLE_KEY]).unwrap();
+    assert_eq!(bundle.expires_at, u64::MAX);
+}

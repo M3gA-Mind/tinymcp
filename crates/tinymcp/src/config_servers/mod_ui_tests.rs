@@ -122,9 +122,9 @@ async fn a_stdio_server_answers_meta_and_resources_too() {
     let replies = [
         initialize.as_str(),
         "",
-        r#"{"jsonrpc":"2.0","id":3,"result":{"tools":[{"name":"show_card","_meta":{"ui":{"resourceUri":"ui://card"}}}]}}"#,
-        r#"{"jsonrpc":"2.0","id":4,"result":{"resources":[{"uri":"ui://card","name":"card"}]}}"#,
-        r#"{"jsonrpc":"2.0","id":5,"result":{"contents":[{"uri":"ui://card","text":"<p>stdio</p>"}]}}"#,
+        r#"{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"show_card","_meta":{"ui":{"resourceUri":"ui://card"}}}]}}"#,
+        r#"{"jsonrpc":"2.0","id":3,"result":{"resources":[{"uri":"ui://card","name":"card"}]}}"#,
+        r#"{"jsonrpc":"2.0","id":4,"result":{"contents":[{"uri":"ui://card","text":"<p>stdio</p>"}]}}"#,
     ];
     let mut script = String::new();
     for reply in replies {

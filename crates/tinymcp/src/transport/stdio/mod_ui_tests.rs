@@ -106,7 +106,7 @@ async fn capabilities_the_server_did_not_expect_fail_the_check() {
 
 #[tokio::test]
 async fn tools_list_keeps_meta_and_caches_it() {
-    let tools = r#"{"jsonrpc":"2.0","id":3,"result":{"tools":[{"name":"show_card","_meta":{"ui":{"resourceUri":"ui://card"}}},{"name":"plain"}]}}"#;
+    let tools = r#"{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"show_card","_meta":{"ui":{"resourceUri":"ui://card"}}},{"name":"plain"}]}}"#;
     let client = client_for(responder(&[&initialize_reply(), "", tools]));
 
     assert!(client.cached_tool("show_card").is_none());
@@ -125,8 +125,8 @@ async fn tools_list_keeps_meta_and_caches_it() {
 
 #[tokio::test]
 async fn resources_are_listed_across_pages() {
-    let first = r#"{"jsonrpc":"2.0","id":3,"result":{"resources":[{"uri":"ui://a","name":"a"}],"nextCursor":"c2"}}"#;
-    let second = r#"{"jsonrpc":"2.0","id":4,"result":{"resources":[{"uri":"ui://b","name":"b"}]}}"#;
+    let first = r#"{"jsonrpc":"2.0","id":2,"result":{"resources":[{"uri":"ui://a","name":"a"}],"nextCursor":"c2"}}"#;
+    let second = r#"{"jsonrpc":"2.0","id":3,"result":{"resources":[{"uri":"ui://b","name":"b"}]}}"#;
     let client = client_for(responder(&[&initialize_reply(), "", first, second]));
 
     let resources = client.list_resources().await.unwrap();
@@ -137,7 +137,7 @@ async fn resources_are_listed_across_pages() {
 
 #[tokio::test]
 async fn a_resource_is_read_verbatim() {
-    let read = r#"{"jsonrpc":"2.0","id":3,"result":{"contents":[{"uri":"ui://a","mimeType":"text/html;profile=mcp-app","text":"<p>hi</p>"}]}}"#;
+    let read = r#"{"jsonrpc":"2.0","id":2,"result":{"contents":[{"uri":"ui://a","mimeType":"text/html;profile=mcp-app","text":"<p>hi</p>"}]}}"#;
     let client = client_for(responder(&[&initialize_reply(), "", read]));
 
     let contents = client.read_resource("ui://a").await.unwrap();
@@ -151,7 +151,7 @@ async fn a_resource_is_read_verbatim() {
 
 #[tokio::test]
 async fn a_read_reply_without_contents_is_malformed() {
-    let read = r#"{"jsonrpc":"2.0","id":3,"result":{}}"#;
+    let read = r#"{"jsonrpc":"2.0","id":2,"result":{}}"#;
     let client = client_for(responder(&[&initialize_reply(), "", read]));
 
     let error = client.read_resource("ui://a").await.unwrap_err();
@@ -164,7 +164,7 @@ async fn a_read_reply_without_contents_is_malformed() {
 
 #[tokio::test]
 async fn a_tool_call_keeps_structured_content() {
-    let call = r#"{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"ok"}],"structuredContent":{"n":1}}}"#;
+    let call = r#"{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"ok"}],"structuredContent":{"n":1}}}"#;
     let client = client_for(responder(&[&initialize_reply(), "", call]));
 
     let result = client.call_tool("show_card", json!({})).await.unwrap();

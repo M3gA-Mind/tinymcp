@@ -84,13 +84,12 @@ pub fn tools_for(
             // Include server identity even before a collision exists: a name
             // recorded in a conversation must not change when another source
             // with the same readable slug is added or removed.
-            let mut name =
+            let name =
                 naming::disambiguated_tool_name(&source.server_id, &source.label, &tool.name);
-            if taken.contains(&name) {
-                name =
-                    naming::disambiguated_tool_name(&source.server_id, &source.label, &tool.name);
-            }
+            // The name is already server-specific, so a repeat is the same tool
+            // from a repeated source, not a collision to rename around.
             if !taken.insert(name.clone()) {
+                tracing::warn!(tool = %name, "skipping an MCP tool already built under this name");
                 continue;
             }
             built.push(McpServerTool::new(name, source, tool, Arc::clone(invoker)));

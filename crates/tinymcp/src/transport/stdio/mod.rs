@@ -191,6 +191,10 @@ pub struct McpStdioClient {
     capabilities: Value,
     spawner: Arc<dyn StdioSpawner>,
     state: Mutex<Option<StdioSession>>,
+    /// Bumped by [`Self::close_session`] so a request blocked on the server's
+    /// output gives up the session instead of holding it until the server
+    /// answers.
+    closing: tokio::sync::watch::Sender<u64>,
     cached_tools: parking_lot::Mutex<HashMap<String, McpRemoteTool>>,
 }
 
@@ -199,6 +203,10 @@ struct StdioSession {
     handle: Box<dyn StdioHandle>,
     stdin: Box<dyn AsyncWrite + Send + Unpin>,
     stdout: BufReader<Box<dyn AsyncRead + Send + Unpin>>,
+    /// The line being read. It lives on the session so a read cancelled
+    /// mid-line (a caller's timeout) resumes where it stopped instead of
+    /// splitting a reply.
+    line: Vec<u8>,
     initialize: McpInitializeResult,
 }
 
@@ -230,6 +238,7 @@ impl McpStdioClient {
             capabilities: identity.capabilities.clone(),
             spawner: Arc::new(DirectSpawner),
             state: Mutex::new(None),
+            closing: tokio::sync::watch::channel(0).0,
             cached_tools: parking_lot::Mutex::new(HashMap::new()),
         }
     }
@@ -335,6 +344,7 @@ impl McpStdioClient {
             handle: process.handle,
             stdin: process.stdin,
             stdout: BufReader::new(process.stdout),
+            line: Vec::new(),
             initialize: McpInitializeResult {
                 protocol_version: LATEST_PROTOCOL_VERSION.to_string(),
                 capabilities: json!({}),
@@ -523,6 +533,10 @@ impl McpStdioClient {
     /// Never returns an error today. The signature is fallible so a future
     /// graceful-shutdown handshake does not become a breaking change.
     pub async fn close_session(&self) -> Result<()> {
+        // Release a request still waiting on the server first; it holds the
+        // session lock until then. Killing the child is not enough, since a
+        // grandchild (npx's node) can keep the output pipe open.
+        self.closing.send_modify(|generation| *generation += 1);
         if let Some(mut session) = self.state.lock().await.take() {
             session.handle.terminate().await;
         }
@@ -534,6 +548,11 @@ impl McpStdioClient {
     /// Blank lines and lines that are not JSON are skipped: servers print to
     /// standard output whether or not they should, and treating a banner as a
     /// protocol violation would break servers that otherwise work.
+    ///
+    /// Only the reply carrying this request's id is returned. Notifications,
+    /// a late reply to an earlier request that timed out, and batches are
+    /// skipped; a server request is answered (`ping` with `{}`, anything else
+    /// with "method not found") so the server is not left waiting.
     async fn request(
         &self,
         session: &mut StdioSession,
@@ -541,6 +560,7 @@ impl McpStdioClient {
         params: Value,
     ) -> Result<Value> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let mut closing = self.closing.subscribe();
         self.write_line(
             session,
             &json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }),
@@ -548,17 +568,34 @@ impl McpStdioClient {
         .await?;
 
         loop {
-            let mut line = String::new();
-            let read = session.stdout.read_line(&mut line).await.map_err(|error| {
-                Error::malformed(format!("reading from `{}` failed: {error}", self.command))
-            })?;
+            // `read_until` keeps partial input in `session.line`, so giving up
+            // the read here loses nothing.
+            let read = tokio::select! {
+                read = session.stdout.read_until(b'\n', &mut session.line) => {
+                    read.map_err(|error| {
+                        Error::malformed(format!("reading from `{}` failed: {error}", self.command))
+                    })?
+                }
+                _ = closing.changed() => {
+                    return Err(Error::malformed(format!(
+                        "the session with `{}` was closed while waiting for `{method}`",
+                        self.command
+                    )));
+                }
+            };
 
-            if read == 0 {
+            if read == 0 && session.line.is_empty() {
                 return Err(Error::malformed(format!(
                     "`{}` closed its output while waiting for `{method}`",
                     self.command
                 )));
             }
+            // A partial line waits for the rest; at end of output it is read
+            // as it stands.
+            if read != 0 && session.line.last() != Some(&b'\n') {
+                continue;
+            }
+            let line = String::from_utf8_lossy(&std::mem::take(&mut session.line)).into_owned();
 
             let trimmed = line.trim();
             if trimmed.is_empty() {
@@ -575,6 +612,29 @@ impl McpStdioClient {
             let payload: Value = serde_json::from_str(trimmed).map_err(|error| {
                 Error::malformed(format!("stdio reply is not json: {error} — {trimmed}"))
             })?;
+
+            if let Some(server_method) = payload.get("method").and_then(Value::as_str) {
+                if let Some(request_id) = payload.get("id") {
+                    let reply = if server_method == "ping" {
+                        json!({ "jsonrpc": "2.0", "id": request_id, "result": {} })
+                    } else {
+                        json!({
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "error": { "code": -32601, "message": "method not found" },
+                        })
+                    };
+                    self.write_line(session, &reply).await?;
+                }
+                continue;
+            }
+            if payload.get("id") != Some(&json!(id)) {
+                tracing::debug!(
+                    command = %self.command,
+                    "skipping a stdio message that does not answer the current request"
+                );
+                continue;
+            }
 
             if let Some(error) = payload.get("error") {
                 return Err(Error::Rpc {
