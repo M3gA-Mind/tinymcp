@@ -30,6 +30,11 @@
 
 #[cfg(feature = "module")]
 mod bus;
+/// The bus name of the host's storage service. A host that serves storage for
+/// every module under this one name (rather than binding a private callback to
+/// each) names it as the `storage_callback` destination.
+#[cfg(feature = "module")]
+pub(crate) const STORAGE_SERVICE: &str = "ai.tinyhumans.tinystorage.Storage";
 #[cfg(test)]
 mod failing;
 mod grant;
