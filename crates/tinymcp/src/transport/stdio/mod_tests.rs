@@ -407,17 +407,28 @@ mod against_a_fake_server {
 
     #[tokio::test]
     async fn closing_a_session_terminates_the_child_and_forgets_it() {
-        let command = responder(&[&initialize_reply()]);
+        // Replies carry the id of the request they answer: the reopened
+        // session's handshake is not request 1, and a reply to the wrong id is
+        // (rightly) never taken as its answer.
+        let reply = initialize_reply().replace(r#""id":1"#, r#""id":'"$id"'"#);
+        let command = format!(
+            "read -r line\nid=$(printf '%s' \"$line\" | sed 's/.*\"id\":\\([0-9]*\\).*/\\1/')\n\
+             printf '%s\\n' '{reply}'\ncat > /dev/null\n"
+        );
         let client = client_for(command);
+        let within = |what| tokio::time::timeout(std::time::Duration::from_secs(10), what);
 
-        client.initialize().await.expect("the handshake");
+        within(client.initialize())
+            .await
+            .expect("the handshake must not hang")
+            .expect("the handshake");
         client.close_session().await.expect("closing");
 
         // The session is gone, so this would have to spawn again. The script
         // answers once more only because a fresh child starts from the top.
-        client
-            .initialize()
+        within(client.initialize())
             .await
+            .expect("reopening must not hang")
             .expect("a closed session can be reopened");
     }
 }
