@@ -282,7 +282,7 @@ async fn a_host_bound_provider_leaves_the_schema_and_migrations_to_the_host() {
     for absent in ["tsd.migrations", "mcp_servers"] {
         let error = documents
             .documents()
-            .count(absent, &filter)
+            .get(absent, "probe")
             .await
             .expect_err(absent);
         assert_eq!(
