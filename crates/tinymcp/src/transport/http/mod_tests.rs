@@ -1769,3 +1769,46 @@ fn a_notification_frame_before_the_response_is_skipped() {
         "a notification alone means keep reading"
     );
 }
+
+/// A server that accepts `initialize` but fails the first
+/// `notifications/initialized` must see a fresh handshake on the next call,
+/// rather than the client treating the half-open session as initialized.
+#[tokio::test]
+async fn a_failed_initialized_notification_does_not_cache_the_session() {
+    let inits = Arc::new(AtomicUsize::new(0));
+    let notifications = Arc::new(AtomicUsize::new(0));
+    let (server_inits, server_notifications) = (Arc::clone(&inits), Arc::clone(&notifications));
+    let app = Router::new().route(
+        "/",
+        post(move |Json(body): Json<Value>| {
+            let (inits, notifications) =
+                (Arc::clone(&server_inits), Arc::clone(&server_notifications));
+            async move {
+                if body["method"] == "initialize" {
+                    inits.fetch_add(1, AtomicOrdering::SeqCst);
+                    return Json(json!({
+                        "jsonrpc": "2.0",
+                        "id": body["id"].clone(),
+                        "result": {
+                            "protocolVersion": LATEST_PROTOCOL_VERSION,
+                            "capabilities": {},
+                            "serverInfo": { "name": "test-server", "version": "1.0.0" },
+                        },
+                    }))
+                    .into_response();
+                }
+                if notifications.fetch_add(1, AtomicOrdering::SeqCst) == 0 {
+                    return AxumStatus::INTERNAL_SERVER_ERROR.into_response();
+                }
+                AxumStatus::ACCEPTED.into_response()
+            }
+        }),
+    );
+    let client = McpHttpClient::builder(serve(app).await).build().unwrap();
+
+    assert!(client.initialize().await.is_err());
+    client.initialize().await.unwrap();
+
+    assert_eq!(inits.load(AtomicOrdering::SeqCst), 2, "no fresh handshake");
+    assert_eq!(notifications.load(AtomicOrdering::SeqCst), 2);
+}
