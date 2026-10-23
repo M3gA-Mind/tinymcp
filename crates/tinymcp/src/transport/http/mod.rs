@@ -201,6 +201,12 @@ impl McpHttpClientBuilder {
     /// constructed, for example with an unusable TLS configuration.
     pub fn build(self) -> Result<McpHttpClient> {
         let public_endpoint_only = self.pinned_addresses.is_some();
+        let custom_credential = matches!(
+            self.auth,
+            McpAuthConfig::Header { .. }
+                | McpAuthConfig::Headers { .. }
+                | McpAuthConfig::QueryParam { .. }
+        );
         let mut builder = reqwest::Client::builder()
             .timeout(self.timeout)
             .connect_timeout(CONNECT_TIMEOUT)
@@ -212,8 +218,10 @@ impl McpHttpClientBuilder {
             // `Authorization` and `Cookie` on a cross-origin redirect, so a
             // bearer token does not follow the request to another host, but
             // custom headers, query-param credentials and same-origin
-            // downgrades are not stripped — the policy closes that gap.
-            .redirect(redirect_policy());
+            // downgrades are not stripped — the policy closes that gap, and
+            // refuses a cross-origin hop for those credentials or onto a
+            // local address.
+            .redirect(redirect_policy(custom_credential));
 
         let mut discovery_builder = reqwest::Client::builder()
             .timeout(DISCOVERY_BUDGET)
@@ -302,12 +310,18 @@ impl McpHttpClientBuilder {
 /// on a cross-origin hop, so a bearer on a same-host downgrade and any custom
 /// header or query-param credential on any hop would otherwise follow. A
 /// refused downgrade surfaces as a redirect error rather than a silent leak.
-fn redirect_policy() -> reqwest::redirect::Policy {
-    reqwest::redirect::Policy::custom(|attempt| {
+fn redirect_policy(custom_credential: bool) -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(move |attempt| {
         // `previous[0]` is the initial URL (reqwest counts it, not a redirect),
         // so it is the scheme the host configured — and, for a credentialed
         // non-loopback endpoint, the one already required to be HTTPS.
-        let origin_scheme = attempt.previous().first().map(reqwest::Url::scheme);
+        let origin = attempt.previous().first();
+        if let Some(origin) = origin
+            && let Some(msg) = cross_origin_refusal(origin, attempt.url(), custom_credential)
+        {
+            return attempt.error(msg);
+        }
+        let origin_scheme = origin.map(reqwest::Url::scheme);
         match redirect_decision(
             origin_scheme,
             attempt.url().scheme(),
@@ -345,6 +359,42 @@ fn redirect_decision(
         return RedirectDecision::Error("too many redirects");
     }
     RedirectDecision::Follow
+}
+
+/// Why a hop from `origin` to `target` that changes origin must be refused, if
+/// it must.
+///
+/// `reqwest` strips only `Authorization` and `Cookie` on a cross-origin hop, so
+/// a custom header or query-param credential would follow the request to
+/// whatever host the server names. And a remote server must not be able to
+/// bounce the client onto a local address it could not dial itself. A
+/// same-origin hop is unaffected, so a server on loopback can still redirect
+/// within itself.
+fn cross_origin_refusal(
+    origin: &reqwest::Url,
+    target: &reqwest::Url,
+    custom_credential: bool,
+) -> Option<&'static str> {
+    if origin.origin() == target.origin() {
+        return None;
+    }
+    if custom_credential {
+        return Some("refusing a cross-origin redirect that would carry a custom credential");
+    }
+    let local = match target.host() {
+        Some(url::Host::Domain(domain)) => {
+            let domain = domain.trim_end_matches('.').to_ascii_lowercase();
+            domain == "localhost" || domain.ends_with(".localhost")
+        }
+        Some(url::Host::Ipv4(ip)) => {
+            crate::registry::oauth::endpoint_guard::is_blocked_ip(&ip.into())
+        }
+        Some(url::Host::Ipv6(ip)) => {
+            crate::registry::oauth::endpoint_guard::is_blocked_ip(&ip.into())
+        }
+        None => true,
+    };
+    local.then_some("refusing a cross-origin redirect to a local address")
 }
 
 /// Applies a resolved proxy to a client builder.
