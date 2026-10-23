@@ -3067,6 +3067,58 @@ async fn bus_provider_requires_an_explicit_host_callback_destination() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn bus_provider_reaches_a_host_that_serves_the_well_known_storage_service() {
+    use crate::storage::test_host::serve_storage;
+    use tinybus::{broker::Broker, transport::memory::MemoryBus};
+    use tinystoragedrivers_testkit::MemoryBackend;
+
+    let bus = MemoryBus::new();
+    Broker::new().spawn(bus.clone());
+    let _host = serve_storage(&bus, &MemoryBackend::new(), "module-tinymcp").await;
+    let connection = tinybus::Connection::connect(bus.connect().await.unwrap())
+        .await
+        .unwrap();
+    // A host with no per-instance callback binding names the storage service
+    // itself. Naming it is explicit; an absent destination still fails.
+    let config = ModuleConfig {
+        storage_callback: Some(crate::storage::STORAGE_SERVICE.into()),
+        ..ModuleConfig::default()
+    };
+
+    let provider = super::bus_provider(connection, &config)
+        .await
+        .expect("the well-known storage service is reachable");
+
+    assert!(
+        provider
+            .ports_for(&std::env::temp_dir().join("tinymcp-service"))
+            .is_ok()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bus_provider_fails_when_the_named_storage_service_has_no_owner() {
+    use tinybus::{broker::Broker, transport::memory::MemoryBus};
+
+    let bus = MemoryBus::new();
+    Broker::new().spawn(bus.clone());
+    let connection = tinybus::Connection::connect(bus.connect().await.unwrap())
+        .await
+        .unwrap();
+    let config = ModuleConfig {
+        storage_callback: Some(crate::storage::STORAGE_SERVICE.into()),
+        ..ModuleConfig::default()
+    };
+
+    let error = super::bus_provider(connection, &config)
+        .await
+        .err()
+        .expect("no host serves storage, so the load fails rather than using memory");
+
+    assert!(error.to_string().contains("host storage"), "{error}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn bus_provider_rejects_an_invalid_host_callback_destination() {
     use tinybus::{broker::Broker, transport::memory::MemoryBus};
 
