@@ -24,6 +24,10 @@ pub struct StoragePorts {
     pub(crate) documents: Arc<dyn DocumentStore>,
     pub(crate) streams: Arc<dyn StreamStore>,
     pub(crate) secrets: Arc<dyn SecretStore>,
+    /// Whether the host owns the schema: it declared the collections when it
+    /// bound this module's scope, and its grant is the allowlist, so the
+    /// module neither migrates data nor touches the shared progress ledger.
+    host_managed: bool,
 }
 
 impl std::fmt::Debug for StoragePorts {
@@ -49,7 +53,17 @@ impl StoragePorts {
             documents,
             streams,
             secrets,
+            host_managed: false,
         }
+    }
+
+    /// These ports are a host's, reached over the bus: the host owns the
+    /// schema ([`prepare`](Self::prepare) only checks it) and its grant does
+    /// not include the migration ledger or the v1 source collections.
+    #[must_use]
+    pub(crate) fn host_managed(mut self) -> Self {
+        self.host_managed = true;
+        self
     }
 
     /// Uses a scoped backend handle for documents and streams, and `secrets`
@@ -105,6 +119,17 @@ impl StoragePorts {
     ///
     /// Returns [`Error::Store`] when the port refuses a collection.
     pub fn prepare(&self) -> Result<()> {
+        if self.host_managed {
+            // The host declared these when it bound the scope, so this only
+            // confirms host and module agree on them. Running the migrations
+            // would reach for collections the host's grant keeps out of reach.
+            return self.run("declaring the collections", |ports| async move {
+                for spec in tinymcp_bus::storage::collection_specs() {
+                    ports.documents.ensure_collection(&spec).await?;
+                }
+                Ok(())
+            });
+        }
         self.run("declaring the collections", |ports| async move {
             let schema = super::schema::storage_schema()?;
             schema

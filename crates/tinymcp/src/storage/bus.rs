@@ -59,7 +59,7 @@ impl BusProvider {
     fn from_storage(storage: &Storage, secrets: Option<Arc<dyn SecretStore>>) -> Self {
         let secrets = secrets.unwrap_or_else(|| Arc::clone(storage.secrets()));
         Self {
-            ports: StoragePorts::from_storage(storage, secrets),
+            ports: StoragePorts::from_storage(storage, secrets).host_managed(),
         }
     }
 
